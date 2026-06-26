@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Inventory Entry" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>Inventory Entry</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #dbe3ef;
+      --accent: #0f172a;
+      --accentText: #ffffff;
+      --danger: #b91c1c;
+      --success: #166534;
+      --warning: #92400e;
+      --soft: #eef2f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 18px;
+      padding-bottom: 44px;
+    }
+
+    header {
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.1;
+      margin: 0 0 6px;
+    }
+
+    .sub {
+      color: var(--muted);
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 16px 0;
+    }
+
+    .metric {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 78px;
+    }
+
+    .metric .label {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .metric .value {
+      font-size: 25px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      margin: 14px 0;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 650;
+      margin-bottom: 8px;
+    }
+
+    .entry-row {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      font-size: 30px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 14px;
+      outline: none;
+      background: #fff;
+      color: var(--text);
+      min-height: 64px;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.10);
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 16px;
+      font-weight: 650;
+      cursor: pointer;
+      min-height: 48px;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accentText);
+      min-width: 94px;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    .danger {
+      color: var(--danger);
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.35;
+      min-height: 42px;
+    }
+
+    .status.success {
+      color: var(--success);
+      background: #ecfdf5;
+    }
+
+    .status.error {
+      color: var(--danger);
+      background: #fef2f2;
+    }
+
+    .status.warning {
+      color: var(--warning);
+      background: #fffbeb;
+    }
+
+    .list-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .list-head h2 {
+      margin: 0;
+      font-size: 19px;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .inventory-list {
+      display: grid;
+      gap: 8px;
+      max-height: 430px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      background: #fff;
+    }
+
+    .num {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+
+    .code {
+      font-size: 20px;
+      font-weight: 750;
+      letter-spacing: 0.08em;
+    }
+
+    .row button {
+      min-height: 38px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 26px 10px;
+      border: 1px dashed var(--border);
+      border-radius: 16px;
+      background: #fff;
+    }
+
+    .help {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 560px) {
+      .wrap {
+        padding: 14px;
+      }
+
+      h1 {
+        font-size: 25px;
+      }
+
+      .grid {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .metric:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .entry-row {
+        flex-direction: column;
+      }
+
+      .primary {
+        width: 100%;
+      }
+
+      input[type="text"] {
+        font-size: 26px;
+        min-height: 62px;
+      }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
+
+      .row {
+        grid-template-columns: 44px 1fr auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <h1>Inventory Entry</h1>
+      <p class="sub">Type a 6-character container number, press Enter, and keep going. Export to CSV when finished.</p>
+    </header>
+
+    <section class="grid" aria-label="Inventory summary">
+      <div class="metric">
+        <div class="label">Entered</div>
+        <div class="value" id="count">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Duplicates Blocked</div>
+        <div class="value" id="dupeCount">0</div>
+      </div>
+      <div class="metric">
+        <div class="label">Last Entry</div>
+        <div class="value" id="lastEntry">—</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <label for="containerInput">Container number</label>
+      <div class="entry-row">
+        <input
+          id="containerInput"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          maxlength="6"
+          placeholder="ABC123"
+          aria-describedby="entryHelp status"
+        />
+        <button id="addBtn" class="primary" type="button">Enter</button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
+      <p id="entryHelp" class="help">
+        Accepted format: exactly 6 letters/numbers. The app auto-capitalizes entries and blocks duplicates.
+      </p>
+
+      <div class="actions">
+        <button id="exportBtn" type="button">Export CSV for Excel</button>
+        <button id="undoBtn" type="button">Undo Last Entry</button>
+        <button id="copyBtn" type="button">Copy List</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="list-head">
+        <h2>Entered Containers</h2>
+        <span class="small" id="savedText">Saved on this device</span>
+      </div>
+      <div id="list" class="inventory-list"></div>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "warehouse_inventory_entries_v1";
+    const DUPE_KEY = "warehouse_inventory_dupes_v1";
+
+    const input = document.getElementById("containerInput");
+    const addBtn = document.getElementById("addBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const undoBtn = document.getElementById("undoBtn");
+    const copyBtn = document.getElementById("copyBtn");
+
+    const count = document.getElementById("count");
+    const dupeCount = document.getElementById("dupeCount");
+    const lastEntry = document.getElementById("lastEntry");
+    const statusBox = document.getElementById("status");
+    const list = document.getElementById("list");
+    const savedText = document.getElementById("savedText");
+
+    let entries = loadEntries();
+    let duplicateBlocks = Number(localStorage.getItem(DUPE_KEY) || "0");
+
+    function loadEntries() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveEntries() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      localStorage.setItem(DUPE_KEY, String(duplicateBlocks));
+      savedText.textContent = "Saved on this device";
+    }
+
+    function normalize(value) {
+      // Trim, uppercase, remove all non A-Z0-9 characters and collapse whitespace,
+      // then limit length (note: HTML maxlength still applies for typed input).
+      return String(value ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "") // remove non-alphanumeric
+        .replace(/\s+/g, "");
+    }
+
+    function isValid(code) {
+      return /^[A-Z0-9]{6}$/.test(code);
+    }
+
+    function setStatus(message, type) {
+      statusBox.textContent = message;
+      statusBox.className = "status" + (type ? " " + type : "");
+    }
+
+    function addEntry() {
+      const code = normalize(input.value);
+
+      if (!code) {
+        setStatus("Type a container number first.", "warning");
+        input.focus();
+        return;
+      }
+
+      if (!isValid(code)) {
+        setStatus("Invalid entry. Container number must be exactly 6 letters/numbers.", "error");
+        input.select();
+        return;
+      }
+
+      if (entries.some(item => item.code === code)) {
+        duplicateBlocks += 1;
+        saveEntries();
+        setStatus("Duplicate blocked: " + code + " is already on the list.", "warning");
+        input.select();
+        render();
+        return;
+      }
+
+      entries.push({
+        code,
+        timestamp: new Date().toISOString()
+      });
+
+      input.value = "";
+      saveEntries();
+      setStatus("Saved " + code + ". Ready for next container.", "success");
+      render();
+      input.focus();
+    }
+
+    function undoLast() {
+      if (!entries.length) {
+        setStatus("There is nothing to undo.", "warning");
+        input.focus();
+        return;
+      }
+
+      const removed = entries.pop();
+      saveEntries();
+      setStatus("Removed last entry: " + removed.code + ".", "warning");
+      render();
+      input.focus();
+    }
+
+    function deleteEntry(index) {
+      const removed = entries.splice(index, 1)[0];
+      saveEntries();
+      setStatus("Deleted " + removed.code + ".", "warning");
+      render();
+      input.focus();
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      if (/[",\n\r]/.test(text)) {
+        return '"' + text.replace(/"/g, '""') + '"';
+      }
+      return text;
+    }
+
+    function formatLocalTime(iso) {
+      const date = new Date(iso);
+      return date.toLocaleString();
+    }
+
+    function buildCsv() {
+      const rows = [
+        ["Row", "Container Number", "Date/Time Entered"]
+      ];
+
+      entries.forEach((item, index) => {
+        rows.push([index + 1, item.code, formatLocalTime(item.timestamp)]);
+      });
+
+      return rows.map(row => row.map(csvEscape).join(",")).join("\n");
+    }
+
+    function exportCsv() {
+      if (!entries.length) {
+        setStatus("No entries to export yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const csv = buildCsv();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const filename = "inventory_" + yyyy + "-" + mm + "-" + dd + ".csv";
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus("CSV exported: " + filename + ". Open it with Excel.", "success");
+      input.focus();
+    }
+
+    async function copyList() {
+      if (!entries.length) {
+        setStatus("No entries to copy yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const text = entries.map(item => item.code).join("\n");
+
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus("Container list copied.", "success");
+      } catch {
+        const area = document.createElement("textarea");
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+        setStatus("Container list copied.", "success");
+      }
+
+      input.focus();
+    }
+
+    // Keep live normalization for typed input
+    input.addEventListener("input", () => {
+      input.value = normalize(input.value).slice(0, 6);
+    });
+
+    // sanitize pasted text (common with handheld scanners)
+    input.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const pasted = e.clipboardData?.getData("text") ?? "";
+      const cleaned = normalize(pasted).slice(0, 6);
+      input.value = cleaned;
+      // move cursor to end
+      requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
+    });
+
+    // keyboard shortcut: Ctrl/Cmd+Z to undo last entry
+    document.addEventListener("keydown", (e) => {
+      // allow undo no matter what has focus; in many scanning workflows users expect a quick undo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undoLast();
+      }
+    });
+
+    // render: construct a semantic list (ul > li) while keeping .row styling
+    function render() {
+      count.textContent = entries.length;
+      dupeCount.textContent = duplicateBlocks;
+      lastEntry.textContent = entries.length ? entries[entries.length - 1].code : "—";
+
+      if (!entries.length) {
+        list.innerHTML = '<div class="empty">No containers entered yet.</div>';
+        return;
+      }
+
+      list.innerHTML = "";
+
+      // create a semantic list container
+      const ul = document.createElement("ul");
+      ul.setAttribute("role", "list");
+      ul.style.listStyle = "none";
+      ul.style.margin = "0";
+      ul.style.padding = "0";
+
+      const recent = entries.slice().reverse();
+      recent.forEach((item, reverseIndex) => {
+        const originalIndex = entries.length - 1 - reverseIndex;
+
+        const li = document.createElement("li");
+        li.setAttribute("role", "listitem");
+
+        // reuse the existing .row styling by applying the same class to the li
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const num = document.createElement("div");
+        num.className = "num";
+        num.textContent = "#" + (originalIndex + 1);
+
+        const code = document.createElement("div");
+        code.className = "code";
+        code.textContent = item.code;
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "danger";
+        del.textContent = "Delete";
+        // accessible label for screen readers:
+        del.setAttribute("aria-label", `Delete container ${item.code}`);
+        del.addEventListener("click", () => deleteEntry(originalIndex));
+
+        row.appendChild(num);
+        row.appendChild(code);
+        row.appendChild(del);
+        li.appendChild(row);
+        ul.appendChild(li);
+      });
+
+      list.appendChild(ul);
+    }
+
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addEntry();
+      }
+    });
+
+    addBtn.addEventListener("click", addEntry);
+    exportBtn.addEventListener("click", exportCsv);
+    undoBtn.addEventListener("click", undoLast);
+    copyBtn.addEventListener("click", copyList);
+
+    render();
+    input.focus();
+  </script>
+</body>
+</html>
