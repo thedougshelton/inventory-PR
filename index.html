@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Inventory Entry" />
+  <meta name="apple-mobile-web-app-title" content="Tampa Inventory Entry" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Inventory Entry</title>
+  <title>Tampa Inventory Entry</title>
   <style>
     :root {
       --bg: #f8fafc;
@@ -387,7 +387,7 @@
 <body>
   <main class="wrap">
     <header>
-      <h1>Inventory Entry</h1>
+      <h1>Tampa Inventory Entry</h1>
       <p class="sub">Select size, condition, and status. Then type a 6-character container number and press Enter.</p>
     </header>
 
@@ -430,4 +430,420 @@
         </div>
       </div>
 
-    
+      <div class="field-group">
+        <div class="field-label">Container Status</div>
+        <div class="option-grid" role="radiogroup" aria-label="Container Status">
+          <label class="option-pill">
+            <input type="radio" name="containerStatus" value="Built" checked />
+            Built
+          </label>
+          <label class="option-pill">
+            <input type="radio" name="containerStatus" value="Flat" />
+            Flat
+          </label>
+        </div>
+      </div>
+
+      <label for="containerInput">Container number</label>
+      <div class="entry-row">
+        <input
+          id="containerInput"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+          maxlength="6"
+          placeholder="ABC123"
+          aria-describedby="entryHelp status"
+        />
+        <button id="addBtn" class="primary" type="button">Enter</button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
+      <p id="entryHelp" class="help">
+        Accepted format: exactly 6 letters/numbers. The app auto-capitalizes entries and blocks duplicates.
+      </p>
+
+      <div class="actions">
+        <button id="exportBtn" type="button">Export CSV for Excel</button>
+        <button id="undoBtn" type="button">Undo Last Entry</button>
+        <button id="copyBtn" type="button">Copy List</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="list-head">
+        <h2>Entered Containers</h2>
+        <span class="small" id="savedText">Saved on this device</span>
+      </div>
+      <div id="list" class="inventory-list"></div>
+    </section>
+
+    <section class="card">
+      <details class="finish-clear">
+        <summary>Finished inventory? Open export/clear controls</summary>
+        <div class="confirm-panel">
+          <p>
+            Export your CSV first. To clear the entire list after finishing, type
+            <strong>FINISHED</strong> below, then press the clear button.
+          </p>
+          <div class="confirm-row">
+            <input
+              id="finishConfirm"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Type FINISHED"
+            />
+            <button id="finishClearBtn" class="danger-solid" type="button">Clear Finished List</button>
+          </div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "warehouse_inventory_entries_v2";
+    const OLD_STORAGE_KEY = "warehouse_inventory_entries_v1";
+    const DUPE_KEY = "warehouse_inventory_dupes_v2";
+    const OLD_DUPE_KEY = "warehouse_inventory_dupes_v1";
+
+    const input = document.getElementById("containerInput");
+    const sizeSelect = document.getElementById("containerSize");
+    const addBtn = document.getElementById("addBtn");
+    const exportBtn = document.getElementById("exportBtn");
+    const undoBtn = document.getElementById("undoBtn");
+    const copyBtn = document.getElementById("copyBtn");
+    const finishConfirm = document.getElementById("finishConfirm");
+    const finishClearBtn = document.getElementById("finishClearBtn");
+
+    const count = document.getElementById("count");
+    const dupeCount = document.getElementById("dupeCount");
+    const lastEntry = document.getElementById("lastEntry");
+    const statusBox = document.getElementById("status");
+    const list = document.getElementById("list");
+    const savedText = document.getElementById("savedText");
+
+    let entries = loadEntries();
+    let duplicateBlocks = Number(localStorage.getItem(DUPE_KEY) || localStorage.getItem(OLD_DUPE_KEY) || "0");
+
+    function getRadioValue(name) {
+      const checked = document.querySelector('input[name="' + name + '"]:checked');
+      return checked ? checked.value : "";
+    }
+
+    function loadEntries() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(OLD_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return parsed.map(item => ({
+          code: item.code,
+          size: item.size || "12 ft",
+          condition: item.condition || "Good",
+          status: item.status || "Built",
+          timestamp: item.timestamp || new Date().toISOString()
+        }));
+      } catch {
+        return [];
+      }
+    }
+
+    function saveEntries() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      localStorage.setItem(DUPE_KEY, String(duplicateBlocks));
+      savedText.textContent = "Saved on this device";
+    }
+
+    function normalize(value) {
+      return value.trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function isValid(code) {
+      return /^[A-Z0-9]{6}$/.test(code);
+    }
+
+    function setStatus(message, type) {
+      statusBox.textContent = message;
+      statusBox.className = "status" + (type ? " " + type : "");
+    }
+
+    function addEntry() {
+      const code = normalize(input.value);
+      const size = sizeSelect.value;
+      const condition = getRadioValue("containerCondition");
+      const containerStatus = getRadioValue("containerStatus");
+
+      if (!size) {
+        setStatus("Select a container size first.", "warning");
+        sizeSelect.focus();
+        return;
+      }
+
+      if (!condition) {
+        setStatus("Select a container condition first.", "warning");
+        return;
+      }
+
+      if (!containerStatus) {
+        setStatus("Select a container status first.", "warning");
+        return;
+      }
+
+      if (!code) {
+        setStatus("Type a container number first.", "warning");
+        input.focus();
+        return;
+      }
+
+      if (!isValid(code)) {
+        setStatus("Invalid entry. Container number must be exactly 6 letters/numbers.", "error");
+        input.select();
+        return;
+      }
+
+      if (entries.some(item => item.code === code)) {
+        duplicateBlocks += 1;
+        saveEntries();
+        setStatus("Duplicate blocked: " + code + " is already on the list.", "warning");
+        input.select();
+        render();
+        return;
+      }
+
+      entries.push({
+        code,
+        size,
+        condition,
+        status: containerStatus,
+        timestamp: new Date().toISOString()
+      });
+
+      input.value = "";
+      saveEntries();
+      setStatus("Saved " + code + " — " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
+      render();
+      input.focus();
+    }
+
+    function undoLast() {
+      if (!entries.length) {
+        setStatus("There is nothing to undo.", "warning");
+        input.focus();
+        return;
+      }
+
+      const removed = entries.pop();
+      saveEntries();
+      setStatus("Removed last entry: " + removed.code + ".", "warning");
+      render();
+      input.focus();
+    }
+
+    function deleteEntry(index) {
+      const removed = entries.splice(index, 1)[0];
+      saveEntries();
+      setStatus("Deleted " + removed.code + ".", "warning");
+      render();
+      input.focus();
+    }
+
+    function clearFinishedList() {
+      if (!entries.length) {
+        setStatus("The list is already empty.", "warning");
+        finishConfirm.value = "";
+        input.focus();
+        return;
+      }
+
+      if (finishConfirm.value.trim().toUpperCase() !== "FINISHED") {
+        setStatus("To clear the entire list, type FINISHED in the confirmation box first.", "error");
+        finishConfirm.focus();
+        return;
+      }
+
+      const ok = confirm("This will permanently clear all saved entries from this device. Make sure you exported the CSV first.");
+      if (!ok) return;
+
+      entries = [];
+      duplicateBlocks = 0;
+      finishConfirm.value = "";
+      saveEntries();
+      render();
+      setStatus("Finished list cleared. Ready for a new inventory.", "success");
+      input.focus();
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      if (/[",\n\r]/.test(text)) {
+        return '"' + text.replace(/"/g, '""') + '"';
+      }
+      return text;
+    }
+
+    function formatLocalTime(iso) {
+      const date = new Date(iso);
+      return date.toLocaleString();
+    }
+
+    function buildCsv() {
+      const rows = [
+        ["Row", "Container Number", "Container Size", "Container Condition", "Container Status", "Date/Time Entered"]
+      ];
+
+      entries.forEach((item, index) => {
+        rows.push([
+          index + 1,
+          item.code,
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          formatLocalTime(item.timestamp)
+        ]);
+      });
+
+      return rows.map(row => row.map(csvEscape).join(",")).join("\n");
+    }
+
+    function exportCsv() {
+      if (!entries.length) {
+        setStatus("No entries to export yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const csv = buildCsv();
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const filename = "inventory_" + yyyy + "-" + mm + "-" + dd + ".csv";
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setStatus("CSV exported: " + filename + ". Open it with Excel.", "success");
+      input.focus();
+    }
+
+    async function copyList() {
+      if (!entries.length) {
+        setStatus("No entries to copy yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const text = entries.map(item => [
+        item.code,
+        item.size || "",
+        item.condition || "",
+        item.status || ""
+      ].join("\t")).join("\n");
+
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus("Container list copied.", "success");
+      } catch {
+        const area = document.createElement("textarea");
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+        setStatus("Container list copied.", "success");
+      }
+
+      input.focus();
+    }
+
+    function render() {
+      count.textContent = entries.length;
+      dupeCount.textContent = duplicateBlocks;
+      lastEntry.textContent = entries.length ? entries[entries.length - 1].code : "—";
+
+      if (!entries.length) {
+        list.innerHTML = '<div class="empty">No containers entered yet.</div>';
+        return;
+      }
+
+      list.innerHTML = "";
+
+      const recent = entries.slice().reverse();
+      recent.forEach((item, reverseIndex) => {
+        const originalIndex = entries.length - 1 - reverseIndex;
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const num = document.createElement("div");
+        num.className = "num";
+        num.textContent = "#" + (originalIndex + 1);
+
+        const info = document.createElement("div");
+
+        const code = document.createElement("div");
+        code.className = "code";
+        code.textContent = item.code;
+
+        const details = document.createElement("div");
+        details.className = "details";
+
+        [item.size || "12 ft", item.condition || "Good", item.status || "Built"].forEach(value => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = value;
+          details.appendChild(tag);
+        });
+
+        info.appendChild(code);
+        info.appendChild(details);
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "danger";
+        del.textContent = "Delete";
+        del.addEventListener("click", () => deleteEntry(originalIndex));
+
+        row.appendChild(num);
+        row.appendChild(info);
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+    }
+
+    input.addEventListener("input", () => {
+      input.value = normalize(input.value);
+    });
+
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        addEntry();
+      }
+    });
+
+    finishConfirm.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        clearFinishedList();
+      }
+    });
+
+    addBtn.addEventListener("click", addEntry);
+    exportBtn.addEventListener("click", exportCsv);
+    undoBtn.addEventListener("click", undoLast);
+    copyBtn.addEventListener("click", copyList);
+    finishClearBtn.addEventListener("click", clearFinishedList);
+
+    render();
+    input.focus();
+  </script>
+</body>
+</html>
