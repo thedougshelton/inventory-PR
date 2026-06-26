@@ -23,9 +23,7 @@
       --soft: #eef2f7;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -42,9 +40,7 @@
       padding-bottom: 44px;
     }
 
-    header {
-      margin-bottom: 14px;
-    }
+    header { margin-bottom: 14px; }
 
     h1 {
       font-size: 28px;
@@ -94,11 +90,64 @@
       margin: 14px 0;
     }
 
-    label {
+    label,
+    .field-label {
       display: block;
       font-size: 14px;
       font-weight: 650;
       margin-bottom: 8px;
+    }
+
+    .field-group { margin-bottom: 16px; }
+
+    select {
+      width: 100%;
+      min-height: 54px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fff;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 650;
+      padding: 12px 14px;
+    }
+
+    select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.10);
+      outline: none;
+    }
+
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .option-pill {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 54px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fff;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .option-pill input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .option-pill:has(input:checked) {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accentText);
     }
 
     .entry-row {
@@ -139,9 +188,7 @@
       min-height: 48px;
     }
 
-    button:active {
-      transform: translateY(1px);
-    }
+    button:active { transform: translateY(1px); }
 
     .primary {
       background: var(--accent);
@@ -152,18 +199,12 @@
 
     .actions {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 10px;
       margin-top: 12px;
     }
 
-    .full {
-      grid-column: 1 / -1;
-    }
-
-    .danger {
-      color: var(--danger);
-    }
+    .danger { color: var(--danger); }
 
     .status {
       margin-top: 10px;
@@ -240,6 +281,25 @@
       letter-spacing: 0.08em;
     }
 
+    .details {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 13px;
+      color: var(--muted);
+      background: #f8fafc;
+      line-height: 1;
+    }
+
     .row button {
       min-height: 38px;
       padding: 8px 10px;
@@ -263,42 +323,15 @@
     }
 
     @media (max-width: 560px) {
-      .wrap {
-        padding: 14px;
-      }
-
-      h1 {
-        font-size: 25px;
-      }
-
-      .grid {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      .metric:last-child {
-        grid-column: 1 / -1;
-      }
-
-      .entry-row {
-        flex-direction: column;
-      }
-
-      .primary {
-        width: 100%;
-      }
-
-      input[type="text"] {
-        font-size: 26px;
-        min-height: 62px;
-      }
-
-      .actions {
-        grid-template-columns: 1fr;
-      }
-
-      .row {
-        grid-template-columns: 44px 1fr auto;
-      }
+      .wrap { padding: 14px; }
+      h1 { font-size: 25px; }
+      .grid { grid-template-columns: 1fr 1fr; }
+      .metric:last-child { grid-column: 1 / -1; }
+      .entry-row { flex-direction: column; }
+      .primary { width: 100%; }
+      input[type="text"] { font-size: 26px; min-height: 62px; }
+      .actions { grid-template-columns: 1fr; }
+      .row { grid-template-columns: 44px 1fr auto; }
     }
   </style>
 </head>
@@ -306,7 +339,7 @@
   <main class="wrap">
     <header>
       <h1>Inventory Entry</h1>
-      <p class="sub">Type a 6-character container number, press Enter, and keep going. Export to CSV when finished.</p>
+      <p class="sub">Select size, condition, and status. Then type a 6-character container number and press Enter.</p>
     </header>
 
     <section class="grid" aria-label="Inventory summary">
@@ -325,6 +358,44 @@
     </section>
 
     <section class="card">
+      <div class="field-group">
+        <label for="containerSize">Container size</label>
+        <select id="containerSize">
+          <option value="" selected disabled>Select container size</option>
+          <option value="8 ft">8 ft</option>
+          <option value="12 ft">12 ft</option>
+          <option value="16 ft">16 ft</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Container Condition</div>
+        <div class="option-grid" role="radiogroup" aria-label="Container Condition">
+          <label class="option-pill">
+            <input type="radio" name="containerCondition" value="Good" checked />
+            Good
+          </label>
+          <label class="option-pill">
+            <input type="radio" name="containerCondition" value="Bad" />
+            Bad
+          </label>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Container Status</div>
+        <div class="option-grid" role="radiogroup" aria-label="Container Status">
+          <label class="option-pill">
+            <input type="radio" name="containerStatus" value="Built" checked />
+            Built
+          </label>
+          <label class="option-pill">
+            <input type="radio" name="containerStatus" value="Flat" />
+            Flat
+          </label>
+        </div>
+      </div>
+
       <label for="containerInput">Container number</label>
       <div class="entry-row">
         <input
@@ -362,10 +433,13 @@
   </main>
 
   <script>
-    const STORAGE_KEY = "warehouse_inventory_entries_v1";
-    const DUPE_KEY = "warehouse_inventory_dupes_v1";
+    const STORAGE_KEY = "warehouse_inventory_entries_v2";
+    const OLD_STORAGE_KEY = "warehouse_inventory_entries_v1";
+    const DUPE_KEY = "warehouse_inventory_dupes_v2";
+    const OLD_DUPE_KEY = "warehouse_inventory_dupes_v1";
 
     const input = document.getElementById("containerInput");
+    const sizeSelect = document.getElementById("containerSize");
     const addBtn = document.getElementById("addBtn");
     const exportBtn = document.getElementById("exportBtn");
     const undoBtn = document.getElementById("undoBtn");
@@ -379,12 +453,24 @@
     const savedText = document.getElementById("savedText");
 
     let entries = loadEntries();
-    let duplicateBlocks = Number(localStorage.getItem(DUPE_KEY) || "0");
+    let duplicateBlocks = Number(localStorage.getItem(DUPE_KEY) || localStorage.getItem(OLD_DUPE_KEY) || "0");
+
+    function getRadioValue(name) {
+      const checked = document.querySelector('input[name="' + name + '"]:checked');
+      return checked ? checked.value : "";
+    }
 
     function loadEntries() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : [];
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(OLD_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return parsed.map(item => ({
+          code: item.code,
+          size: item.size || "",
+          condition: item.condition || "Good",
+          status: item.status || "Built",
+          timestamp: item.timestamp || new Date().toISOString()
+        }));
       } catch {
         return [];
       }
@@ -397,13 +483,7 @@
     }
 
     function normalize(value) {
-      // Trim, uppercase, remove all non A-Z0-9 characters and collapse whitespace,
-      // then limit length (note: HTML maxlength still applies for typed input).
-      return String(value ?? "")
-        .trim()
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, "") // remove non-alphanumeric
-        .replace(/\s+/g, "");
+      return value.trim().toUpperCase().replace(/\s+/g, "");
     }
 
     function isValid(code) {
@@ -417,6 +497,25 @@
 
     function addEntry() {
       const code = normalize(input.value);
+      const size = sizeSelect.value;
+      const condition = getRadioValue("containerCondition");
+      const containerStatus = getRadioValue("containerStatus");
+
+      if (!size) {
+        setStatus("Select a container size first.", "warning");
+        sizeSelect.focus();
+        return;
+      }
+
+      if (!condition) {
+        setStatus("Select a container condition first.", "warning");
+        return;
+      }
+
+      if (!containerStatus) {
+        setStatus("Select a container status first.", "warning");
+        return;
+      }
 
       if (!code) {
         setStatus("Type a container number first.", "warning");
@@ -441,12 +540,15 @@
 
       entries.push({
         code,
+        size,
+        condition,
+        status: containerStatus,
         timestamp: new Date().toISOString()
       });
 
       input.value = "";
       saveEntries();
-      setStatus("Saved " + code + ". Ready for next container.", "success");
+      setStatus("Saved " + code + " — " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
       render();
       input.focus();
     }
@@ -488,11 +590,18 @@
 
     function buildCsv() {
       const rows = [
-        ["Row", "Container Number", "Date/Time Entered"]
+        ["Row", "Container Number", "Container Size", "Container Condition", "Container Status", "Date/Time Entered"]
       ];
 
       entries.forEach((item, index) => {
-        rows.push([index + 1, item.code, formatLocalTime(item.timestamp)]);
+        rows.push([
+          index + 1,
+          item.code,
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          formatLocalTime(item.timestamp)
+        ]);
       });
 
       return rows.map(row => row.map(csvEscape).join(",")).join("\n");
@@ -534,7 +643,12 @@
         return;
       }
 
-      const text = entries.map(item => item.code).join("\n");
+      const text = entries.map(item => [
+        item.code,
+        item.size || "",
+        item.condition || "",
+        item.status || ""
+      ].join("\t")).join("\n");
 
       try {
         await navigator.clipboard.writeText(text);
@@ -552,31 +666,6 @@
       input.focus();
     }
 
-    // Keep live normalization for typed input
-    input.addEventListener("input", () => {
-      input.value = normalize(input.value).slice(0, 6);
-    });
-
-    // sanitize pasted text (common with handheld scanners)
-    input.addEventListener("paste", (e) => {
-      e.preventDefault();
-      const pasted = e.clipboardData?.getData("text") ?? "";
-      const cleaned = normalize(pasted).slice(0, 6);
-      input.value = cleaned;
-      // move cursor to end
-      requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
-    });
-
-    // keyboard shortcut: Ctrl/Cmd+Z to undo last entry
-    document.addEventListener("keydown", (e) => {
-      // allow undo no matter what has focus; in many scanning workflows users expect a quick undo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        undoLast();
-      }
-    });
-
-    // render: construct a semantic list (ul > li) while keeping .row styling
     function render() {
       count.textContent = entries.length;
       dupeCount.textContent = duplicateBlocks;
@@ -589,21 +678,9 @@
 
       list.innerHTML = "";
 
-      // create a semantic list container
-      const ul = document.createElement("ul");
-      ul.setAttribute("role", "list");
-      ul.style.listStyle = "none";
-      ul.style.margin = "0";
-      ul.style.padding = "0";
-
       const recent = entries.slice().reverse();
       recent.forEach((item, reverseIndex) => {
         const originalIndex = entries.length - 1 - reverseIndex;
-
-        const li = document.createElement("li");
-        li.setAttribute("role", "listitem");
-
-        // reuse the existing .row styling by applying the same class to the li
         const row = document.createElement("div");
         row.className = "row";
 
@@ -611,27 +688,41 @@
         num.className = "num";
         num.textContent = "#" + (originalIndex + 1);
 
+        const info = document.createElement("div");
+
         const code = document.createElement("div");
         code.className = "code";
         code.textContent = item.code;
+
+        const details = document.createElement("div");
+        details.className = "details";
+
+        [item.size || "Size not set", item.condition || "Good", item.status || "Built"].forEach(value => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = value;
+          details.appendChild(tag);
+        });
+
+        info.appendChild(code);
+        info.appendChild(details);
 
         const del = document.createElement("button");
         del.type = "button";
         del.className = "danger";
         del.textContent = "Delete";
-        // accessible label for screen readers:
-        del.setAttribute("aria-label", `Delete container ${item.code}`);
         del.addEventListener("click", () => deleteEntry(originalIndex));
 
         row.appendChild(num);
-        row.appendChild(code);
+        row.appendChild(info);
         row.appendChild(del);
-        li.appendChild(row);
-        ul.appendChild(li);
+        list.appendChild(row);
       });
-
-      list.appendChild(ul);
     }
+
+    input.addEventListener("input", () => {
+      input.value = normalize(input.value);
+    });
 
     input.addEventListener("keydown", event => {
       if (event.key === "Enter") {
