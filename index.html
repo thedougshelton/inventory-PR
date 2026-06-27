@@ -8,6 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
   <title>Tampa Inventory Entry</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -20,7 +21,12 @@
       --danger: #b91c1c;
       --success: #166534;
       --warning: #92400e;
+      --info: #1e40af;
       --soft: #eef2f7;
+      --greenSoft: #ecfdf5;
+      --redSoft: #fef2f2;
+      --yellowSoft: #fffbeb;
+      --blueSoft: #eff6ff;
     }
 
     * { box-sizing: border-box; }
@@ -34,7 +40,7 @@
     }
 
     .wrap {
-      max-width: 760px;
+      max-width: 920px;
       margin: 0 auto;
       padding: 18px;
       padding-bottom: 44px;
@@ -48,6 +54,16 @@
       margin: 0 0 6px;
     }
 
+    h2 {
+      margin: 0;
+      font-size: 19px;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+    }
+
     .sub {
       color: var(--muted);
       margin: 0;
@@ -55,9 +71,42 @@
       line-height: 1.4;
     }
 
+    .top-status {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 13px;
+      color: var(--muted);
+      background: #fff;
+      line-height: 1;
+    }
+
+    .badge.locked {
+      color: var(--danger);
+      background: var(--redSoft);
+      border-color: #fecaca;
+      font-weight: 700;
+    }
+
+    .badge.unlocked {
+      color: var(--success);
+      background: var(--greenSoft);
+      border-color: #bbf7d0;
+      font-weight: 700;
+    }
+
     .grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 10px;
       margin: 16px 0;
     }
@@ -77,9 +126,10 @@
     }
 
     .metric .value {
-      font-size: 25px;
-      font-weight: 700;
+      font-size: 23px;
+      font-weight: 750;
       letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
     }
 
     .card {
@@ -100,6 +150,10 @@
 
     .field-group { margin-bottom: 16px; }
 
+    input[type="text"],
+    input[type="number"],
+    input[type="file"],
+    textarea,
     select {
       width: 100%;
       min-height: 54px;
@@ -107,16 +161,44 @@
       border-radius: 16px;
       background: #fff;
       color: var(--text);
-      font-size: 20px;
-      font-weight: 650;
+      font-size: 18px;
       padding: 12px 14px;
     }
 
-    select:focus,
-    input[type="text"]:focus {
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+      font-family: inherit;
+    }
+
+    select { font-weight: 650; }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.10);
       outline: none;
+    }
+
+    .session-row,
+    .two-col,
+    .three-col {
+      display: grid;
+      gap: 10px;
+    }
+
+    .session-row {
+      grid-template-columns: 1fr auto;
+      align-items: end;
+    }
+
+    .two-col {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .option-grid {
@@ -157,17 +239,10 @@
       align-items: stretch;
     }
 
-    input[type="text"] {
-      width: 100%;
+    #containerInput {
       font-size: 30px;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 14px 14px;
-      outline: none;
-      background: #fff;
-      color: var(--text);
       min-height: 64px;
     }
 
@@ -186,18 +261,17 @@
 
     button:active { transform: translateY(1px); }
 
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .primary {
       background: var(--accent);
       border-color: var(--accent);
       color: var(--accentText);
       min-width: 94px;
-    }
-
-    .actions {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-top: 12px;
     }
 
     .danger { color: var(--danger); }
@@ -207,6 +281,22 @@
       background: var(--danger);
       border-color: var(--danger);
     }
+
+    .success-solid {
+      color: white;
+      background: var(--success);
+      border-color: var(--success);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .actions.two { grid-template-columns: repeat(2, 1fr); }
+    .actions.three { grid-template-columns: repeat(3, 1fr); }
 
     .status {
       margin-top: 10px;
@@ -219,20 +309,10 @@
       min-height: 42px;
     }
 
-    .status.success {
-      color: var(--success);
-      background: #ecfdf5;
-    }
-
-    .status.error {
-      color: var(--danger);
-      background: #fef2f2;
-    }
-
-    .status.warning {
-      color: var(--warning);
-      background: #fffbeb;
-    }
+    .status.success { color: var(--success); background: var(--greenSoft); }
+    .status.error { color: var(--danger); background: var(--redSoft); }
+    .status.warning { color: var(--warning); background: var(--yellowSoft); }
+    .status.info { color: var(--info); background: var(--blueSoft); }
 
     .list-head {
       display: flex;
@@ -240,11 +320,6 @@
       gap: 12px;
       align-items: baseline;
       margin-bottom: 8px;
-    }
-
-    .list-head h2 {
-      margin: 0;
-      font-size: 19px;
     }
 
     .small {
@@ -255,14 +330,14 @@
     .inventory-list {
       display: grid;
       gap: 8px;
-      max-height: 430px;
+      max-height: 460px;
       overflow: auto;
       padding-right: 2px;
     }
 
     .row {
       display: grid;
-      grid-template-columns: 54px 1fr auto;
+      grid-template-columns: 64px 1fr auto;
       align-items: center;
       gap: 10px;
       border: 1px solid var(--border);
@@ -300,9 +375,27 @@
       color: var(--muted);
       background: #f8fafc;
       line-height: 1;
+      max-width: 100%;
+      overflow-wrap: anywhere;
     }
 
-    .row button {
+    .note-preview {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .row-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: end;
+    }
+
+    .row button,
+    .row-actions button {
       min-height: 38px;
       padding: 8px 10px;
       font-size: 14px;
@@ -322,6 +415,114 @@
       color: var(--muted);
       line-height: 1.45;
       margin-top: 10px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .summary-box {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .summary-box h3 { margin-bottom: 8px; }
+
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-top: 1px solid var(--border);
+      font-size: 15px;
+    }
+
+    .summary-line:first-of-type { border-top: 0; }
+
+    .edit-panel {
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #f8fafc;
+      padding: 12px;
+      margin-top: 12px;
+    }
+
+    .edit-panel.open { display: block; }
+
+    .edit-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .edit-grid .full { grid-column: 1 / -1; }
+
+    .report-box {
+      white-space: pre-wrap;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px;
+      background: #fff;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .compact-import-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 12px;
+    }
+
+    .compact-import-panel[hidden] {
+      display: none;
+    }
+
+    .compact-import-panel .list-head {
+      margin-bottom: 10px;
+    }
+
+    .collapsible-section summary.section-toggle {
+      list-style: none;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 16px;
+      font-weight: 750;
+      color: var(--text);
+      user-select: none;
+    }
+
+    .collapsible-section summary.section-toggle::-webkit-details-marker {
+      display: none;
+    }
+
+    .collapsible-section summary.section-toggle::after {
+      content: "Open";
+      float: right;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+      margin-top: 2px;
+    }
+
+    .collapsible-section[open] summary.section-toggle::after {
+      content: "Close";
+    }
+
+    .section-body {
+      margin-top: 12px;
     }
 
     details.finish-clear summary {
@@ -358,29 +559,151 @@
       min-height: 48px;
     }
 
-    @media (max-width: 560px) {
+    body.entry-mode .wrap {
+      max-width: 720px;
+      padding-top: 12px;
+    }
+
+    body.entry-mode header,
+    body.entry-mode .top-status,
+    body.entry-mode .secondary-section {
+      display: none;
+    }
+
+    body.entry-mode .setup-card {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      margin: 0 0 10px;
+    }
+
+    body.entry-mode .setup-card .session-row {
+      display: block;
+    }
+
+    body.entry-mode .setup-card .session-row > div,
+    body.entry-mode .setup-card .two-col,
+    body.entry-mode .setup-card .help {
+      display: none;
+    }
+
+    body.entry-mode #entryModeBtn {
+      width: 100%;
+      min-height: 58px;
+      font-size: 18px;
+      border-width: 2px;
+    }
+
+    body.entry-mode .grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      margin: 10px 0;
+    }
+
+    body.entry-mode .metric {
+      min-height: 66px;
+      padding: 8px 6px;
+      border-radius: 14px;
+      text-align: center;
+    }
+
+    body.entry-mode .metric .label {
+      font-size: 11px;
+      line-height: 1.15;
+      margin-bottom: 5px;
+    }
+
+    body.entry-mode .metric .value {
+      font-size: 18px;
+      line-height: 1.05;
+    }
+
+    body.entry-mode .card.entry-card {
+      border-width: 2px;
+      margin-top: 10px;
+    }
+
+    body.entry-mode .notes-group,
+    body.entry-mode #entryHelp,
+    body.entry-mode .entry-card .actions {
+      display: none;
+    }
+
+    body.entry-mode #containerInput {
+      font-size: 40px;
+      min-height: 78px;
+    }
+
+    body.entry-mode .status {
+      font-size: 18px;
+      font-weight: 700;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+    }
+
+    @media (max-width: 820px) {
       .wrap { padding: 14px; }
       h1 { font-size: 25px; }
 
-      .grid { grid-template-columns: 1fr 1fr; }
-      .metric:last-child { grid-column: 1 / -1; }
+      .grid,
+      .summary-grid {
+        grid-template-columns: 1fr 1fr;
+      }
 
-      .entry-row { flex-direction: column; }
-      .primary { width: 100%; }
+      body.entry-mode .grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
 
-      input[type="text"] {
+      .entry-row {
+        flex-direction: column;
+      }
+
+      .session-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .two-col,
+      .three-col,
+      .confirm-row,
+      .edit-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .actions,
+      .actions.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .actions.two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .actions button {
+        font-size: 13px;
+        padding: 10px 8px;
+      }
+
+      .edit-grid .full { grid-column: auto; }
+
+      .entry-row .primary { width: 100%; }
+
+      #containerInput {
         font-size: 26px;
         min-height: 62px;
       }
 
-      .actions,
-      .confirm-row {
-        grid-template-columns: 1fr;
+      .row {
+        grid-template-columns: 52px 1fr;
       }
 
-      .row {
-        grid-template-columns: 44px 1fr auto;
+      .row-actions {
+        grid-column: 1 / -1;
+        justify-content: stretch;
       }
+
+      .row-actions button { flex: 1; }
     }
   </style>
 </head>
@@ -389,24 +712,51 @@
     <header>
       <h1>Tampa Inventory Entry</h1>
       <p class="sub">Select size, condition, and status. Then type a 6-character container number and press Enter.</p>
+      <div class="top-status">
+        <span id="lockBadge" class="badge unlocked">Editing Unlocked</span>
+        <span id="xlsxBadge" class="badge">XLSX loading…</span>
+      </div>
     </header>
+
+    <section class="card setup-card">
+      <div class="session-row">
+        <div>
+          <label for="sessionName">Inventory session name</label>
+          <input id="sessionName" type="text" autocomplete="off" placeholder="Example: Tampa June Inventory" />
+        </div>
+        <button id="entryModeBtn" type="button">Big Entry Mode</button>
+      </div>
+
+      <div class="two-col" style="margin-top: 12px;">
+        <div>
+          <label for="employeeInitials">Employee/User initials</label>
+          <input id="employeeInitials" type="text" autocomplete="off" maxlength="8" placeholder="Example: DS" />
+        </div>
+      </div>
+
+      <p class="help">Session name and initials are included in the XLSX export and final report.</p>
+    </section>
 
     <section class="grid" aria-label="Inventory summary">
       <div class="metric">
-        <div class="label">Entered</div>
+        <div class="label">Active Entries</div>
         <div class="value" id="count">0</div>
       </div>
       <div class="metric">
-        <div class="label">Duplicates Blocked</div>
-        <div class="value" id="dupeCount">0</div>
+        <div class="label">Deleted Entries</div>
+        <div class="value" id="deletedMetric">0</div>
       </div>
       <div class="metric">
-        <div class="label">Last Entry</div>
-        <div class="value" id="lastEntry">—</div>
+        <div class="label">Last Container Number</div>
+        <div class="value" id="lastEntryMetric">—</div>
+      </div>
+      <div class="metric">
+        <div class="label">Last Saved</div>
+        <div class="value" id="lastSaved">—</div>
       </div>
     </section>
 
-    <section class="card">
+    <section class="card entry-card">
       <div class="field-group">
         <label for="containerSize">Container size</label>
         <select id="containerSize">
@@ -444,6 +794,11 @@
         </div>
       </div>
 
+      <div class="field-group notes-group">
+        <label for="notesInput">Notes</label>
+        <textarea id="notesInput" autocomplete="off" placeholder="Optional notes, damage comments, missing label, etc."></textarea>
+      </div>
+
       <label for="containerInput">Container number</label>
       <div class="entry-row">
         <input
@@ -461,31 +816,159 @@
       </div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
       <p id="entryHelp" class="help">
-        Accepted format: exactly 6 letters/numbers. The app auto-capitalizes entries and blocks duplicates.
+        Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
       </p>
 
       <div class="actions">
-        <button id="exportBtn" type="button">Export CSV for Excel</button>
+        <button id="exportXlsxBtn" type="button">Export XLSX</button>
+        <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
         <button id="undoBtn" type="button">Undo Last Entry</button>
-        <button id="copyBtn" type="button">Copy List</button>
+        <button id="copyBtn" type="button">Copy Active List</button>
+        <button id="backupJsonBtn" type="button">Export Backup JSON</button>
+        <button id="unlockBtn" type="button">Unlock Editing</button>
+        <button id="focusEntryBtn" type="button">Focus Entry Box</button>
+        <button id="exportCsvBtn" type="button">Export CSV Backup</button>
+        <button id="toggleImportBtn" type="button">Import / Restore</button>
+      </div>
+
+      <div id="importPanel" class="compact-import-panel" hidden>
+        <div class="list-head">
+          <h2>Import / Restore from Backup</h2>
+          <span class="small">JSON, CSV, or XLSX</span>
+        </div>
+        <input id="backupFileInput" type="file" accept=".json,.csv,.xlsx,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        <div class="actions two">
+          <button id="importBackupBtn" type="button">Import Backup</button>
+          <button id="clearFileBtn" type="button">Clear Selected File</button>
+        </div>
+        <p class="help">Import replaces the current active/deleted lists after confirmation. Export Backup JSON is the safest restore format.</p>
       </div>
     </section>
 
-    <section class="card">
+<section class="card secondary-section">
       <div class="list-head">
-        <h2>Entered Containers</h2>
+        <h2>Search Active Entries</h2>
+        <span class="small" id="searchCountText">Showing all</span>
+      </div>
+      <input id="searchInput" type="text" autocomplete="off" placeholder="Search by container number, entry #, size, condition, status, initials, or notes" />
+
+      <div id="editPanel" class="edit-panel">
+        <h3 id="editTitle">Edit Entry</h3>
+        <div class="edit-grid">
+          <div class="full">
+            <label for="editCode">Container number</label>
+            <input id="editCode" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+          </div>
+          <div>
+            <label for="editSize">Container size</label>
+            <select id="editSize">
+              <option value="8 ft">8 ft</option>
+              <option value="12 ft">12 ft</option>
+              <option value="16 ft">16 ft</option>
+            </select>
+          </div>
+          <div>
+            <label for="editCondition">Container Condition</label>
+            <select id="editCondition">
+              <option value="Good">Good</option>
+              <option value="Bad">Bad</option>
+            </select>
+          </div>
+          <div>
+            <label for="editStatus">Container Status</label>
+            <select id="editStatus">
+              <option value="Built">Built</option>
+              <option value="Flat">Flat</option>
+            </select>
+          </div>
+          <div>
+            <label for="editInitials">Employee/User initials</label>
+            <input id="editInitials" type="text" maxlength="8" autocomplete="off" />
+          </div>
+          <div class="full">
+            <label for="editNotes">Notes</label>
+            <textarea id="editNotes" autocomplete="off"></textarea>
+          </div>
+          <div class="actions two full">
+            <button id="saveEditBtn" class="primary" type="button">Save Edit</button>
+            <button id="cancelEditBtn" type="button">Cancel Edit</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card secondary-section">
+      <div class="list-head">
+        <h2>Summary Totals</h2>
+        <span class="small" id="summaryText">Active entries only</span>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-box">
+          <h3>By Size</h3>
+          <div id="sizeSummary"></div>
+        </div>
+        <div class="summary-box">
+          <h3>By Condition</h3>
+          <div id="conditionSummary"></div>
+        </div>
+        <div class="summary-box">
+          <h3>By Status</h3>
+          <div id="statusSummary"></div>
+        </div>
+        <div class="summary-box">
+          <h3>By Initials</h3>
+          <div id="initialsSummary"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card secondary-section">
+      <details class="collapsible-section">
+        <summary class="section-toggle">Final Inventory Report</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h2>Final Inventory Report</h2>
+            <span class="small" id="reportUpdatedText">Auto-generated</span>
+          </div>
+          <div id="finalReport" class="report-box"></div>
+          <div class="actions two">
+            <button id="copyReportBtn" type="button">Copy Report</button>
+            <button id="downloadReportBtn" type="button">Download Report TXT</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="card secondary-section">
+      <div class="list-head">
+        <h2>Active Entries</h2>
         <span class="small" id="savedText">Saved on this device</span>
       </div>
       <div id="list" class="inventory-list"></div>
     </section>
 
-    <section class="card">
+    <section class="card secondary-section">
+      <div class="list-head">
+        <h2>Deleted Entries</h2>
+        <span class="small" id="deletedCountText">0 deleted</span>
+      </div>
+      <div id="deletedList" class="inventory-list"></div>
+      <div class="actions two">
+        <button id="exportDeletedCsvBtn" type="button">Export Deleted CSV</button>
+        <button id="copyDeletedBtn" type="button">Copy Deleted List</button>
+      </div>
+      <p class="help">
+        Deleted entries stay here until the finished list is cleared. You can restore a deleted entry with the same original entry number.
+      </p>
+    </section>
+
+    <section class="card secondary-section">
       <details class="finish-clear">
         <summary>Finished inventory? Open export/clear controls</summary>
         <div class="confirm-panel">
           <p>
-            Export your CSV first. To clear the entire list after finishing, type
-            <strong>FINISHED</strong> below, then press the clear button.
+            Use <strong>Final Export + Lock</strong> first. To clear the entire list after finishing,
+            type <strong>FINISHED</strong> below, then press the clear button.
           </p>
           <div class="confirm-row">
             <input
@@ -503,59 +986,220 @@
   </main>
 
   <script>
-    const STORAGE_KEY = "warehouse_inventory_entries_v2";
-    const OLD_STORAGE_KEY = "warehouse_inventory_entries_v1";
-    const DUPE_KEY = "warehouse_inventory_dupes_v2";
-    const OLD_DUPE_KEY = "warehouse_inventory_dupes_v1";
+    const STORAGE_KEY = "warehouse_inventory_entries_v4";
+    const OLD_KEYS = ["warehouse_inventory_entries_v3", "warehouse_inventory_entries_v2", "warehouse_inventory_entries_v1"];
+    const DELETED_KEY = "warehouse_inventory_deleted_entries_v4";
+    const OLD_DELETED_KEYS = ["warehouse_inventory_deleted_entries_v2", "warehouse_inventory_deleted_entries_v1"];
+    const DUPE_KEY = "warehouse_inventory_dupes_v4";
+    const OLD_DUPE_KEYS = ["warehouse_inventory_dupes_v3", "warehouse_inventory_dupes_v2", "warehouse_inventory_dupes_v1"];
+    const NEXT_SEQUENCE_KEY = "warehouse_inventory_next_sequence_v4";
+    const OLD_NEXT_KEYS = ["warehouse_inventory_next_sequence_v2", "warehouse_inventory_next_sequence_v1"];
+    const SESSION_KEY = "warehouse_inventory_session_name_v2";
+    const INITIALS_KEY = "warehouse_inventory_initials_v1";
+    const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
+    const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
+    const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
+    const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
 
     const input = document.getElementById("containerInput");
+    const notesInput = document.getElementById("notesInput");
     const sizeSelect = document.getElementById("containerSize");
+    const sessionNameInput = document.getElementById("sessionName");
+    const employeeInitialsInput = document.getElementById("employeeInitials");
+
     const addBtn = document.getElementById("addBtn");
-    const exportBtn = document.getElementById("exportBtn");
+    const exportXlsxBtn = document.getElementById("exportXlsxBtn");
+    const finalExportBtn = document.getElementById("finalExportBtn");
     const undoBtn = document.getElementById("undoBtn");
     const copyBtn = document.getElementById("copyBtn");
+    const backupJsonBtn = document.getElementById("backupJsonBtn");
+    const unlockBtn = document.getElementById("unlockBtn");
+    const focusEntryBtn = document.getElementById("focusEntryBtn");
+    const exportCsvBtn = document.getElementById("exportCsvBtn");
+    const toggleImportBtn = document.getElementById("toggleImportBtn");
+    const importPanel = document.getElementById("importPanel");
+    const entryModeBtn = document.getElementById("entryModeBtn");
+
+    const backupFileInput = document.getElementById("backupFileInput");
+    const importBackupBtn = document.getElementById("importBackupBtn");
+    const clearFileBtn = document.getElementById("clearFileBtn");
+
     const finishConfirm = document.getElementById("finishConfirm");
     const finishClearBtn = document.getElementById("finishClearBtn");
+    const exportDeletedCsvBtn = document.getElementById("exportDeletedCsvBtn");
+    const copyDeletedBtn = document.getElementById("copyDeletedBtn");
+    const searchInput = document.getElementById("searchInput");
+
+    const editPanel = document.getElementById("editPanel");
+    const editTitle = document.getElementById("editTitle");
+    const editCode = document.getElementById("editCode");
+    const editSize = document.getElementById("editSize");
+    const editCondition = document.getElementById("editCondition");
+    const editStatus = document.getElementById("editStatus");
+    const editInitials = document.getElementById("editInitials");
+    const editNotes = document.getElementById("editNotes");
+    const saveEditBtn = document.getElementById("saveEditBtn");
+    const cancelEditBtn = document.getElementById("cancelEditBtn");
 
     const count = document.getElementById("count");
-    const dupeCount = document.getElementById("dupeCount");
-    const lastEntry = document.getElementById("lastEntry");
+    const deletedMetric = document.getElementById("deletedMetric");
+    const lastEntryMetric = document.getElementById("lastEntryMetric");
+    const lastSaved = document.getElementById("lastSaved");
+    const lockBadge = document.getElementById("lockBadge");
+    const xlsxBadge = document.getElementById("xlsxBadge");
     const statusBox = document.getElementById("status");
     const list = document.getElementById("list");
+    const deletedList = document.getElementById("deletedList");
+    const deletedCountText = document.getElementById("deletedCountText");
     const savedText = document.getElementById("savedText");
+    const searchCountText = document.getElementById("searchCountText");
+    const sizeSummary = document.getElementById("sizeSummary");
+    const conditionSummary = document.getElementById("conditionSummary");
+    const statusSummary = document.getElementById("statusSummary");
+    const initialsSummary = document.getElementById("initialsSummary");
+    const finalReport = document.getElementById("finalReport");
+    const reportUpdatedText = document.getElementById("reportUpdatedText");
+    const copyReportBtn = document.getElementById("copyReportBtn");
+    const downloadReportBtn = document.getElementById("downloadReportBtn");
 
     let entries = loadEntries();
-    let duplicateBlocks = Number(localStorage.getItem(DUPE_KEY) || localStorage.getItem(OLD_DUPE_KEY) || "0");
+    let deletedEntries = loadDeletedEntries();
+    let duplicateBlocks = loadNumberFromKeys([DUPE_KEY, ...OLD_DUPE_KEYS], 0);
+    let nextSequence = loadNextSequence();
+    let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
+    let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
+    let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
+    let editingSequence = null;
+
+    sessionNameInput.value = localStorage.getItem(SESSION_KEY) || defaultSessionName();
+    employeeInitialsInput.value = localStorage.getItem(INITIALS_KEY) || "";
+
+    if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
+      document.body.classList.add("entry-mode");
+    }
+
+    function defaultSessionName() {
+      const now = new Date();
+      return "Tampa Inventory " + (now.getMonth() + 1) + "/" + now.getDate() + "/" + now.getFullYear();
+    }
+
+    function firstLocalStorageValue(keys) {
+      for (const key of keys) {
+        const value = localStorage.getItem(key);
+        if (value !== null && value !== undefined) return value;
+      }
+      return null;
+    }
+
+    function loadNumberFromKeys(keys, fallback) {
+      const raw = firstLocalStorageValue(keys);
+      const number = Number(raw);
+      return Number.isFinite(number) ? number : fallback;
+    }
 
     function getRadioValue(name) {
       const checked = document.querySelector('input[name="' + name + '"]:checked');
       return checked ? checked.value : "";
     }
 
+    function normalizeEntry(item, fallbackSequence) {
+      const existingSequence = Number(item.sequence || item["Entry Number"] || item.entryNumber);
+      const sequence = Number.isFinite(existingSequence) && existingSequence > 0
+        ? existingSequence
+        : fallbackSequence;
+
+      return {
+        sequence,
+        code: String(item.code || item["Container Number"] || item.containerNumber || "").toUpperCase(),
+        size: item.size || item["Container Size"] || item.containerSize || "12 ft",
+        condition: item.condition || item["Container Condition"] || item.containerCondition || "Good",
+        status: item.status || item["Container Status"] || item.containerStatus || "Built",
+        initials: item.initials || item["Employee/User Initials"] || item["Initials"] || "",
+        notes: item.notes || item["Notes"] || "",
+        timestamp: item.timestamp || item["Date/Time Entered"] || item.dateTimeEntered || new Date().toISOString(),
+        editedAt: item.editedAt || item["Edited Date/Time"] || "",
+        restoredAt: item.restoredAt || ""
+      };
+    }
+
+    function normalizeDeleted(item, fallbackSequence) {
+      const base = normalizeEntry(item, fallbackSequence);
+      return {
+        ...base,
+        originalTimestamp: item.originalTimestamp || item["Original Date/Time Entered"] || item.timestamp || item["Date/Time Entered"] || "",
+        deletedAt: item.deletedAt || item["Deleted Date/Time"] || new Date().toISOString(),
+        deleteType: item.deleteType || item["Deleted By"] || "Imported Deleted Entry"
+      };
+    }
+
     function loadEntries() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(OLD_STORAGE_KEY);
+        const raw = firstLocalStorageValue([STORAGE_KEY, ...OLD_KEYS]);
         const parsed = raw ? JSON.parse(raw) : [];
-        return parsed.map(item => ({
-          code: item.code,
-          size: item.size || "12 ft",
-          condition: item.condition || "Good",
-          status: item.status || "Built",
-          timestamp: item.timestamp || new Date().toISOString()
-        }));
+        let fallbackSequence = 1;
+
+        return parsed.map(item => {
+          const normalized = normalizeEntry(item, fallbackSequence);
+          fallbackSequence = Math.max(fallbackSequence + 1, normalized.sequence + 1);
+          return normalized;
+        }).filter(item => item.code);
       } catch {
         return [];
       }
     }
 
+    function loadDeletedEntries() {
+      try {
+        const raw = firstLocalStorageValue([DELETED_KEY, ...OLD_DELETED_KEYS]);
+        const parsed = raw ? JSON.parse(raw) : [];
+        let fallbackSequence = 1;
+
+        return parsed.map(item => {
+          const normalized = normalizeDeleted(item, fallbackSequence);
+          fallbackSequence = Math.max(fallbackSequence + 1, normalized.sequence + 1);
+          return normalized;
+        }).filter(item => item.code);
+      } catch {
+        return [];
+      }
+    }
+
+    function loadNextSequence() {
+      const savedNext = loadNumberFromKeys([NEXT_SEQUENCE_KEY, ...OLD_NEXT_KEYS], 0);
+      const highestActive = entries.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
+      const highestDeleted = deletedEntries.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
+      const highestExisting = Math.max(highestActive, highestDeleted);
+
+      if (Number.isFinite(savedNext) && savedNext > highestExisting) {
+        return savedNext;
+      }
+
+      return highestExisting + 1;
+    }
+
     function saveEntries() {
+      lastSavedAt = new Date().toISOString();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+      localStorage.setItem(DELETED_KEY, JSON.stringify(deletedEntries));
       localStorage.setItem(DUPE_KEY, String(duplicateBlocks));
+      localStorage.setItem(NEXT_SEQUENCE_KEY, String(nextSequence));
+      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
+      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase());
+      localStorage.setItem(LAST_SAVED_KEY, lastSavedAt);
+      localStorage.setItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false");
       savedText.textContent = "Saved on this device";
     }
 
-    function normalize(value) {
+    function normalizeCode(value) {
       return value.trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function normalizeInitials(value) {
+      return value.trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function normalizeSearch(value) {
+      return value.trim().toUpperCase();
     }
 
     function isValid(code) {
@@ -567,11 +1211,59 @@
       statusBox.className = "status" + (type ? " " + type : "");
     }
 
+    function formatLocalTime(iso) {
+      if (!iso) return "";
+      const date = new Date(iso);
+      if (isNaN(date.getTime())) return String(iso);
+      return date.toLocaleString();
+    }
+
+    function formatShortTime(iso) {
+      if (!iso) return "—";
+      const date = new Date(iso);
+      if (isNaN(date.getTime())) return "—";
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function todayStamp() {
+      const now = new Date();
+      return now.toLocaleDateString();
+    }
+
+    function currentSignature() {
+      return JSON.stringify({
+        session: sessionNameInput.value.trim(),
+        active: entries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.timestamp, item.editedAt || ""]),
+        deleted: deletedEntries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.deletedAt || "", item.deleteType || ""])
+      });
+    }
+
+    function hasFreshFinalExport() {
+      return Boolean(finalExportSignature) && finalExportSignature === currentSignature();
+    }
+
+    function markFinalExportedAndLocked() {
+      finalExportSignature = currentSignature();
+      editLocked = true;
+      localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
+      localStorage.setItem(EDIT_LOCKED_KEY, "true");
+    }
+
+    function requireUnlocked(actionText) {
+      if (!editLocked) return false;
+      setStatus("Editing is locked after final export. Unlock editing before you " + actionText + ".", "error");
+      return true;
+    }
+
     function addEntry() {
-      const code = normalize(input.value);
+      if (requireUnlocked("add another entry")) return;
+
+      const code = normalizeCode(input.value);
       const size = sizeSelect.value;
       const condition = getRadioValue("containerCondition");
       const containerStatus = getRadioValue("containerStatus");
+      const initials = normalizeInitials(employeeInitialsInput.value);
+      const notes = document.body.classList.contains("entry-mode") ? "" : notesInput.value.trim();
 
       if (!size) {
         setStatus("Select a container size first.", "warning");
@@ -601,31 +1293,85 @@
         return;
       }
 
-      if (entries.some(item => item.code === code)) {
+      const existing = entries.find(item => item.code === code);
+      if (existing) {
         duplicateBlocks += 1;
         saveEntries();
-        setStatus("Duplicate blocked: " + code + " is already on the list.", "warning");
+        setStatus(
+          "Duplicate blocked: " + code + " is already active as entry #" + existing.sequence +
+          " — " + existing.size + ", " + existing.condition + ", " + existing.status + ".",
+          "warning"
+        );
         input.select();
         render();
         return;
       }
 
+      const deletedMatch = deletedEntries.find(item => item.code === code);
+      if (deletedMatch) {
+        duplicateBlocks += 1;
+        saveEntries();
+        setStatus(
+          "Duplicate found in deleted entries: " + code + " was deleted as entry #" + deletedMatch.sequence +
+          ". Use Restore in the Deleted Entries section if this should be active again.",
+          "warning"
+        );
+        input.select();
+        render();
+        return;
+      }
+
+      const sequence = nextSequence;
+      nextSequence += 1;
+
       entries.push({
+        sequence,
         code,
         size,
         condition,
         status: containerStatus,
-        timestamp: new Date().toISOString()
+        initials,
+        notes,
+        timestamp: new Date().toISOString(),
+        editedAt: "",
+        restoredAt: ""
       });
 
       input.value = "";
+      notesInput.value = "";
       saveEntries();
-      setStatus("Saved " + code + " — " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
+
+      if (entries.length % 100 === 0) {
+        setStatus("Saved #" + sequence + " " + code + ". Backup recommended at " + entries.length + " entries — tap Export XLSX or Export Backup JSON.", "warning");
+      } else {
+        setStatus("Saved #" + sequence + " " + code + " — " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
+      }
+
       render();
       input.focus();
     }
 
+    function logDeletedEntry(item, deleteType) {
+      deletedEntries.push({
+        sequence: item.sequence || "",
+        code: item.code || "",
+        size: item.size || "",
+        condition: item.condition || "",
+        status: item.status || "",
+        initials: item.initials || "",
+        notes: item.notes || "",
+        timestamp: item.timestamp || "",
+        originalTimestamp: item.timestamp || "",
+        editedAt: item.editedAt || "",
+        restoredAt: item.restoredAt || "",
+        deletedAt: new Date().toISOString(),
+        deleteType
+      });
+    }
+
     function undoLast() {
+      if (requireUnlocked("undo an entry")) return;
+
       if (!entries.length) {
         setStatus("There is nothing to undo.", "warning");
         input.focus();
@@ -633,25 +1379,178 @@
       }
 
       const removed = entries.pop();
+      logDeletedEntry(removed, "Undo Last Entry");
       saveEntries();
-      setStatus("Removed last entry: " + removed.code + ".", "warning");
+      setStatus("Removed last entry #" + removed.sequence + ": " + removed.code + ". It was added to Deleted Entries.", "warning");
       render();
       input.focus();
     }
 
-    function deleteEntry(index) {
+    function deleteEntry(sequence) {
+      if (requireUnlocked("delete an entry")) return;
+
+      const index = entries.findIndex(item => item.sequence === sequence);
+      if (index === -1) {
+        setStatus("Could not find that entry to delete.", "error");
+        return;
+      }
+
       const removed = entries.splice(index, 1)[0];
+      logDeletedEntry(removed, "Deleted Individually");
       saveEntries();
-      setStatus("Deleted " + removed.code + ".", "warning");
+      setStatus("Deleted #" + removed.sequence + " " + removed.code + ". It was added to Deleted Entries.", "warning");
+      render();
+      input.focus();
+    }
+
+    function restoreDeletedEntry(sequence) {
+      if (requireUnlocked("restore a deleted entry")) return;
+
+      const index = deletedEntries.findIndex(item => Number(item.sequence) === Number(sequence));
+      if (index === -1) {
+        setStatus("Could not find that deleted entry to restore.", "error");
+        return;
+      }
+
+      const item = deletedEntries[index];
+      const activeDuplicate = entries.find(active => active.code === item.code);
+      if (activeDuplicate) {
+        setStatus("Cannot restore " + item.code + ". It is already active as entry #" + activeDuplicate.sequence + ".", "error");
+        return;
+      }
+
+      deletedEntries.splice(index, 1);
+      entries.push({
+        sequence: Number(item.sequence),
+        code: item.code,
+        size: item.size || "12 ft",
+        condition: item.condition || "Good",
+        status: item.status || "Built",
+        initials: item.initials || "",
+        notes: item.notes || "",
+        timestamp: item.originalTimestamp || item.timestamp || new Date().toISOString(),
+        editedAt: item.editedAt || "",
+        restoredAt: new Date().toISOString()
+      });
+
+      entries.sort((a, b) => Number(a.sequence) - Number(b.sequence));
+      nextSequence = Math.max(nextSequence, ...entries.map(e => Number(e.sequence) || 0), ...deletedEntries.map(e => Number(e.sequence) || 0)) + 1;
+      saveEntries();
+      setStatus("Restored #" + item.sequence + " " + item.code + " back to Active Entries.", "success");
+      render();
+      input.focus();
+    }
+
+    function startEdit(sequence) {
+      if (requireUnlocked("edit an entry")) return;
+
+      const item = entries.find(entry => entry.sequence === sequence);
+      if (!item) {
+        setStatus("Could not find that entry to edit.", "error");
+        return;
+      }
+
+      editingSequence = sequence;
+      editTitle.textContent = "Edit Entry #" + sequence;
+      editCode.value = item.code;
+      editSize.value = item.size || "12 ft";
+      editCondition.value = item.condition || "Good";
+      editStatus.value = item.status || "Built";
+      editInitials.value = item.initials || "";
+      editNotes.value = item.notes || "";
+      editPanel.classList.add("open");
+      editCode.focus();
+      editCode.select();
+    }
+
+    function cancelEdit() {
+      editingSequence = null;
+      editPanel.classList.remove("open");
+      editCode.value = "";
+      input.focus();
+    }
+
+    function saveEdit() {
+      if (requireUnlocked("save an edit")) return;
+
+      if (editingSequence === null) {
+        setStatus("No entry is selected for editing.", "warning");
+        return;
+      }
+
+      const item = entries.find(entry => entry.sequence === editingSequence);
+      if (!item) {
+        setStatus("Could not find that entry to save.", "error");
+        cancelEdit();
+        return;
+      }
+
+      const code = normalizeCode(editCode.value);
+      if (!isValid(code)) {
+        setStatus("Edit not saved. Container number must be exactly 6 letters/numbers.", "error");
+        editCode.select();
+        return;
+      }
+
+      const activeDuplicate = entries.find(entry => entry.code === code && entry.sequence !== editingSequence);
+      if (activeDuplicate) {
+        setStatus("Edit not saved. " + code + " is already active as entry #" + activeDuplicate.sequence + ".", "error");
+        editCode.select();
+        return;
+      }
+
+      const deletedDuplicate = deletedEntries.find(entry => entry.code === code);
+      if (deletedDuplicate) {
+        setStatus("Edit not saved. " + code + " exists in Deleted Entries as entry #" + deletedDuplicate.sequence + ".", "error");
+        editCode.select();
+        return;
+      }
+
+      item.code = code;
+      item.size = editSize.value;
+      item.condition = editCondition.value;
+      item.status = editStatus.value;
+      item.initials = normalizeInitials(editInitials.value);
+      item.notes = editNotes.value.trim();
+      item.editedAt = new Date().toISOString();
+
+      saveEntries();
+      setStatus("Saved edit for #" + item.sequence + " " + item.code + ".", "success");
+      cancelEdit();
+      render();
+    }
+
+    function unlockEditing() {
+      if (!editLocked) {
+        setStatus("Editing is already unlocked.", "info");
+        input.focus();
+        return;
+      }
+
+      const phrase = prompt("Type UNLOCK to unlock editing after final export.");
+      if (!phrase || phrase.trim().toUpperCase() !== "UNLOCK") {
+        setStatus("Editing remains locked.", "warning");
+        return;
+      }
+
+      editLocked = false;
+      localStorage.setItem(EDIT_LOCKED_KEY, "false");
+      setStatus("Editing unlocked. Make another Final Export + Lock when finished.", "success");
       render();
       input.focus();
     }
 
     function clearFinishedList() {
-      if (!entries.length) {
+      if (!entries.length && !deletedEntries.length) {
         setStatus("The list is already empty.", "warning");
         finishConfirm.value = "";
         input.focus();
+        return;
+      }
+
+      if (!hasFreshFinalExport() || !editLocked) {
+        setStatus("Use Final Export + Lock first. The clear button is locked until the current list has been exported and editing is locked.", "error");
+        finalExportBtn.focus();
         return;
       }
 
@@ -661,12 +1560,18 @@
         return;
       }
 
-      const ok = confirm("This will permanently clear all saved entries from this device. Make sure you exported the CSV first.");
+      const ok = confirm("This will permanently clear all active and deleted entries from this device. Make sure you saved the final XLSX first.");
       if (!ok) return;
 
       entries = [];
+      deletedEntries = [];
       duplicateBlocks = 0;
+      nextSequence = 1;
       finishConfirm.value = "";
+      finalExportSignature = "";
+      editLocked = false;
+      localStorage.removeItem(FINAL_EXPORT_SIGNATURE_KEY);
+      localStorage.setItem(EDIT_LOCKED_KEY, "false");
       saveEntries();
       render();
       setStatus("Finished list cleared. Ready for a new inventory.", "success");
@@ -681,46 +1586,63 @@
       return text;
     }
 
-    function formatLocalTime(iso) {
-      const date = new Date(iso);
-      return date.toLocaleString();
+    function csvLine(values) {
+      return values.map(csvEscape).join(",");
     }
 
-    function buildCsv() {
-      const rows = [
-        ["Row", "Container Number", "Container Size", "Container Condition", "Container Status", "Date/Time Entered"]
-      ];
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let value = "";
+      let inQuotes = false;
 
-      entries.forEach((item, index) => {
-        rows.push([
-          index + 1,
-          item.code,
-          item.size || "",
-          item.condition || "",
-          item.status || "",
-          formatLocalTime(item.timestamp)
-        ]);
-      });
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
 
-      return rows.map(row => row.map(csvEscape).join(",")).join("\n");
-    }
-
-    function exportCsv() {
-      if (!entries.length) {
-        setStatus("No entries to export yet.", "warning");
-        input.focus();
-        return;
+        if (char === '"' && inQuotes && next === '"') {
+          value += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === "," && !inQuotes) {
+          row.push(value);
+          value = "";
+        } else if ((char === "\n" || char === "\r") && !inQuotes) {
+          if (char === "\r" && next === "\n") i++;
+          row.push(value);
+          rows.push(row);
+          row = [];
+          value = "";
+        } else {
+          value += char;
+        }
       }
 
-      const csv = buildCsv();
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
+      row.push(value);
+      rows.push(row);
+      return rows.filter(r => r.some(cell => String(cell).trim() !== ""));
+    }
 
+    function safeFilePart(value) {
+      return String(value || "inventory")
+        .trim()
+        .replace(/[^a-z0-9]+/gi, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 50) || "inventory";
+    }
+
+    function dateStamp() {
       const now = new Date();
       const yyyy = now.getFullYear();
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const dd = String(now.getDate()).padStart(2, "0");
-      const filename = "inventory_" + yyyy + "-" + mm + "-" + dd + ".csv";
+      return yyyy + "-" + mm + "-" + dd;
+    }
+
+    function downloadBlob(content, filename, type) {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
 
       const a = document.createElement("a");
       a.href = url;
@@ -730,27 +1652,255 @@
       a.remove();
 
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus("CSV exported: " + filename + ". Open it with Excel.", "success");
-      input.focus();
     }
 
-    async function copyList() {
-      if (!entries.length) {
-        setStatus("No entries to copy yet.", "warning");
+    function activeArray() {
+      return entries.map(item => ({
+        "Entry Number": item.sequence || "",
+        "Container Number": item.code || "",
+        "Container Size": item.size || "",
+        "Container Condition": item.condition || "",
+        "Container Status": item.status || "",
+        "Employee/User Initials": item.initials || "",
+        "Notes": item.notes || "",
+        "Date/Time Entered": formatLocalTime(item.timestamp),
+        "Edited Date/Time": formatLocalTime(item.editedAt),
+        "Restored Date/Time": formatLocalTime(item.restoredAt)
+      }));
+    }
+
+    function deletedArray() {
+      return deletedEntries.map(item => ({
+        "Entry Number": item.sequence || "",
+        "Container Number": item.code || "",
+        "Container Size": item.size || "",
+        "Container Condition": item.condition || "",
+        "Container Status": item.status || "",
+        "Employee/User Initials": item.initials || "",
+        "Notes": item.notes || "",
+        "Original Date/Time Entered": formatLocalTime(item.originalTimestamp || item.timestamp),
+        "Edited Date/Time": formatLocalTime(item.editedAt),
+        "Deleted Date/Time": formatLocalTime(item.deletedAt),
+        "Deleted By": item.deleteType || ""
+      }));
+    }
+
+    function activeCsvRows() {
+      return [
+        ["Session Name", sessionNameInput.value.trim()],
+        [],
+        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"],
+        ...entries.map(item => [
+          item.sequence || "",
+          item.code || "",
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          item.initials || "",
+          item.notes || "",
+          formatLocalTime(item.timestamp),
+          formatLocalTime(item.editedAt),
+          formatLocalTime(item.restoredAt)
+        ])
+      ];
+    }
+
+    function deletedCsvRows() {
+      return [
+        ["Session Name", sessionNameInput.value.trim()],
+        [],
+        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Original Date/Time Entered", "Edited Date/Time", "Deleted Date/Time", "Deleted By"],
+        ...deletedEntries.map(item => [
+          item.sequence || "",
+          item.code || "",
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          item.initials || "",
+          item.notes || "",
+          formatLocalTime(item.originalTimestamp || item.timestamp),
+          formatLocalTime(item.editedAt),
+          formatLocalTime(item.deletedAt),
+          item.deleteType || ""
+        ])
+      ];
+    }
+
+    function buildMasterCsv() {
+      const rows = [
+        ["Session Name", sessionNameInput.value.trim()],
+        ["Exported", formatLocalTime(new Date().toISOString())],
+        ["Active Entries", entries.length],
+        ["Deleted Entries", deletedEntries.length],
+        [],
+        ["ACTIVE ENTRIES"],
+        ...activeCsvRows().slice(3),
+        [],
+        ["DELETED ENTRIES"],
+        ...deletedCsvRows().slice(2)
+      ];
+
+      return rows.map(csvLine).join("\n");
+    }
+
+    function buildReportText() {
+      const badCount = entries.filter(item => item.condition === "Bad").length;
+      const flatCount = entries.filter(item => item.status === "Flat").length;
+      const builtCount = entries.filter(item => item.status === "Built").length;
+      const goodCount = entries.filter(item => item.condition === "Good").length;
+      const firstEntry = entries.length ? formatLocalTime(entries[0].timestamp) : "—";
+      const lastEntry = entries.length ? formatLocalTime(entries[entries.length - 1].timestamp) : "—";
+      const activeInitials = [...new Set(entries.map(item => item.initials).filter(Boolean))].join(", ") || "—";
+
+      return [
+        "TAMPA INVENTORY FINAL REPORT",
+        "",
+        "Session: " + (sessionNameInput.value.trim() || "—"),
+        "Report Date: " + todayStamp(),
+        "Editing Status: " + (editLocked ? "Locked after final export" : "Unlocked"),
+        "",
+        "TOTALS",
+        "Active Entries: " + entries.length,
+        "Deleted Entries: " + deletedEntries.length,
+        "Duplicate Attempts Blocked: " + duplicateBlocks,
+        "",
+        "CONDITION",
+        "Good: " + goodCount,
+        "Bad: " + badCount,
+        "",
+        "STATUS",
+        "Built: " + builtCount,
+        "Flat: " + flatCount,
+        "",
+        "TIMEFRAME",
+        "First Entry: " + firstEntry,
+        "Last Entry: " + lastEntry,
+        "Last Saved: " + formatLocalTime(lastSavedAt),
+        "",
+        "EMPLOYEE / USER INITIALS",
+        activeInitials,
+        "",
+        "NOTES",
+        "Review the Active Entries and Deleted Entries sheets for container-level notes."
+      ].join("\n");
+    }
+
+    function summaryArray() {
+      const rows = [
+        ["Session Name", sessionNameInput.value.trim()],
+        ["Export Date/Time", formatLocalTime(new Date().toISOString())],
+        ["Editing Status", editLocked ? "Locked" : "Unlocked"],
+        ["Active Entries", entries.length],
+        ["Deleted Entries", deletedEntries.length],
+        ["Duplicate Attempts Blocked", duplicateBlocks],
+        [],
+        ["By Size", "Count"],
+        ["8 ft", entries.filter(item => item.size === "8 ft").length],
+        ["12 ft", entries.filter(item => item.size === "12 ft").length],
+        ["16 ft", entries.filter(item => item.size === "16 ft").length],
+        [],
+        ["By Condition", "Count"],
+        ["Good", entries.filter(item => item.condition === "Good").length],
+        ["Bad", entries.filter(item => item.condition === "Bad").length],
+        [],
+        ["By Status", "Count"],
+        ["Built", entries.filter(item => item.status === "Built").length],
+        ["Flat", entries.filter(item => item.status === "Flat").length]
+      ];
+
+      return rows;
+    }
+
+    function exportXlsx(finalLock) {
+      if (!entries.length && !deletedEntries.length) {
+        setStatus("No entries to export yet.", "warning");
         input.focus();
         return;
       }
 
-      const text = entries.map(item => [
-        item.code,
-        item.size || "",
-        item.condition || "",
-        item.status || ""
-      ].join("\t")).join("\n");
+      if (typeof XLSX === "undefined") {
+        setStatus("XLSX export library did not load. Check internet connection, then reopen the app. CSV/JSON backup still works.", "error");
+        return;
+      }
 
+      const wb = XLSX.utils.book_new();
+
+      const activeSheet = XLSX.utils.json_to_sheet(activeArray());
+      XLSX.utils.book_append_sheet(wb, activeSheet, "Active Entries");
+
+      const deletedSheet = XLSX.utils.json_to_sheet(deletedArray());
+      XLSX.utils.book_append_sheet(wb, deletedSheet, "Deleted Entries");
+
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryArray());
+      XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+      const reportSheet = XLSX.utils.aoa_to_sheet(buildReportText().split("\n").map(line => [line]));
+      XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
+
+      const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
+
+      if (finalLock) {
+        markFinalExportedAndLocked();
+      }
+
+      XLSX.writeFile(wb, filename);
+      saveEntries();
+      render();
+
+      setStatus(
+        finalLock
+          ? "Final XLSX exported and editing is now locked: " + filename + "."
+          : "XLSX exported: " + filename + ".",
+        "success"
+      );
+      input.focus();
+    }
+
+    function exportBackupJson() {
+      const backup = {
+        appName: "Tampa Inventory Entry",
+        appVersion: 4,
+        exportedAt: new Date().toISOString(),
+        sessionName: sessionNameInput.value.trim(),
+        employeeInitials: employeeInitialsInput.value.trim(),
+        nextSequence,
+        duplicateBlocks,
+        editLocked,
+        finalExportSignature,
+        entries,
+        deletedEntries
+      };
+
+      const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
+      downloadBlob(JSON.stringify(backup, null, 2), filename, "application/json;charset=utf-8");
+      setStatus("Backup JSON exported: " + filename + ". This is the safest file to import later.", "success");
+      input.focus();
+    }
+
+    function exportCsvBackup() {
+      const filename = safeFilePart(sessionNameInput.value) + "_master_backup_" + dateStamp() + ".csv";
+      downloadBlob(buildMasterCsv(), filename, "text/csv;charset=utf-8");
+      setStatus("CSV backup exported: " + filename + ".", "success");
+      input.focus();
+    }
+
+    function exportDeletedCsv() {
+      if (!deletedEntries.length) {
+        setStatus("No deleted entries to export yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const filename = safeFilePart(sessionNameInput.value) + "_deleted_" + dateStamp() + ".csv";
+      downloadBlob(deletedCsvRows().map(csvLine).join("\n"), filename, "text/csv;charset=utf-8");
+      setStatus("Deleted entries CSV exported: " + filename + ".", "success");
+      input.focus();
+    }
+
+    async function copyText(text, successMessage) {
       try {
         await navigator.clipboard.writeText(text);
-        setStatus("Container list copied.", "success");
+        setStatus(successMessage, "success");
       } catch {
         const area = document.createElement("textarea");
         area.value = text;
@@ -758,33 +1908,345 @@
         area.select();
         document.execCommand("copy");
         area.remove();
-        setStatus("Container list copied.", "success");
+        setStatus(successMessage, "success");
       }
 
       input.focus();
     }
 
-    function render() {
-      count.textContent = entries.length;
-      dupeCount.textContent = duplicateBlocks;
-      lastEntry.textContent = entries.length ? entries[entries.length - 1].code : "—";
+    function copyActiveList() {
+      if (!entries.length) {
+        setStatus("No active entries to copy yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const text = entries.map(item => [
+        item.sequence || "",
+        item.code || "",
+        item.size || "",
+        item.condition || "",
+        item.status || "",
+        item.initials || "",
+        item.notes || ""
+      ].join("\t")).join("\n");
+
+      copyText(text, "Active container list copied.");
+    }
+
+    function copyDeletedList() {
+      if (!deletedEntries.length) {
+        setStatus("No deleted entries to copy yet.", "warning");
+        input.focus();
+        return;
+      }
+
+      const text = deletedEntries.map(item => [
+        item.sequence || "",
+        item.code || "",
+        item.size || "",
+        item.condition || "",
+        item.status || "",
+        item.initials || "",
+        item.notes || "",
+        item.deleteType || "",
+        formatLocalTime(item.deletedAt)
+      ].join("\t")).join("\n");
+
+      copyText(text, "Deleted entries copied.");
+    }
+
+    function copyReport() {
+      copyText(buildReportText(), "Final report copied.");
+    }
+
+    function downloadReport() {
+      const filename = safeFilePart(sessionNameInput.value) + "_final_report_" + dateStamp() + ".txt";
+      downloadBlob(buildReportText(), filename, "text/plain;charset=utf-8");
+      setStatus("Final report downloaded: " + filename + ".", "success");
+    }
+
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file);
+      });
+    }
+
+    function readFileAsArrayBuffer(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+
+    function rowsToObjects(rows) {
+      if (!rows.length) return [];
+      const headers = rows[0].map(h => String(h || "").trim());
+      return rows.slice(1).filter(row => row.some(cell => String(cell || "").trim() !== "")).map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+          obj[header] = row[index] || "";
+        });
+        return obj;
+      });
+    }
+
+    function dataFromJsonBackup(data) {
+      if (!Array.isArray(data.entries) && !Array.isArray(data.deletedEntries)) {
+        throw new Error("JSON backup does not contain entries.");
+      }
+
+      return {
+        sessionName: data.sessionName || defaultSessionName(),
+        employeeInitials: data.employeeInitials || "",
+        nextSequence: Number(data.nextSequence) || 1,
+        duplicateBlocks: Number(data.duplicateBlocks) || 0,
+        editLocked: Boolean(data.editLocked),
+        finalExportSignature: data.finalExportSignature || "",
+        entries: (data.entries || []).map((item, index) => normalizeEntry(item, index + 1)).filter(item => item.code),
+        deletedEntries: (data.deletedEntries || []).map((item, index) => normalizeDeleted(item, index + 1)).filter(item => item.code)
+      };
+    }
+
+    function findSectionRows(rows, sectionName) {
+      const sectionIndex = rows.findIndex(row => String(row[0] || "").trim().toUpperCase() === sectionName);
+      if (sectionIndex === -1) return [];
+
+      const headerIndex = sectionIndex + 1;
+      const headers = rows[headerIndex] || [];
+      const output = [headers];
+
+      for (let i = headerIndex + 1; i < rows.length; i++) {
+        const firstCell = String(rows[i][0] || "").trim().toUpperCase();
+        if (firstCell === "ACTIVE ENTRIES" || firstCell === "DELETED ENTRIES") break;
+        if (rows[i].some(cell => String(cell || "").trim() !== "")) output.push(rows[i]);
+      }
+
+      return output;
+    }
+
+    function dataFromCsvRows(rows) {
+      let activeSection = findSectionRows(rows, "ACTIVE ENTRIES");
+      let deletedSection = findSectionRows(rows, "DELETED ENTRIES");
+
+      if (!activeSection.length) {
+        const headerIndex = rows.findIndex(row => row.map(cell => String(cell).trim()).includes("Container Number"));
+        if (headerIndex !== -1) activeSection = rows.slice(headerIndex);
+      }
+
+      const activeObjects = rowsToObjects(activeSection);
+      const deletedObjects = rowsToObjects(deletedSection);
+
+      if (!activeObjects.length && !deletedObjects.length) {
+        throw new Error("No importable entries found in the CSV file.");
+      }
+
+      const importedEntries = activeObjects.map((item, index) => normalizeEntry(item, index + 1)).filter(item => item.code);
+      const importedDeleted = deletedObjects.map((item, index) => normalizeDeleted(item, importedEntries.length + index + 1)).filter(item => item.code);
+
+      return {
+        sessionName: sessionNameInput.value.trim() || defaultSessionName(),
+        employeeInitials: employeeInitialsInput.value.trim(),
+        nextSequence: 1,
+        duplicateBlocks: duplicateBlocks,
+        editLocked: false,
+        finalExportSignature: "",
+        entries: importedEntries,
+        deletedEntries: importedDeleted
+      };
+    }
+
+    function dataFromWorkbook(workbook) {
+      const activeSheet = workbook.Sheets["Active Entries"] || workbook.Sheets[workbook.SheetNames[0]];
+      const deletedSheet = workbook.Sheets["Deleted Entries"];
+      const activeObjects = activeSheet ? XLSX.utils.sheet_to_json(activeSheet, { defval: "" }) : [];
+      const deletedObjects = deletedSheet ? XLSX.utils.sheet_to_json(deletedSheet, { defval: "" }) : [];
+
+      if (!activeObjects.length && !deletedObjects.length) {
+        throw new Error("No importable entries found in the XLSX file.");
+      }
+
+      const importedEntries = activeObjects.map((item, index) => normalizeEntry(item, index + 1)).filter(item => item.code);
+      const importedDeleted = deletedObjects.map((item, index) => normalizeDeleted(item, importedEntries.length + index + 1)).filter(item => item.code);
+
+      return {
+        sessionName: sessionNameInput.value.trim() || defaultSessionName(),
+        employeeInitials: employeeInitialsInput.value.trim(),
+        nextSequence: 1,
+        duplicateBlocks: duplicateBlocks,
+        editLocked: false,
+        finalExportSignature: "",
+        entries: importedEntries,
+        deletedEntries: importedDeleted
+      };
+    }
+
+    function applyImportedData(data) {
+      entries = data.entries || [];
+      deletedEntries = data.deletedEntries || [];
+
+      const highest = Math.max(
+        0,
+        ...entries.map(item => Number(item.sequence) || 0),
+        ...deletedEntries.map(item => Number(item.sequence) || 0)
+      );
+
+      nextSequence = Math.max(Number(data.nextSequence) || 1, highest + 1);
+      duplicateBlocks = Number(data.duplicateBlocks) || 0;
+      editLocked = Boolean(data.editLocked);
+      finalExportSignature = data.finalExportSignature || "";
+
+      sessionNameInput.value = data.sessionName || defaultSessionName();
+      employeeInitialsInput.value = data.employeeInitials || "";
+
+      if (finalExportSignature) {
+        localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
+      } else {
+        localStorage.removeItem(FINAL_EXPORT_SIGNATURE_KEY);
+      }
+
+      saveEntries();
+      render();
+    }
+
+    async function importBackup() {
+      if (requireUnlocked("import a backup")) return;
+
+      const file = backupFileInput.files && backupFileInput.files[0];
+      if (!file) {
+        setStatus("Choose a backup file first.", "warning");
+        backupFileInput.focus();
+        return;
+      }
+
+      const ok = confirm("Importing this backup will replace the current active and deleted lists. Continue?");
+      if (!ok) return;
+
+      try {
+        const name = file.name.toLowerCase();
+        let imported;
+
+        if (name.endsWith(".json")) {
+          const text = await readFileAsText(file);
+          imported = dataFromJsonBackup(JSON.parse(text));
+        } else if (name.endsWith(".csv")) {
+          const text = await readFileAsText(file);
+          imported = dataFromCsvRows(parseCsv(text));
+        } else if (name.endsWith(".xlsx")) {
+          if (typeof XLSX === "undefined") {
+            throw new Error("XLSX library is not loaded. Try JSON or CSV import instead.");
+          }
+          const buffer = await readFileAsArrayBuffer(file);
+          const workbook = XLSX.read(buffer, { type: "array" });
+          imported = dataFromWorkbook(workbook);
+        } else {
+          throw new Error("Unsupported backup file type.");
+        }
+
+        applyImportedData(imported);
+        backupFileInput.value = "";
+        setStatus("Backup imported successfully. Review the active and deleted lists before continuing.", "success");
+        input.focus();
+      } catch (error) {
+        setStatus("Import failed: " + error.message, "error");
+      }
+    }
+
+    function summaryCounts(field, orderedValues) {
+      const counts = {};
+      orderedValues.forEach(value => counts[value] = 0);
+      entries.forEach(item => {
+        const value = item[field] || "";
+        counts[value] = (counts[value] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function initialsCounts() {
+      const counts = {};
+      entries.forEach(item => {
+        const key = item.initials || "Blank";
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function renderSummaryBox(container, counts, orderedValues) {
+      container.innerHTML = "";
+
+      orderedValues.forEach(value => {
+        const line = document.createElement("div");
+        line.className = "summary-line";
+
+        const label = document.createElement("span");
+        label.textContent = value;
+
+        const number = document.createElement("strong");
+        number.textContent = counts[value] || 0;
+
+        line.appendChild(label);
+        line.appendChild(number);
+        container.appendChild(line);
+      });
+    }
+
+    function renderSummaries() {
+      renderSummaryBox(sizeSummary, summaryCounts("size", ["8 ft", "12 ft", "16 ft"]), ["8 ft", "12 ft", "16 ft"]);
+      renderSummaryBox(conditionSummary, summaryCounts("condition", ["Good", "Bad"]), ["Good", "Bad"]);
+      renderSummaryBox(statusSummary, summaryCounts("status", ["Built", "Flat"]), ["Built", "Flat"]);
+
+      const counts = initialsCounts();
+      const keys = Object.keys(counts).sort();
+      renderSummaryBox(initialsSummary, counts, keys.length ? keys : ["Blank"]);
+    }
+
+    function entryMatchesSearch(item, query) {
+      if (!query) return true;
+
+      const text = [
+        item.sequence,
+        "#" + item.sequence,
+        item.code,
+        item.size,
+        item.condition,
+        item.status,
+        item.initials,
+        item.notes
+      ].join(" ").toUpperCase();
+
+      return text.includes(query);
+    }
+
+    function renderActiveEntries() {
+      const query = normalizeSearch(searchInput.value);
+      const filtered = entries.filter(item => entryMatchesSearch(item, query));
+      searchCountText.textContent = query
+        ? "Showing " + filtered.length + " of " + entries.length
+        : "Showing all";
 
       if (!entries.length) {
         list.innerHTML = '<div class="empty">No containers entered yet.</div>';
         return;
       }
 
-      list.innerHTML = "";
+      if (!filtered.length) {
+        list.innerHTML = '<div class="empty">No matching active entries.</div>';
+        return;
+      }
 
-      const recent = entries.slice().reverse();
-      recent.forEach((item, reverseIndex) => {
-        const originalIndex = entries.length - 1 - reverseIndex;
+      list.innerHTML = "";
+      filtered.slice().reverse().forEach(item => {
         const row = document.createElement("div");
         row.className = "row";
 
         const num = document.createElement("div");
         num.className = "num";
-        num.textContent = "#" + (originalIndex + 1);
+        num.textContent = "#" + (item.sequence || "—");
 
         const info = document.createElement("div");
 
@@ -795,7 +2257,14 @@
         const details = document.createElement("div");
         details.className = "details";
 
-        [item.size || "12 ft", item.condition || "Good", item.status || "Built"].forEach(value => {
+        [
+          item.size || "12 ft",
+          item.condition || "Good",
+          item.status || "Built",
+          item.initials ? "By " + item.initials : "",
+          item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
+          item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
+        ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
           tag.className = "tag";
           tag.textContent = value;
@@ -805,27 +2274,203 @@
         info.appendChild(code);
         info.appendChild(details);
 
+        if (item.notes) {
+          const note = document.createElement("div");
+          note.className = "note-preview";
+          note.textContent = "Notes: " + item.notes;
+          info.appendChild(note);
+        }
+
+        const rowActions = document.createElement("div");
+        rowActions.className = "row-actions";
+
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.textContent = "Edit";
+        edit.disabled = editLocked;
+        edit.addEventListener("click", () => startEdit(item.sequence));
+
         const del = document.createElement("button");
         del.type = "button";
         del.className = "danger";
         del.textContent = "Delete";
-        del.addEventListener("click", () => deleteEntry(originalIndex));
+        del.disabled = editLocked;
+        del.addEventListener("click", () => deleteEntry(item.sequence));
+
+        rowActions.appendChild(edit);
+        rowActions.appendChild(del);
 
         row.appendChild(num);
         row.appendChild(info);
-        row.appendChild(del);
+        row.appendChild(rowActions);
         list.appendChild(row);
       });
     }
 
+    function renderDeletedEntries() {
+      deletedCountText.textContent = deletedEntries.length + " deleted";
+
+      if (!deletedEntries.length) {
+        deletedList.innerHTML = '<div class="empty">No deleted entries yet.</div>';
+        return;
+      }
+
+      deletedList.innerHTML = "";
+
+      deletedEntries.slice().reverse().forEach(item => {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        const num = document.createElement("div");
+        num.className = "num";
+        num.textContent = "#" + (item.sequence || "—");
+
+        const info = document.createElement("div");
+
+        const code = document.createElement("div");
+        code.className = "code";
+        code.textContent = item.code || "—";
+
+        const details = document.createElement("div");
+        details.className = "details";
+
+        [
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          item.initials ? "By " + item.initials : "",
+          item.deleteType || "",
+          item.deletedAt ? "Deleted " + formatShortTime(item.deletedAt) : ""
+        ].filter(Boolean).forEach(value => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = value;
+          details.appendChild(tag);
+        });
+
+        info.appendChild(code);
+        info.appendChild(details);
+
+        if (item.notes) {
+          const note = document.createElement("div");
+          note.className = "note-preview";
+          note.textContent = "Notes: " + item.notes;
+          info.appendChild(note);
+        }
+
+        const rowActions = document.createElement("div");
+        rowActions.className = "row-actions";
+
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "success-solid";
+        restore.textContent = "Restore";
+        restore.disabled = editLocked;
+        restore.addEventListener("click", () => restoreDeletedEntry(item.sequence));
+
+        rowActions.appendChild(restore);
+
+        row.appendChild(num);
+        row.appendChild(info);
+        row.appendChild(rowActions);
+        deletedList.appendChild(row);
+      });
+    }
+
+    function renderLockState() {
+      lockBadge.textContent = editLocked ? "Editing Locked" : "Editing Unlocked";
+      lockBadge.className = "badge " + (editLocked ? "locked" : "unlocked");
+
+      const xlsxReady = typeof XLSX !== "undefined";
+      xlsxBadge.textContent = xlsxReady ? "XLSX Ready" : "XLSX Not Loaded";
+      xlsxBadge.className = "badge" + (xlsxReady ? " unlocked" : " locked");
+
+      addBtn.disabled = editLocked;
+      undoBtn.disabled = editLocked;
+      importBackupBtn.disabled = editLocked;
+      saveEditBtn.disabled = editLocked;
+
+      unlockBtn.textContent = editLocked ? "Unlock Editing" : "Editing Unlocked";
+      finishClearBtn.disabled = !(hasFreshFinalExport() && editLocked);
+    }
+
+    function renderReport() {
+      const report = buildReportText();
+      finalReport.textContent = report;
+      reportUpdatedText.textContent = "Updated " + formatShortTime(new Date().toISOString());
+    }
+
+    function render() {
+      count.textContent = entries.length;
+      deletedMetric.textContent = deletedEntries.length;
+      lastEntryMetric.textContent = entries.length ? entries[entries.length - 1].code : "—";
+      lastSaved.textContent = formatShortTime(lastSavedAt);
+
+      renderSummaries();
+      renderActiveEntries();
+      renderDeletedEntries();
+      renderReport();
+      renderLockState();
+
+      entryModeBtn.textContent = document.body.classList.contains("entry-mode")
+        ? "Exit Big Entry Mode"
+        : "Big Entry Mode";
+
+      if (toggleImportBtn && importPanel) {
+        toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
+      }
+    }
+
+    function toggleImportPanel() {
+      importPanel.hidden = !importPanel.hidden;
+      toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
+      if (!importPanel.hidden) {
+        backupFileInput.focus();
+      } else {
+        input.focus();
+      }
+    }
+
+    function toggleEntryMode() {
+      document.body.classList.toggle("entry-mode");
+      if (document.body.classList.contains("entry-mode")) {
+        notesInput.value = "";
+        importPanel.hidden = true;
+        toggleImportBtn.textContent = "Import / Restore";
+      }
+      localStorage.setItem(ENTRY_MODE_KEY, document.body.classList.contains("entry-mode") ? "true" : "false");
+      render();
+      input.focus();
+    }
+
     input.addEventListener("input", () => {
-      input.value = normalize(input.value);
+      input.value = normalizeCode(input.value);
+    });
+
+    editCode.addEventListener("input", () => {
+      editCode.value = normalizeCode(editCode.value);
+    });
+
+    employeeInitialsInput.addEventListener("input", () => {
+      employeeInitialsInput.value = normalizeInitials(employeeInitialsInput.value);
+      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value);
+    });
+
+    editInitials.addEventListener("input", () => {
+      editInitials.value = normalizeInitials(editInitials.value);
     });
 
     input.addEventListener("keydown", event => {
       if (event.key === "Enter") {
         event.preventDefault();
         addEntry();
+      }
+    });
+
+    editCode.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        saveEdit();
       }
     });
 
@@ -836,14 +2481,39 @@
       }
     });
 
-    addBtn.addEventListener("click", addEntry);
-    exportBtn.addEventListener("click", exportCsv);
-    undoBtn.addEventListener("click", undoLast);
-    copyBtn.addEventListener("click", copyList);
-    finishClearBtn.addEventListener("click", clearFinishedList);
+    sessionNameInput.addEventListener("input", () => {
+      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
+      render();
+    });
 
+
+    searchInput.addEventListener("input", renderActiveEntries);
+
+    addBtn.addEventListener("click", addEntry);
+    exportXlsxBtn.addEventListener("click", () => exportXlsx(false));
+    finalExportBtn.addEventListener("click", () => exportXlsx(true));
+    undoBtn.addEventListener("click", undoLast);
+    copyBtn.addEventListener("click", copyActiveList);
+    backupJsonBtn.addEventListener("click", exportBackupJson);
+    unlockBtn.addEventListener("click", unlockEditing);
+    focusEntryBtn.addEventListener("click", () => input.focus());
+    exportCsvBtn.addEventListener("click", exportCsvBackup);
+    toggleImportBtn.addEventListener("click", toggleImportPanel);
+    entryModeBtn.addEventListener("click", toggleEntryMode);
+    importBackupBtn.addEventListener("click", importBackup);
+    clearFileBtn.addEventListener("click", () => { backupFileInput.value = ""; setStatus("Selected backup file cleared.", "info"); });
+    finishClearBtn.addEventListener("click", clearFinishedList);
+    exportDeletedCsvBtn.addEventListener("click", exportDeletedCsv);
+    copyDeletedBtn.addEventListener("click", copyDeletedList);
+    saveEditBtn.addEventListener("click", saveEdit);
+    cancelEditBtn.addEventListener("click", cancelEdit);
+    copyReportBtn.addEventListener("click", copyReport);
+    downloadReportBtn.addEventListener("click", downloadReport);
+
+    setTimeout(render, 500);
     render();
     input.focus();
   </script>
 </body>
+</html>
 </html>
