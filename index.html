@@ -862,6 +862,9 @@
           <option value="8 ft">8 ft</option>
           <option value="12 ft" selected>12 ft</option>
           <option value="16 ft">16 ft</option>
+          <option value="ZM">ZM</option>
+          <option value="SHELL">SHELL</option>
+          <option value="TR">TR</option>
         </select>
       </div>
 
@@ -987,6 +990,9 @@
               <option value="8 ft">8 ft</option>
               <option value="12 ft">12 ft</option>
               <option value="16 ft">16 ft</option>
+              <option value="ZM">ZM</option>
+              <option value="SHELL">SHELL</option>
+              <option value="TR">TR</option>
             </select>
           </div>
           <div>
@@ -2518,7 +2524,7 @@
     }
 
     function renderSummaries() {
-      renderSummaryBox(sizeSummary, summaryCounts("size", ["8 ft", "12 ft", "16 ft"]), ["8 ft", "12 ft", "16 ft"]);
+      renderSummaryBox(sizeSummary, summaryCounts("size", ["8 ft", "12 ft", "16 ft", "ZM", "SHELL", "TR"]), ["8 ft", "12 ft", "16 ft", "ZM", "SHELL", "TR"]);
       renderSummaryBox(conditionSummary, summaryCounts("condition", ["Good", "Bad"]), ["Good", "Bad"]);
       renderSummaryBox(statusSummary, summaryCounts("status", ["Built", "Flat"]), ["Built", "Flat"]);
 
