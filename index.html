@@ -1070,13 +1070,13 @@
       <div id="importPanel" class="compact-import-panel" hidden>
         <div class="list-head">
           <h2>Import / Restore from Backup</h2>
-          <span class="small">JSON, CSV, or XLSX</span>
+          <span class="small">JSON, TXT, CSV, OR XLSX</span>
         </div>
         <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-controls="backupFileInput">
           <strong>Drop backup file here</strong>
-          <span class="small">or click to choose JSON, CSV, or XLSX</span>
+          <span class="small">OR CLICK TO CHOOSE JSON, TXT, CSV, OR XLSX</span>
         </div>
-        <input id="backupFileInput" type="file" accept=".json,.csv,.xlsx,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        <input id="backupFileInput" type="file" accept=".json,.txt,.csv,.xlsx,application/json,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         <div class="actions two">
           <button id="importBackupBtn" type="button">Preview Selected File</button>
           <button id="clearFileBtn" type="button">Clear Selected File</button>
@@ -3054,7 +3054,7 @@
     async function readImportFile(file) {
       const name = file.name.toLowerCase();
 
-      if (name.endsWith(".json")) {
+      if (name.endsWith(".json") || name.endsWith(".txt") || file.type === "application/json" || file.type === "text/plain") {
         const text = await readFileAsText(file);
         return dataFromJsonBackup(JSON.parse(text));
       }
@@ -3073,7 +3073,12 @@
         return dataFromWorkbook(workbook);
       }
 
-      throw new Error("Unsupported backup file type. Choose JSON, CSV, or XLSX.");
+      try {
+        const text = await readFileAsText(file);
+        return dataFromJsonBackup(JSON.parse(text));
+      } catch (error) {
+        throw new Error("Unsupported backup file type. Choose JSON, TXT, CSV, or XLSX.");
+      }
     }
 
     function renderImportPreview() {
