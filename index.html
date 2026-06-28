@@ -9,6 +9,8 @@
   <meta name="theme-color" content="#0f172a" />
   <title>Tampa Inventory Entry</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -610,6 +612,37 @@
       display: none;
     }
 
+    .qr-transfer-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 16px;
+      padding: 12px;
+    }
+
+    .qr-transfer-panel[hidden] {
+      display: none;
+    }
+
+    .qr-box {
+      min-height: 244px;
+      display: grid;
+      place-items: center;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: var(--soft);
+      margin: 12px 0;
+      padding: 12px;
+    }
+
+    .qr-box img,
+    .qr-box canvas {
+      width: 220px;
+      height: 220px;
+      max-width: 100%;
+      image-rendering: pixelated;
+    }
+
     .preview-metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1061,10 +1094,26 @@
         <button id="copyBtn" type="button">Copy Active List</button>
         <button id="backupJsonBtn" type="button">Export Backup JSON</button>
         <button id="phoneTransferBtn" type="button">PHONE TRANSFER FILE</button>
+        <button id="qrTransferBtn" type="button">PHONE QR TRANSFER</button>
         <button id="unlockBtn" type="button">Unlock Editing</button>
         <button id="focusEntryBtn" type="button">Focus Entry Box</button>
         <button id="exportCsvBtn" type="button">Export CSV Backup</button>
         <button id="toggleImportBtn" type="button">Import / Restore</button>
+      </div>
+
+      <div id="qrTransferPanel" class="qr-transfer-panel" hidden>
+        <div class="list-head">
+          <h3>PHONE QR TRANSFER</h3>
+          <span class="small" id="qrTransferCount">NO QR READY</span>
+        </div>
+        <div id="qrTransferStatus" class="status info">SCAN THIS QR CODE WITH YOUR PHONE.</div>
+        <div id="qrCodeBox" class="qr-box"></div>
+        <div class="actions three">
+          <button id="qrPrevBtn" type="button">PREVIOUS QR</button>
+          <button id="qrNextBtn" class="primary" type="button">NEXT QR</button>
+          <button id="qrCloseBtn" type="button">CLOSE QR</button>
+        </div>
+        <p class="help">SCAN EACH QR CODE IN ORDER. LARGE MONTHLY LISTS MAY NEED MORE THAN ONE QR CODE.</p>
       </div>
 
       <div id="importPanel" class="compact-import-panel" hidden>
@@ -1289,6 +1338,14 @@
     const copyBtn = document.getElementById("copyBtn");
     const backupJsonBtn = document.getElementById("backupJsonBtn");
     const phoneTransferBtn = document.getElementById("phoneTransferBtn");
+    const qrTransferBtn = document.getElementById("qrTransferBtn");
+    const qrTransferPanel = document.getElementById("qrTransferPanel");
+    const qrTransferCount = document.getElementById("qrTransferCount");
+    const qrTransferStatus = document.getElementById("qrTransferStatus");
+    const qrCodeBox = document.getElementById("qrCodeBox");
+    const qrPrevBtn = document.getElementById("qrPrevBtn");
+    const qrNextBtn = document.getElementById("qrNextBtn");
+    const qrCloseBtn = document.getElementById("qrCloseBtn");
     const unlockBtn = document.getElementById("unlockBtn");
     const focusEntryBtn = document.getElementById("focusEntryBtn");
     const exportCsvBtn = document.getElementById("exportCsvBtn");
@@ -1382,6 +1439,9 @@
     let editingSequence = null;
     let pendingDeleteSequence = null;
     let pendingImport = null;
+    let qrTransferChunks = [];
+    let qrTransferIndex = 0;
+    let qrTransferId = "";
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
@@ -2336,6 +2396,174 @@
       downloadBlob(JSON.stringify(transfer, null, 2), filename, "application/json;charset=utf-8");
       setStatus("Phone transfer file exported: " + filename + ". Open this file on your phone and import it in this app.", "success");
       input.focus();
+    }
+
+    function qrTransferPayload() {
+      return {
+        v: 1,
+        s: sessionNameInput.value.trim(),
+        e: employeeInitialsInput.value.trim(),
+        f: occupiedMaster.fileName || "PHONE QR TRANSFER",
+        t: occupiedMaster.importedAt || new Date().toISOString(),
+        i: occupiedExpectedItems().map(item => [item.code, item.type || "", item.rawType || ""])
+      };
+    }
+
+    function encodeQrTransferPayload(payload) {
+      const text = JSON.stringify(payload);
+      if (typeof LZString !== "undefined" && LZString.compressToEncodedURIComponent) {
+        return "lz:" + LZString.compressToEncodedURIComponent(text);
+      }
+      return "js:" + encodeURIComponent(text);
+    }
+
+    function decodeQrTransferPayload(encoded) {
+      if (encoded.startsWith("lz:")) {
+        if (typeof LZString === "undefined" || !LZString.decompressFromEncodedURIComponent) {
+          throw new Error("QR transfer library is not loaded. Reopen the app and scan again.");
+        }
+        const text = LZString.decompressFromEncodedURIComponent(encoded.slice(3));
+        if (!text) throw new Error("QR transfer data could not be read.");
+        return JSON.parse(text);
+      }
+      if (encoded.startsWith("js:")) return JSON.parse(decodeURIComponent(encoded.slice(3)));
+      throw new Error("QR transfer data is not recognized.");
+    }
+
+    function chunkText(text, size) {
+      const chunks = [];
+      for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
+      return chunks;
+    }
+
+    function qrTransferBaseUrl() {
+      return location.origin + location.pathname;
+    }
+
+    function qrTransferUrl(index) {
+      return qrTransferBaseUrl() + "#qrTransfer=" + [
+        qrTransferId,
+        index + 1,
+        qrTransferChunks.length,
+        qrTransferChunks[index]
+      ].join("|");
+    }
+
+    function renderQrTransfer() {
+      if (!qrTransferChunks.length) {
+        qrTransferPanel.hidden = true;
+        return;
+      }
+
+      qrTransferPanel.hidden = false;
+      qrTransferIndex = Math.max(0, Math.min(qrTransferIndex, qrTransferChunks.length - 1));
+      qrTransferCount.textContent = "QR " + (qrTransferIndex + 1) + " OF " + qrTransferChunks.length;
+      qrTransferStatus.textContent = "SCAN QR " + (qrTransferIndex + 1) + " OF " + qrTransferChunks.length + " WITH YOUR PHONE.";
+      qrPrevBtn.disabled = qrTransferIndex === 0;
+      qrNextBtn.disabled = qrTransferIndex >= qrTransferChunks.length - 1;
+      qrCodeBox.innerHTML = "";
+
+      if (typeof QRCode === "undefined") {
+        qrCodeBox.textContent = "QR LIBRARY DID NOT LOAD. CHECK INTERNET CONNECTION, THEN REOPEN THE APP.";
+        setStatus("QR library did not load. Check internet connection, then reopen the app.", "error");
+        return;
+      }
+
+      new QRCode(qrCodeBox, {
+        text: qrTransferUrl(qrTransferIndex),
+        width: 220,
+        height: 220,
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    function createQrTransfer() {
+      if (!occupiedMaster.codes.length) {
+        setStatus("Upload a monthly occupied list before creating a phone QR transfer.", "warning");
+        input.focus();
+        return;
+      }
+
+      const encoded = encodeQrTransferPayload(qrTransferPayload());
+      qrTransferChunks = chunkText(encoded, 900);
+      qrTransferIndex = 0;
+      qrTransferId = Date.now().toString(36);
+
+      if (qrTransferChunks.length > 30) {
+        qrTransferChunks = [];
+        qrTransferPanel.hidden = true;
+        setStatus("Monthly list is too large for a practical QR transfer. Use PHONE TRANSFER FILE instead.", "warning");
+        input.focus();
+        return;
+      }
+
+      renderQrTransfer();
+      setStatus("Phone QR transfer ready. Scan each QR code in order.", "success");
+      qrTransferPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function closeQrTransfer() {
+      qrTransferChunks = [];
+      qrTransferIndex = 0;
+      qrTransferId = "";
+      qrCodeBox.innerHTML = "";
+      qrTransferPanel.hidden = true;
+      input.focus();
+    }
+
+    function applyQrTransferPayload(payload) {
+      const items = Array.isArray(payload.i) ? payload.i.map(row => ({
+        code: row[0],
+        type: row[1] || "",
+        rawType: row[2] || ""
+      })) : [];
+
+      occupiedMaster = loadTransferOccupiedMaster({
+        fileName: payload.f || "PHONE QR TRANSFER",
+        importedAt: payload.t || new Date().toISOString(),
+        items
+      });
+      sessionNameInput.value = normalizeUpperText(payload.s || sessionNameInput.value || defaultSessionName());
+      employeeInitialsInput.value = normalizeInitials(payload.e || employeeInitialsInput.value || "");
+      saveOccupiedMaster();
+      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
+      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase());
+      render();
+    }
+
+    function handleIncomingQrTransfer() {
+      const hash = location.hash || "";
+      if (!hash.startsWith("#qrTransfer=")) return;
+
+      try {
+        const raw = hash.slice("#qrTransfer=".length);
+        const parts = raw.split("|");
+        const id = parts[0] || "";
+        const index = Number(parts[1]) || 0;
+        const total = Number(parts[2]) || 0;
+        const chunk = parts.slice(3).join(".");
+        if (!id || !index || !total || !chunk || index > total) throw new Error("QR transfer part is incomplete.");
+
+        const key = "warehouse_inventory_qr_transfer_" + id;
+        const stored = JSON.parse(localStorage.getItem(key) || "{\"chunks\":[],\"total\":0}");
+        stored.total = total;
+        stored.chunks[index - 1] = chunk;
+        localStorage.setItem(key, JSON.stringify(stored));
+
+        const received = stored.chunks.filter(Boolean).length;
+        if (received < total) {
+          setStatus("QR part " + index + " of " + total + " saved. Scan the next QR code.", "success");
+          return;
+        }
+
+        const payload = decodeQrTransferPayload(stored.chunks.join(""));
+        applyQrTransferPayload(payload);
+        localStorage.removeItem(key);
+        if (history.replaceState) history.replaceState(null, document.title, location.pathname);
+        setStatus("Phone QR transfer complete. Monthly occupied list loaded: " + occupiedMaster.codes.length + " expected units.", "success");
+      } catch (error) {
+        setStatus("QR transfer failed: " + error.message, "error");
+      }
     }
 
     function exportCsvBackup() {
@@ -3586,6 +3814,16 @@
     copyBtn.addEventListener("click", copyActiveList);
     backupJsonBtn.addEventListener("click", exportBackupJson);
     phoneTransferBtn.addEventListener("click", exportPhoneTransferFile);
+    qrTransferBtn.addEventListener("click", createQrTransfer);
+    qrPrevBtn.addEventListener("click", () => {
+      qrTransferIndex -= 1;
+      renderQrTransfer();
+    });
+    qrNextBtn.addEventListener("click", () => {
+      qrTransferIndex += 1;
+      renderQrTransfer();
+    });
+    qrCloseBtn.addEventListener("click", closeQrTransfer);
     unlockBtn.addEventListener("click", unlockEditing);
     focusEntryBtn.addEventListener("click", () => input.focus());
     exportCsvBtn.addEventListener("click", exportCsvBackup);
@@ -3630,6 +3868,7 @@
     downloadReportBtn.addEventListener("click", downloadReport);
     printReportBtn.addEventListener("click", printReport);
 
+    handleIncomingQrTransfer();
     setTimeout(render, 500);
     render();
     input.focus();
