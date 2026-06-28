@@ -2527,16 +2527,39 @@
     }
 
     function findLikelyCodeColumns(rows) {
-      const headerWords = ["UNIT", "CONTAINER", "EQUIPMENT", "ASSET", "SERIAL", "NUMBER"];
+      const exactHeaders = [
+        "UNITNAME",
+        "UNIT NAME",
+        "UNIT NUMBER",
+        "CONTAINER NUMBER",
+        "CONTAINER",
+        "EQUIPMENT NUMBER",
+        "ASSET NUMBER",
+        "SERIAL NUMBER"
+      ];
+      const broadHeaderWords = ["CONTAINER", "EQUIPMENT", "ASSET", "SERIAL"];
+
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex++) {
+        const row = rows[rowIndex] || [];
+        const exactColumns = [];
+        row.forEach((cell, index) => {
+          const header = normalizeUpperText(cell).replace(/[^A-Z0-9]+/g, " ").trim();
+          const compactHeader = header.replace(/s+/g, "");
+          if (exactHeaders.includes(header) || exactHeaders.includes(compactHeader)) exactColumns.push(index);
+        });
+        if (exactColumns.length) return { rowIndex, columns: exactColumns };
+      }
+
       for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex++) {
         const row = rows[rowIndex] || [];
         const columns = [];
         row.forEach((cell, index) => {
           const header = normalizeUpperText(cell);
-          if (headerWords.some(word => header.includes(word))) columns.push(index);
+          if (broadHeaderWords.some(word => header.includes(word))) columns.push(index);
         });
         if (columns.length) return { rowIndex, columns };
       }
+
       return null;
     }
 
