@@ -1480,7 +1480,7 @@
         const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
         let items = rawItems.map(item => ({
           code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
-          type: normalizeOccupiedTypeSize(item.type || item["Type"] || ""),
+          type: normalizeOccupiedTypeSize(item.type || item["Type"] || "", item.code || item.unitName || item["UnitName"] || ""),
           rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || "")
         })).filter(item => isValid(item.code));
 
@@ -2552,7 +2552,8 @@
       return cleanHeader(value).replace(/\s+/g, "");
     }
 
-    function normalizeOccupiedTypeSize(value) {
+    function normalizeOccupiedTypeSize(value, code) {
+      if (normalizeCode(code || "").startsWith("ZM")) return "ZM";
       const text = normalizeUpperText(value).replace(/\s+/g, " ").trim();
       if (/\b0?8\s*FT\b/.test(text)) return "8 ft";
       if (/\b12\s*FT\b/.test(text)) return "12 ft";
@@ -2615,9 +2616,9 @@
         const typeColumn = findTypeColumn(headerRow);
         rows.slice(likely.rowIndex + 1).forEach(row => {
           const rawType = typeColumn >= 0 ? normalizeUpperText(row[typeColumn] || "") : "";
-          const type = normalizeOccupiedTypeSize(rawType);
           likely.columns.forEach(column => {
             extractCodeCandidates(row[column] || "").forEach(code => {
+              const type = normalizeOccupiedTypeSize(rawType, code);
               if (!found.has(code)) found.set(code, { code, type, rawType });
               if (!found.get(code).type && type) found.set(code, { code, type, rawType });
             });
@@ -2640,7 +2641,7 @@
       const items = Array.isArray(occupiedMaster.items) ? occupiedMaster.items : [];
       if (items.length) return items.map(item => ({
         code: normalizeCode(item.code || ""),
-        type: normalizeOccupiedTypeSize(item.type || item.rawType || ""),
+        type: normalizeOccupiedTypeSize(item.type || item.rawType || "", item.code || ""),
         rawType: normalizeUpperText(item.rawType || item.type || "")
       })).filter(item => isValid(item.code));
       return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
