@@ -1480,11 +1480,12 @@
         const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
         let items = rawItems.map(item => ({
           code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
-          type: normalizeUpperText(item.type || item["Type"] || "")
+          type: normalizeOccupiedTypeSize(item.type || item["Type"] || ""),
+          rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || "")
         })).filter(item => isValid(item.code));
 
         if (!items.length && Array.isArray(parsed.codes)) {
-          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "" })).filter(item => isValid(item.code));
+          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
         }
 
         const itemMap = new Map();
@@ -2548,7 +2549,15 @@
     }
 
     function compactHeader(value) {
-      return cleanHeader(value).replace(/s+/g, "");
+      return cleanHeader(value).replace(/\s+/g, "");
+    }
+
+    function normalizeOccupiedTypeSize(value) {
+      const text = normalizeUpperText(value).replace(/\s+/g, " ").trim();
+      if (/\b0?8\s*FT\b/.test(text)) return "8 ft";
+      if (/\b12\s*FT\b/.test(text)) return "12 ft";
+      if (/\b16\s*FT\b/.test(text)) return "16 ft";
+      return text;
     }
 
     function findLikelyCodeColumns(rows) {
@@ -2605,11 +2614,12 @@
         const headerRow = rows[likely.rowIndex] || [];
         const typeColumn = findTypeColumn(headerRow);
         rows.slice(likely.rowIndex + 1).forEach(row => {
-          const type = typeColumn >= 0 ? normalizeUpperText(row[typeColumn] || "") : "";
+          const rawType = typeColumn >= 0 ? normalizeUpperText(row[typeColumn] || "") : "";
+          const type = normalizeOccupiedTypeSize(rawType);
           likely.columns.forEach(column => {
             extractCodeCandidates(row[column] || "").forEach(code => {
-              if (!found.has(code)) found.set(code, { code, type });
-              if (!found.get(code).type && type) found.set(code, { code, type });
+              if (!found.has(code)) found.set(code, { code, type, rawType });
+              if (!found.get(code).type && type) found.set(code, { code, type, rawType });
             });
           });
         });
@@ -2618,7 +2628,7 @@
       if (!found.size) {
         rows.forEach(row => row.forEach(cell => {
           extractCodeCandidates(cell || "").forEach(code => {
-            if (!found.has(code)) found.set(code, { code, type: "" });
+            if (!found.has(code)) found.set(code, { code, type: "", rawType: "" });
           });
         }));
       }
@@ -2630,9 +2640,10 @@
       const items = Array.isArray(occupiedMaster.items) ? occupiedMaster.items : [];
       if (items.length) return items.map(item => ({
         code: normalizeCode(item.code || ""),
-        type: normalizeUpperText(item.type || "")
+        type: normalizeOccupiedTypeSize(item.type || item.rawType || ""),
+        rawType: normalizeUpperText(item.rawType || item.type || "")
       })).filter(item => isValid(item.code));
-      return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "" })).filter(item => isValid(item.code));
+      return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
     }
 
     function occupiedComparison() {
@@ -2671,15 +2682,15 @@
         ["FOUND NOT ON MONTHLY LIST", comparison.extraFound.length],
         [],
         ["EXPECTED AND FOUND"],
-        ["UNIT NUMBER", "TYPE"],
+        ["UNIT NUMBER", "UNIT SIZE"],
         ...auditRowsForCodes(comparison.foundExpected, comparison),
         [],
         ["EXPECTED NOT FOUND"],
-        ["UNIT NUMBER", "TYPE"],
+        ["UNIT NUMBER", "UNIT SIZE"],
         ...auditRowsForCodes(comparison.missingExpected, comparison),
         [],
         ["FOUND NOT ON MONTHLY LIST"],
-        ["UNIT NUMBER", "TYPE"],
+        ["UNIT NUMBER", "UNIT SIZE"],
         ...comparison.extraFound.map(code => [code, ""])
       ];
     }
@@ -2698,8 +2709,8 @@
       }
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(auditComparisonRows()), "Audit Comparison");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "TYPE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "TYPE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
       XLSX.writeFile(wb, filename);
       setStatus("Audit comparison exported: " + filename + ".", "success");
