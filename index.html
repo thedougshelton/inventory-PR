@@ -1477,14 +1477,31 @@
     function loadOccupiedMaster() {
       try {
         const parsed = JSON.parse(localStorage.getItem(MONTHLY_OCCUPIED_KEY) || "{}");
-        const codes = Array.isArray(parsed.codes) ? parsed.codes.map(normalizeCode).filter(isValid) : [];
+        const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+        let items = rawItems.map(item => ({
+          code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
+          type: normalizeUpperText(item.type || item["Type"] || "")
+        })).filter(item => isValid(item.code));
+
+        if (!items.length && Array.isArray(parsed.codes)) {
+          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "" })).filter(item => isValid(item.code));
+        }
+
+        const itemMap = new Map();
+        items.forEach(item => {
+          if (!itemMap.has(item.code)) itemMap.set(item.code, item);
+          if (!itemMap.get(item.code).type && item.type) itemMap.set(item.code, item);
+        });
+
+        const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
         return {
           fileName: normalizeUpperText(parsed.fileName || ""),
           importedAt: parsed.importedAt || "",
-          codes: [...new Set(codes)].sort()
+          codes: cleanItems.map(item => item.code),
+          items: cleanItems
         };
       } catch {
-        return { fileName: "", importedAt: "", codes: [] };
+        return { fileName: "", importedAt: "", codes: [], items: [] };
       }
     }
 
@@ -2526,6 +2543,14 @@
       return (text.match(/[A-Z0-9]{6}/g) || []).filter(isValid);
     }
 
+    function cleanHeader(value) {
+      return normalizeUpperText(value).replace(/[^A-Z0-9]+/g, " ").trim();
+    }
+
+    function compactHeader(value) {
+      return cleanHeader(value).replace(/s+/g, "");
+    }
+
     function findLikelyCodeColumns(rows) {
       const exactHeaders = [
         "UNITNAME",
@@ -2543,9 +2568,9 @@
         const row = rows[rowIndex] || [];
         const exactColumns = [];
         row.forEach((cell, index) => {
-          const header = normalizeUpperText(cell).replace(/[^A-Z0-9]+/g, " ").trim();
-          const compactHeader = header.replace(/s+/g, "");
-          if (exactHeaders.includes(header) || exactHeaders.includes(compactHeader)) exactColumns.push(index);
+          const header = cleanHeader(cell);
+          const compact = compactHeader(cell);
+          if (exactHeaders.includes(header) || exactHeaders.includes(compact)) exactColumns.push(index);
         });
         if (exactColumns.length) return { rowIndex, columns: exactColumns };
       }
@@ -2563,58 +2588,99 @@
       return null;
     }
 
-    function extractOccupiedCodesFromRows(rows) {
-      const found = new Set();
+    function findTypeColumn(row) {
+      const typeHeaders = ["TYPE", "UNITTYPE", "UNIT TYPE", "CONTAINER TYPE"];
+      return (row || []).findIndex(cell => {
+        const header = cleanHeader(cell);
+        const compact = compactHeader(cell);
+        return typeHeaders.includes(header) || typeHeaders.includes(compact);
+      });
+    }
+
+    function extractOccupiedItemsFromRows(rows) {
+      const found = new Map();
       const likely = findLikelyCodeColumns(rows);
+
       if (likely) {
+        const headerRow = rows[likely.rowIndex] || [];
+        const typeColumn = findTypeColumn(headerRow);
         rows.slice(likely.rowIndex + 1).forEach(row => {
+          const type = typeColumn >= 0 ? normalizeUpperText(row[typeColumn] || "") : "";
           likely.columns.forEach(column => {
-            extractCodeCandidates(row[column] || "").forEach(code => found.add(code));
+            extractCodeCandidates(row[column] || "").forEach(code => {
+              if (!found.has(code)) found.set(code, { code, type });
+              if (!found.get(code).type && type) found.set(code, { code, type });
+            });
           });
         });
       }
+
       if (!found.size) {
-        rows.forEach(row => row.forEach(cell => extractCodeCandidates(cell || "").forEach(code => found.add(code))));
+        rows.forEach(row => row.forEach(cell => {
+          extractCodeCandidates(cell || "").forEach(code => {
+            if (!found.has(code)) found.set(code, { code, type: "" });
+          });
+        }));
       }
-      return [...found].sort();
+
+      return [...found.values()].sort((a, b) => a.code.localeCompare(b.code));
+    }
+
+    function occupiedExpectedItems() {
+      const items = Array.isArray(occupiedMaster.items) ? occupiedMaster.items : [];
+      if (items.length) return items.map(item => ({
+        code: normalizeCode(item.code || ""),
+        type: normalizeUpperText(item.type || "")
+      })).filter(item => isValid(item.code));
+      return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "" })).filter(item => isValid(item.code));
     }
 
     function occupiedComparison() {
-      const expected = occupiedMaster.codes || [];
+      const expectedItems = occupiedExpectedItems();
+      const expected = expectedItems.map(item => item.code);
+      const itemByCode = new Map(expectedItems.map(item => [item.code, item]));
       const expectedSet = new Set(expected);
       const activeCodes = [...new Set(entries.map(item => item.code).filter(Boolean))].sort();
       const activeSet = new Set(activeCodes);
       return {
         expected,
+        itemByCode,
         foundExpected: expected.filter(code => activeSet.has(code)),
         missingExpected: expected.filter(code => !activeSet.has(code)),
         extraFound: activeCodes.filter(code => !expectedSet.has(code))
       };
     }
 
+    function auditRowsForCodes(codes, comparison) {
+      return codes.map(code => {
+        const item = comparison.itemByCode.get(code) || { type: "" };
+        return [code, item.type || ""];
+      });
+    }
+
     function auditComparisonRows() {
       const comparison = occupiedComparison();
       return [
-        ["Session Name", sessionNameInput.value.trim()],
+        ["SESSION NAME", sessionNameInput.value.trim()],
         ["MONTHLY LIST FILE", occupiedMaster.fileName || ""],
         ["MONTHLY LIST IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
         ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
         ["EXPECTED OCCUPIED", comparison.expected.length],
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
         ["EXPECTED NOT FOUND", comparison.missingExpected.length],
-        ["Found Not On Monthly List", comparison.extraFound.length],
+        ["FOUND NOT ON MONTHLY LIST", comparison.extraFound.length],
         [],
         ["EXPECTED AND FOUND"],
-        ["UNIT NUMBER"],
-        ...comparison.foundExpected.map(code => [code]),
+        ["UNIT NUMBER", "TYPE"],
+        ...auditRowsForCodes(comparison.foundExpected, comparison),
         [],
         ["EXPECTED NOT FOUND"],
-        ["UNIT NUMBER"],
-        ...comparison.missingExpected.map(code => [code]),
+        ["UNIT NUMBER", "TYPE"],
+        ...auditRowsForCodes(comparison.missingExpected, comparison),
         [],
         ["FOUND NOT ON MONTHLY LIST"],
-        ["UNIT NUMBER"],
-        ...comparison.extraFound.map(code => [code])
+        ["UNIT NUMBER", "TYPE"],
+        ...comparison.extraFound.map(code => [code, ""])
       ];
     }
 
@@ -2622,7 +2688,7 @@
       const comparison = occupiedComparison();
       if (!occupiedMaster.codes.length) {
         setStatus("Upload a monthly occupied list before exporting the audit comparison.", "warning");
-        occupiedStatus.textContent = "Upload a monthly occupied list before exporting the audit comparison.";
+        occupiedStatus.textContent = "UPLOAD A MONTHLY OCCUPIED LIST BEFORE EXPORTING THE AUDIT COMPARISON.";
         occupiedStatus.className = "status warning";
         return;
       }
@@ -2632,8 +2698,8 @@
       }
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(auditComparisonRows()), "Audit Comparison");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(comparison.missingExpected.map(code => [code])), "EXPECTED NOT FOUND");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(comparison.extraFound.map(code => [code])), "FOUND NOT ON LIST");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "TYPE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "TYPE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
       XLSX.writeFile(wb, filename);
       setStatus("Audit comparison exported: " + filename + ".", "success");
@@ -2661,13 +2727,18 @@
         } else {
           throw new Error("Choose an XLSX or CSV file.");
         }
-        const codes = extractOccupiedCodesFromRows(rows);
-        if (!codes.length) throw new Error("No 6-character unit numbers were found in that file.");
-        occupiedMaster = { fileName: normalizeUpperText(file.name), importedAt: new Date().toISOString(), codes };
+        const items = extractOccupiedItemsFromRows(rows);
+        if (!items.length) throw new Error("No 6-character unit numbers were found in that file.");
+        occupiedMaster = {
+          fileName: normalizeUpperText(file.name),
+          importedAt: new Date().toISOString(),
+          codes: items.map(item => item.code),
+          items
+        };
         saveOccupiedMaster();
         occupiedFileInput.value = "";
         render();
-        setStatus("Monthly occupied list loaded: " + codes.length + " expected units.", "success");
+        setStatus("Monthly occupied list loaded: " + items.length + " expected units.", "success");
       } catch (error) {
         occupiedFileInput.value = "";
         occupiedStatus.textContent = "MONTHLY LIST UPLOAD FAILED: " + normalizeUpperText(error.message);
@@ -2684,7 +2755,7 @@
       }
       const ok = confirm("This will clear the monthly occupied list from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
-      occupiedMaster = { fileName: "", importedAt: "", codes: [] };
+      occupiedMaster = { fileName: "", importedAt: "", codes: [], items: [] };
       saveOccupiedMaster();
       occupiedFileInput.value = "";
       render();
@@ -2692,9 +2763,12 @@
       input.focus();
     }
 
-    function sampleCodes(codes) {
+    function sampleCodes(codes, comparison) {
       if (!codes.length) return "NONE";
-      return codes.slice(0, 10).join(", ") + (codes.length > 10 ? " ..." : "");
+      return codes.slice(0, 10).map(code => {
+        const item = comparison && comparison.itemByCode ? comparison.itemByCode.get(code) : null;
+        return code + (item && item.type ? " - " + item.type : "");
+      }).join(", ") + (codes.length > 10 ? " ..." : "");
     }
 
     function renderOccupiedAudit() {
@@ -2723,7 +2797,7 @@
         heading.textContent = title + " (" + codes.length + ")";
         const sample = document.createElement("div");
         sample.className = "audit-sample";
-        sample.textContent = sampleCodes(codes);
+        sample.textContent = sampleCodes(codes, comparison);
         group.appendChild(heading);
         group.appendChild(sample);
         occupiedComparisonList.appendChild(group);
