@@ -27,6 +27,7 @@
       --redSoft: #fef2f2;
       --yellowSoft: #fffbeb;
       --blueSoft: #eff6ff;
+      --orangeSoft: #fff7ed;
     }
 
     * { box-sizing: border-box; }
@@ -37,6 +38,7 @@
       background: var(--bg);
       color: var(--text);
       -webkit-font-smoothing: antialiased;
+      text-transform: uppercase;
     }
 
     .wrap {
@@ -171,6 +173,18 @@
       font-family: inherit;
     }
 
+    input,
+    textarea,
+    select,
+    button {
+      text-transform: uppercase;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      text-transform: uppercase;
+    }
+
     select { font-weight: 650; }
 
     input:focus,
@@ -251,6 +265,7 @@
       border: 1px solid var(--border);
       background: var(--card);
       color: var(--text);
+      text-transform: uppercase;
       border-radius: 14px;
       padding: 12px 14px;
       font-size: 16px;
@@ -491,6 +506,89 @@
       margin-bottom: 10px;
     }
 
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 16px;
+      background: #fff;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--blueSoft);
+    }
+
+    .drop-zone strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 16px;
+    }
+
+    .preview-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 16px;
+      padding: 12px;
+    }
+
+    .preview-panel[hidden] {
+      display: none;
+    }
+
+    .preview-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .preview-metric {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      background: #f8fafc;
+    }
+
+    .preview-metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .preview-metric strong {
+      display: block;
+      font-size: 18px;
+    }
+
+    .warning-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .warning-item {
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 14px;
+      line-height: 1.35;
+      background: var(--yellowSoft);
+      color: var(--warning);
+    }
+
+    .warning-item.error {
+      background: var(--redSoft);
+      color: var(--danger);
+    }
+
+    .warning-item.success {
+      background: var(--greenSoft);
+      color: var(--success);
+    }
+
     .collapsible-section summary.section-toggle {
       list-style: none;
       cursor: pointer;
@@ -554,7 +652,7 @@
 
     .confirm-row input {
       letter-spacing: 0;
-      text-transform: none;
+      text-transform: uppercase;
       font-size: 16px;
       min-height: 48px;
     }
@@ -715,6 +813,7 @@
       <div class="top-status">
         <span id="lockBadge" class="badge unlocked">Editing Unlocked</span>
         <span id="xlsxBadge" class="badge">XLSX loading…</span>
+        <span id="backupBadge" class="badge">No backup yet</span>
       </div>
     </header>
 
@@ -722,7 +821,7 @@
       <div class="session-row">
         <div>
           <label for="sessionName">Inventory session name</label>
-          <input id="sessionName" type="text" autocomplete="off" placeholder="Example: Tampa June Inventory" />
+          <input id="sessionName" type="text" autocomplete="off" placeholder="EXAMPLE: TAMPA JUNE INVENTORY" />
         </div>
         <button id="entryModeBtn" type="button">Big Entry Mode</button>
       </div>
@@ -730,7 +829,7 @@
       <div class="two-col" style="margin-top: 12px;">
         <div>
           <label for="employeeInitials">Employee/User initials</label>
-          <input id="employeeInitials" type="text" autocomplete="off" maxlength="8" placeholder="Example: DS" />
+          <input id="employeeInitials" type="text" autocomplete="off" maxlength="8" placeholder="EXAMPLE: DOUG SHELTON OR DS" />
         </div>
       </div>
 
@@ -796,7 +895,7 @@
 
       <div class="field-group notes-group">
         <label for="notesInput">Notes</label>
-        <textarea id="notesInput" autocomplete="off" placeholder="Optional notes, damage comments, missing label, etc."></textarea>
+        <textarea id="notesInput" autocomplete="off" placeholder="OPTIONAL NOTES, DAMAGE COMMENTS, MISSING LABEL, ETC."></textarea>
       </div>
 
       <label for="containerInput">Container number</label>
@@ -836,12 +935,35 @@
           <h2>Import / Restore from Backup</h2>
           <span class="small">JSON, CSV, or XLSX</span>
         </div>
+        <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-controls="backupFileInput">
+          <strong>Drop backup file here</strong>
+          <span class="small">or click to choose JSON, CSV, or XLSX</span>
+        </div>
         <input id="backupFileInput" type="file" accept=".json,.csv,.xlsx,application/json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         <div class="actions two">
-          <button id="importBackupBtn" type="button">Import Backup</button>
+          <button id="importBackupBtn" type="button">Preview Selected File</button>
           <button id="clearFileBtn" type="button">Clear Selected File</button>
         </div>
-        <p class="help">Import replaces the current active/deleted lists after confirmation. Export Backup JSON is the safest restore format.</p>
+        <div id="selectedFileInfo" class="status info">No import file selected.</div>
+        <div id="importPreviewPanel" class="preview-panel" hidden>
+          <div class="list-head">
+            <h3>Import Preview</h3>
+            <span class="small" id="importPreviewFile">No file</span>
+          </div>
+          <div class="preview-metrics">
+            <div class="preview-metric"><div class="label">Active</div><strong id="previewActiveCount">0</strong></div>
+            <div class="preview-metric"><div class="label">Deleted</div><strong id="previewDeletedCount">0</strong></div>
+            <div class="preview-metric"><div class="label">Highest #</div><strong id="previewHighestSequence">0</strong></div>
+            <div class="preview-metric"><div class="label">Warnings</div><strong id="previewWarningCount">0</strong></div>
+          </div>
+          <div id="importWarningList" class="warning-list"></div>
+          <div class="actions three">
+            <button id="applyImportBtn" class="primary" type="button">Apply Import</button>
+            <button id="downloadBeforeImportBtn" type="button">Download Current Backup</button>
+            <button id="cancelImportBtn" type="button">Cancel Import</button>
+          </div>
+        </div>
+        <p class="help">Import preview validates the file before anything is replaced. Applying an import downloads a current JSON backup first.</p>
       </div>
     </section>
 
@@ -850,7 +972,7 @@
         <h2>Search Active Entries</h2>
         <span class="small" id="searchCountText">Showing all</span>
       </div>
-      <input id="searchInput" type="text" autocomplete="off" placeholder="Search by container number, entry #, size, condition, status, initials, or notes" />
+      <input id="searchInput" type="text" autocomplete="off" maxlength="6" autocapitalize="characters" spellcheck="false" placeholder="SEARCH CONTAINER NUMBER" />
 
       <div id="editPanel" class="edit-panel">
         <h3 id="editTitle">Edit Entry</h3>
@@ -931,9 +1053,10 @@
             <span class="small" id="reportUpdatedText">Auto-generated</span>
           </div>
           <div id="finalReport" class="report-box"></div>
-          <div class="actions two">
+          <div class="actions three">
             <button id="copyReportBtn" type="button">Copy Report</button>
             <button id="downloadReportBtn" type="button">Download Report TXT</button>
+            <button id="printReportBtn" type="button">Print Report</button>
           </div>
         </div>
       </details>
@@ -997,6 +1120,7 @@
     const SESSION_KEY = "warehouse_inventory_session_name_v2";
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
+    const LAST_BACKUP_KEY = "warehouse_inventory_last_backup_v1";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
@@ -1023,6 +1147,18 @@
     const backupFileInput = document.getElementById("backupFileInput");
     const importBackupBtn = document.getElementById("importBackupBtn");
     const clearFileBtn = document.getElementById("clearFileBtn");
+    const dropZone = document.getElementById("dropZone");
+    const selectedFileInfo = document.getElementById("selectedFileInfo");
+    const importPreviewPanel = document.getElementById("importPreviewPanel");
+    const importPreviewFile = document.getElementById("importPreviewFile");
+    const previewActiveCount = document.getElementById("previewActiveCount");
+    const previewDeletedCount = document.getElementById("previewDeletedCount");
+    const previewHighestSequence = document.getElementById("previewHighestSequence");
+    const previewWarningCount = document.getElementById("previewWarningCount");
+    const importWarningList = document.getElementById("importWarningList");
+    const applyImportBtn = document.getElementById("applyImportBtn");
+    const downloadBeforeImportBtn = document.getElementById("downloadBeforeImportBtn");
+    const cancelImportBtn = document.getElementById("cancelImportBtn");
 
     const finishConfirm = document.getElementById("finishConfirm");
     const finishClearBtn = document.getElementById("finishClearBtn");
@@ -1047,6 +1183,7 @@
     const lastSaved = document.getElementById("lastSaved");
     const lockBadge = document.getElementById("lockBadge");
     const xlsxBadge = document.getElementById("xlsxBadge");
+    const backupBadge = document.getElementById("backupBadge");
     const statusBox = document.getElementById("status");
     const list = document.getElementById("list");
     const deletedList = document.getElementById("deletedList");
@@ -1061,18 +1198,21 @@
     const reportUpdatedText = document.getElementById("reportUpdatedText");
     const copyReportBtn = document.getElementById("copyReportBtn");
     const downloadReportBtn = document.getElementById("downloadReportBtn");
+    const printReportBtn = document.getElementById("printReportBtn");
 
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
     let duplicateBlocks = loadNumberFromKeys([DUPE_KEY, ...OLD_DUPE_KEYS], 0);
     let nextSequence = loadNextSequence();
     let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
+    let lastBackupAt = localStorage.getItem(LAST_BACKUP_KEY) || "";
     let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
     let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
     let editingSequence = null;
+    let pendingImport = null;
 
-    sessionNameInput.value = localStorage.getItem(SESSION_KEY) || defaultSessionName();
-    employeeInitialsInput.value = localStorage.getItem(INITIALS_KEY) || "";
+    sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
+    employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -1110,12 +1250,12 @@
 
       return {
         sequence,
-        code: String(item.code || item["Container Number"] || item.containerNumber || "").toUpperCase(),
+        code: normalizeCode(item.code || item["Container Number"] || item.containerNumber || ""),
         size: item.size || item["Container Size"] || item.containerSize || "12 ft",
         condition: item.condition || item["Container Condition"] || item.containerCondition || "Good",
         status: item.status || item["Container Status"] || item.containerStatus || "Built",
-        initials: item.initials || item["Employee/User Initials"] || item["Initials"] || "",
-        notes: item.notes || item["Notes"] || "",
+        initials: normalizeInitials(item.initials || item["Employee/User Initials"] || item["Initials"] || ""),
+        notes: normalizeUpperText(item.notes || item["Notes"] || ""),
         timestamp: item.timestamp || item["Date/Time Entered"] || item.dateTimeEntered || new Date().toISOString(),
         editedAt: item.editedAt || item["Edited Date/Time"] || "",
         restoredAt: item.restoredAt || ""
@@ -1198,8 +1338,12 @@
       return value.trim().toUpperCase().replace(/\s+/g, "");
     }
 
+    function normalizeUpperText(value) {
+      return String(value || "").toUpperCase();
+    }
+
     function normalizeSearch(value) {
-      return value.trim().toUpperCase();
+      return normalizeCode(value).slice(0, 6);
     }
 
     function isValid(code) {
@@ -1207,7 +1351,7 @@
     }
 
     function setStatus(message, type) {
-      statusBox.textContent = message;
+      statusBox.textContent = normalizeUpperText(message);
       statusBox.className = "status" + (type ? " " + type : "");
     }
 
@@ -1228,6 +1372,19 @@
     function todayStamp() {
       const now = new Date();
       return now.toLocaleDateString();
+    }
+
+    function formatFileSize(bytes) {
+      if (!Number.isFinite(bytes)) return "";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    }
+
+    function markBackupExported() {
+      lastBackupAt = new Date().toISOString();
+      localStorage.setItem(LAST_BACKUP_KEY, lastBackupAt);
+      renderBackupBadge();
     }
 
     function currentSignature() {
@@ -1263,7 +1420,7 @@
       const condition = getRadioValue("containerCondition");
       const containerStatus = getRadioValue("containerStatus");
       const initials = normalizeInitials(employeeInitialsInput.value);
-      const notes = document.body.classList.contains("entry-mode") ? "" : notesInput.value.trim();
+      const notes = document.body.classList.contains("entry-mode") ? "" : normalizeUpperText(notesInput.value.trim());
 
       if (!size) {
         setStatus("Select a container size first.", "warning");
@@ -1511,7 +1668,7 @@
       item.condition = editCondition.value;
       item.status = editStatus.value;
       item.initials = normalizeInitials(editInitials.value);
-      item.notes = editNotes.value.trim();
+      item.notes = normalizeUpperText(editNotes.value.trim());
       item.editedAt = new Date().toISOString();
 
       saveEntries();
@@ -1873,6 +2030,7 @@
 
       const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
       downloadBlob(JSON.stringify(backup, null, 2), filename, "application/json;charset=utf-8");
+      markBackupExported();
       setStatus("Backup JSON exported: " + filename + ". This is the safest file to import later.", "success");
       input.focus();
     }
@@ -1966,6 +2124,23 @@
       setStatus("Final report downloaded: " + filename + ".", "success");
     }
 
+    function printReport() {
+      const report = buildReportText();
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        setStatus("Print window was blocked. Allow popups, then try Print Report again.", "warning");
+        return;
+      }
+
+      printWindow.document.write('<pre style="font: 14px/1.45 -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif; white-space: pre-wrap;"></pre>');
+      printWindow.document.querySelector("pre").textContent = report;
+      printWindow.document.title = "Tampa Inventory Final Report";
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+      setStatus("Final report opened for printing.", "success");
+    }
+
     function readFileAsText(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1986,8 +2161,11 @@
 
     function rowsToObjects(rows) {
       if (!rows.length) return [];
-      const headers = rows[0].map(h => String(h || "").trim());
-      return rows.slice(1).filter(row => row.some(cell => String(cell || "").trim() !== "")).map(row => {
+      const headerIndex = rows.findIndex(isEntryHeaderRow);
+      if (headerIndex === -1) return [];
+
+      const headers = rows[headerIndex].map(h => String(h || "").trim());
+      return rows.slice(headerIndex + 1).filter(row => row.some(cell => String(cell || "").trim() !== "")).map(row => {
         const obj = {};
         headers.forEach((header, index) => {
           obj[header] = row[index] || "";
@@ -2002,8 +2180,8 @@
       }
 
       return {
-        sessionName: data.sessionName || defaultSessionName(),
-        employeeInitials: data.employeeInitials || "",
+        sessionName: normalizeUpperText(data.sessionName || defaultSessionName()),
+        employeeInitials: normalizeInitials(data.employeeInitials || ""),
         nextSequence: Number(data.nextSequence) || 1,
         duplicateBlocks: Number(data.duplicateBlocks) || 0,
         editLocked: Boolean(data.editLocked),
@@ -2035,7 +2213,7 @@
       let deletedSection = findSectionRows(rows, "DELETED ENTRIES");
 
       if (!activeSection.length) {
-        const headerIndex = rows.findIndex(row => row.map(cell => String(cell).trim()).includes("Container Number"));
+        const headerIndex = rows.findIndex(isEntryHeaderRow);
         if (headerIndex !== -1) activeSection = rows.slice(headerIndex);
       }
 
@@ -2050,8 +2228,8 @@
       const importedDeleted = deletedObjects.map((item, index) => normalizeDeleted(item, importedEntries.length + index + 1)).filter(item => item.code);
 
       return {
-        sessionName: sessionNameInput.value.trim() || defaultSessionName(),
-        employeeInitials: employeeInitialsInput.value.trim(),
+        sessionName: normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName()),
+        employeeInitials: normalizeInitials(employeeInitialsInput.value.trim()),
         nextSequence: 1,
         duplicateBlocks: duplicateBlocks,
         editLocked: false,
@@ -2075,8 +2253,8 @@
       const importedDeleted = deletedObjects.map((item, index) => normalizeDeleted(item, importedEntries.length + index + 1)).filter(item => item.code);
 
       return {
-        sessionName: sessionNameInput.value.trim() || defaultSessionName(),
-        employeeInitials: employeeInitialsInput.value.trim(),
+        sessionName: normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName()),
+        employeeInitials: normalizeInitials(employeeInitialsInput.value.trim()),
         nextSequence: 1,
         duplicateBlocks: duplicateBlocks,
         editLocked: false,
@@ -2101,8 +2279,8 @@
       editLocked = Boolean(data.editLocked);
       finalExportSignature = data.finalExportSignature || "";
 
-      sessionNameInput.value = data.sessionName || defaultSessionName();
-      employeeInitialsInput.value = data.employeeInitials || "";
+      sessionNameInput.value = normalizeUpperText(data.sessionName || defaultSessionName());
+      employeeInitialsInput.value = normalizeInitials(data.employeeInitials || "");
 
       if (finalExportSignature) {
         localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
@@ -2114,47 +2292,191 @@
       render();
     }
 
-    async function importBackup() {
-      if (requireUnlocked("import a backup")) return;
+    function allImportedEntries(data) {
+      return [...(data.entries || []), ...(data.deletedEntries || [])];
+    }
 
-      const file = backupFileInput.files && backupFileInput.files[0];
-      if (!file) {
-        setStatus("Choose a backup file first.", "warning");
-        backupFileInput.focus();
+    function highestImportedSequence(data) {
+      return Math.max(0, ...allImportedEntries(data).map(item => Number(item.sequence) || 0));
+    }
+
+    function duplicateCodes(items) {
+      const seen = new Set();
+      const duplicates = new Set();
+      items.forEach(item => {
+        const code = normalizeCode(item.code || "");
+        if (!code) return;
+        if (seen.has(code)) duplicates.add(code);
+        seen.add(code);
+      });
+      return [...duplicates].sort();
+    }
+
+    function importedCurrentDuplicates(data) {
+      const currentCodes = new Set([...entries, ...deletedEntries].map(item => item.code).filter(Boolean));
+      return [...new Set(allImportedEntries(data).map(item => item.code).filter(code => currentCodes.has(code)))].sort();
+    }
+
+    function invalidImportedEntries(data) {
+      return allImportedEntries(data).filter(item => !isValid(normalizeCode(item.code || "")));
+    }
+
+    function buildImportPreview(data, file) {
+      const invalid = invalidImportedEntries(data);
+      const internalDuplicates = duplicateCodes(allImportedEntries(data));
+      const currentDuplicates = importedCurrentDuplicates(data);
+      const warnings = [];
+
+      if (invalid.length) {
+        warnings.push({ type: "error", text: invalid.length + " row(s) have missing or invalid container numbers. Fix the file before importing." });
+      }
+
+      if (internalDuplicates.length) {
+        warnings.push({ type: "error", text: "Duplicate container numbers inside import: " + internalDuplicates.slice(0, 8).join(", ") + (internalDuplicates.length > 8 ? "..." : "") + "." });
+      }
+
+      if (currentDuplicates.length) {
+        warnings.push({ type: "warning", text: "Also found in current data: " + currentDuplicates.slice(0, 8).join(", ") + (currentDuplicates.length > 8 ? "..." : "") + ". Import replaces the current list, so this is informational." });
+      }
+
+      if (!warnings.length) {
+        warnings.push({ type: "success", text: "No import problems found." });
+      }
+
+      return {
+        fileName: file ? file.name : "Selected file",
+        fileSize: file ? file.size : 0,
+        data,
+        activeCount: (data.entries || []).length,
+        deletedCount: (data.deletedEntries || []).length,
+        highestSequence: highestImportedSequence(data),
+        warnings,
+        canApply: invalid.length === 0 && internalDuplicates.length === 0
+      };
+    }
+
+    async function readImportFile(file) {
+      const name = file.name.toLowerCase();
+
+      if (name.endsWith(".json")) {
+        const text = await readFileAsText(file);
+        return dataFromJsonBackup(JSON.parse(text));
+      }
+
+      if (name.endsWith(".csv")) {
+        const text = await readFileAsText(file);
+        return dataFromCsvRows(parseCsv(text));
+      }
+
+      if (name.endsWith(".xlsx")) {
+        if (typeof XLSX === "undefined") {
+          throw new Error("XLSX library is not loaded. Try JSON or CSV import instead.");
+        }
+        const buffer = await readFileAsArrayBuffer(file);
+        const workbook = XLSX.read(buffer, { type: "array" });
+        return dataFromWorkbook(workbook);
+      }
+
+      throw new Error("Unsupported backup file type. Choose JSON, CSV, or XLSX.");
+    }
+
+    function renderImportPreview() {
+      if (!pendingImport) {
+        importPreviewPanel.hidden = true;
+        selectedFileInfo.textContent = "No import file selected.";
+        selectedFileInfo.className = "status info";
+        importWarningList.innerHTML = "";
+        applyImportBtn.disabled = true;
         return;
       }
 
-      const ok = confirm("Importing this backup will replace the current active and deleted lists. Continue?");
-      if (!ok) return;
+      importPreviewPanel.hidden = false;
+      importPreviewFile.textContent = pendingImport.fileName + " (" + formatFileSize(pendingImport.fileSize) + ")";
+      selectedFileInfo.textContent = "Selected: " + pendingImport.fileName + " (" + formatFileSize(pendingImport.fileSize) + ")";
+      selectedFileInfo.className = "status info";
+      previewActiveCount.textContent = pendingImport.activeCount;
+      previewDeletedCount.textContent = pendingImport.deletedCount;
+      previewHighestSequence.textContent = pendingImport.highestSequence;
+      previewWarningCount.textContent = pendingImport.warnings.filter(item => item.type !== "success").length;
+      applyImportBtn.disabled = editLocked || !pendingImport.canApply;
+
+      importWarningList.innerHTML = "";
+      pendingImport.warnings.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "warning-item" + (item.type === "error" ? " error" : item.type === "success" ? " success" : "");
+        row.textContent = item.text;
+        importWarningList.appendChild(row);
+      });
+    }
+
+    async function previewImportFile(file) {
+      if (requireUnlocked("preview an import")) return;
+
+      if (!file) {
+        cancelImportPreview();
+        return;
+      }
 
       try {
-        const name = file.name.toLowerCase();
-        let imported;
-
-        if (name.endsWith(".json")) {
-          const text = await readFileAsText(file);
-          imported = dataFromJsonBackup(JSON.parse(text));
-        } else if (name.endsWith(".csv")) {
-          const text = await readFileAsText(file);
-          imported = dataFromCsvRows(parseCsv(text));
-        } else if (name.endsWith(".xlsx")) {
-          if (typeof XLSX === "undefined") {
-            throw new Error("XLSX library is not loaded. Try JSON or CSV import instead.");
-          }
-          const buffer = await readFileAsArrayBuffer(file);
-          const workbook = XLSX.read(buffer, { type: "array" });
-          imported = dataFromWorkbook(workbook);
-        } else {
-          throw new Error("Unsupported backup file type.");
-        }
-
-        applyImportedData(imported);
-        backupFileInput.value = "";
-        setStatus("Backup imported successfully. Review the active and deleted lists before continuing.", "success");
-        input.focus();
+        selectedFileInfo.textContent = "Reading " + file.name + "...";
+        selectedFileInfo.className = "status info";
+        const data = await readImportFile(file);
+        pendingImport = buildImportPreview(data, file);
+        renderImportPreview();
+        setStatus("Import preview ready. Review the counts and warnings before applying.", pendingImport.canApply ? "success" : "error");
       } catch (error) {
-        setStatus("Import failed: " + error.message, "error");
+        pendingImport = null;
+        renderImportPreview();
+        selectedFileInfo.textContent = "Import preview failed: " + error.message;
+        selectedFileInfo.className = "status error";
+        setStatus("Import preview failed: " + error.message, "error");
       }
+    }
+
+    function cancelImportPreview() {
+      pendingImport = null;
+      backupFileInput.value = "";
+      renderImportPreview();
+      setStatus("Import preview cleared.", "info");
+      input.focus();
+    }
+
+    function downloadCurrentBackupBeforeImport() {
+      exportBackupJson();
+      setStatus("Current JSON backup downloaded. Review the import preview, then apply when ready.", "success");
+    }
+
+    function applyImportPreview() {
+      if (requireUnlocked("apply an import")) return;
+
+      if (!pendingImport) {
+        setStatus("Preview an import file first.", "warning");
+        return;
+      }
+
+      if (!pendingImport.canApply) {
+        setStatus("Fix the import warnings before applying this file.", "error");
+        return;
+      }
+
+      const replacingActive = entries.length;
+      const replacingDeleted = deletedEntries.length;
+      const message = "This will replace " + replacingActive + " active and " + replacingDeleted + " deleted entries with " + pendingImport.activeCount + " active and " + pendingImport.deletedCount + " deleted entries. A current JSON backup will download first. Continue?";
+      const ok = confirm(message);
+      if (!ok) return;
+
+      exportBackupJson();
+      applyImportedData(pendingImport.data);
+      pendingImport = null;
+      backupFileInput.value = "";
+      renderImportPreview();
+      setStatus("Import applied successfully. Active: " + entries.length + ", Deleted: " + deletedEntries.length + ".", "success");
+      input.focus();
+    }
+
+    async function importBackup() {
+      const file = backupFileInput.files && backupFileInput.files[0];
+      await previewImportFile(file);
     }
 
     function summaryCounts(field, orderedValues) {
@@ -2207,19 +2529,7 @@
 
     function entryMatchesSearch(item, query) {
       if (!query) return true;
-
-      const text = [
-        item.sequence,
-        "#" + item.sequence,
-        item.code,
-        item.size,
-        item.condition,
-        item.status,
-        item.initials,
-        item.notes
-      ].join(" ").toUpperCase();
-
-      return text.includes(query);
+      return normalizeCode(item.code || "").includes(query);
     }
 
     function renderActiveEntries() {
@@ -2235,7 +2545,7 @@
       }
 
       if (!filtered.length) {
-        list.innerHTML = '<div class="empty">No matching active entries.</div>';
+        list.innerHTML = '<div class="empty">No matching container number.</div>';
         return;
       }
 
@@ -2388,10 +2698,17 @@
       addBtn.disabled = editLocked;
       undoBtn.disabled = editLocked;
       importBackupBtn.disabled = editLocked;
+      applyImportBtn.disabled = editLocked || !pendingImport || !pendingImport.canApply;
       saveEditBtn.disabled = editLocked;
 
       unlockBtn.textContent = editLocked ? "Unlock Editing" : "Editing Unlocked";
       finishClearBtn.disabled = !(hasFreshFinalExport() && editLocked);
+      renderBackupBadge();
+    }
+
+    function renderBackupBadge() {
+      backupBadge.textContent = lastBackupAt ? "Last export " + formatShortTime(lastBackupAt) : "No backup yet";
+      backupBadge.className = "badge" + (lastBackupAt ? " unlocked" : "");
     }
 
     function renderReport() {
@@ -2419,13 +2736,15 @@
       if (toggleImportBtn && importPanel) {
         toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
       }
+
+      renderImportPreview();
     }
 
     function toggleImportPanel() {
       importPanel.hidden = !importPanel.hidden;
       toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
       if (!importPanel.hidden) {
-        backupFileInput.focus();
+        dropZone.focus();
       } else {
         input.focus();
       }
@@ -2460,6 +2779,14 @@
       editInitials.value = normalizeInitials(editInitials.value);
     });
 
+    notesInput.addEventListener("input", () => {
+      notesInput.value = normalizeUpperText(notesInput.value);
+    });
+
+    editNotes.addEventListener("input", () => {
+      editNotes.value = normalizeUpperText(editNotes.value);
+    });
+
     input.addEventListener("keydown", event => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -2482,12 +2809,16 @@
     });
 
     sessionNameInput.addEventListener("input", () => {
+      sessionNameInput.value = normalizeUpperText(sessionNameInput.value);
       localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
       render();
     });
 
 
-    searchInput.addEventListener("input", renderActiveEntries);
+    searchInput.addEventListener("input", () => {
+      searchInput.value = normalizeSearch(searchInput.value);
+      renderActiveEntries();
+    });
 
     addBtn.addEventListener("click", addEntry);
     exportXlsxBtn.addEventListener("click", () => exportXlsx(false));
@@ -2501,7 +2832,29 @@
     toggleImportBtn.addEventListener("click", toggleImportPanel);
     entryModeBtn.addEventListener("click", toggleEntryMode);
     importBackupBtn.addEventListener("click", importBackup);
-    clearFileBtn.addEventListener("click", () => { backupFileInput.value = ""; setStatus("Selected backup file cleared.", "info"); });
+    backupFileInput.addEventListener("change", importBackup);
+    clearFileBtn.addEventListener("click", cancelImportPreview);
+    applyImportBtn.addEventListener("click", applyImportPreview);
+    cancelImportBtn.addEventListener("click", cancelImportPreview);
+    downloadBeforeImportBtn.addEventListener("click", downloadCurrentBackupBeforeImport);
+    dropZone.addEventListener("click", () => backupFileInput.click());
+    dropZone.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        backupFileInput.click();
+      }
+    });
+    dropZone.addEventListener("dragover", event => {
+      event.preventDefault();
+      dropZone.classList.add("drag-over");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+    dropZone.addEventListener("drop", event => {
+      event.preventDefault();
+      dropZone.classList.remove("drag-over");
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) previewImportFile(file);
+    });
     finishClearBtn.addEventListener("click", clearFinishedList);
     exportDeletedCsvBtn.addEventListener("click", exportDeletedCsv);
     copyDeletedBtn.addEventListener("click", copyDeletedList);
@@ -2509,11 +2862,11 @@
     cancelEditBtn.addEventListener("click", cancelEdit);
     copyReportBtn.addEventListener("click", copyReport);
     downloadReportBtn.addEventListener("click", downloadReport);
+    printReportBtn.addEventListener("click", printReport);
 
     setTimeout(render, 500);
     render();
     input.focus();
   </script>
 </body>
-</html>
 </html>
