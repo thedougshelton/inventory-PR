@@ -1684,6 +1684,8 @@
         return;
       }
 
+      const expectedSize = expectedOccupiedSizeForCode(code);
+      const sizeMismatch = expectedSize && !sizesMatch(size, expectedSize);
       const sequence = nextSequence;
       nextSequence += 1;
 
@@ -1705,9 +1707,11 @@
       saveEntries();
 
       if (entries.length % 100 === 0) {
-        setStatus("Saved #" + sequence + " " + code + ". Backup recommended at " + entries.length + " entries — tap Export XLSX or Export Backup JSON.", "warning");
+        setStatus("Saved #" + sequence + " " + code + ". Backup recommended at " + entries.length + " entries - tap Export XLSX or Export Backup JSON.", "warning");
+      } else if (sizeMismatch) {
+        setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
       } else {
-        setStatus("Saved #" + sequence + " " + code + " — " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
+        setStatus("Saved #" + sequence + " " + code + " - " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
       }
 
       render();
@@ -2652,15 +2656,38 @@
       const expected = expectedItems.map(item => item.code);
       const itemByCode = new Map(expectedItems.map(item => [item.code, item]));
       const expectedSet = new Set(expected);
-      const activeCodes = [...new Set(entries.map(item => item.code).filter(Boolean))].sort();
+      const activeItems = entries.filter(item => item.code);
+      const activeCodes = [...new Set(activeItems.map(item => item.code).filter(Boolean))].sort();
       const activeSet = new Set(activeCodes);
+      const sizeMismatches = activeItems.filter(item => {
+        const expectedItem = itemByCode.get(item.code);
+        return expectedItem && expectedItem.type && !sizesMatch(item.size, expectedItem.type);
+      }).map(item => ({
+        code: item.code,
+        enteredSize: item.size || "",
+        expectedSize: (itemByCode.get(item.code) || {}).type || ""
+      })).sort((a, b) => a.code.localeCompare(b.code));
       return {
         expected,
         itemByCode,
         foundExpected: expected.filter(code => activeSet.has(code)),
         missingExpected: expected.filter(code => !activeSet.has(code)),
-        extraFound: activeCodes.filter(code => !expectedSet.has(code))
+        extraFound: activeCodes.filter(code => !expectedSet.has(code)),
+        sizeMismatches
       };
+    }
+
+    function normalizeSizeForCompare(value) {
+      return normalizeUpperText(value).replace(/\s+/g, "");
+    }
+
+    function sizesMatch(enteredSize, expectedSize) {
+      return normalizeSizeForCompare(enteredSize) === normalizeSizeForCompare(expectedSize);
+    }
+
+    function expectedOccupiedSizeForCode(code) {
+      const item = occupiedExpectedItems().find(expected => expected.code === code);
+      return item && item.type ? item.type : "";
     }
 
     function auditRowsForCodes(codes, comparison) {
@@ -2668,6 +2695,10 @@
         const item = comparison.itemByCode.get(code) || { type: "" };
         return [code, item.type || ""];
       });
+    }
+
+    function sizeMismatchRows(mismatches) {
+      return mismatches.map(item => [item.code, item.expectedSize, item.enteredSize]);
     }
 
     function auditComparisonRows() {
@@ -2681,6 +2712,7 @@
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
         ["EXPECTED NOT FOUND", comparison.missingExpected.length],
         ["FOUND NOT ON MONTHLY LIST", comparison.extraFound.length],
+        ["SIZE MISMATCHES", comparison.sizeMismatches.length],
         [],
         ["EXPECTED AND FOUND"],
         ["UNIT NUMBER", "UNIT SIZE"],
@@ -2692,7 +2724,11 @@
         [],
         ["FOUND NOT ON MONTHLY LIST"],
         ["UNIT NUMBER", "UNIT SIZE"],
-        ...comparison.extraFound.map(code => [code, ""])
+        ...comparison.extraFound.map(code => [code, ""]),
+        [],
+        ["SIZE MISMATCHES"],
+        ["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE"],
+        ...sizeMismatchRows(comparison.sizeMismatches)
       ];
     }
 
@@ -2712,6 +2748,7 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(auditComparisonRows()), "Audit Comparison");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE"], ...sizeMismatchRows(comparison.sizeMismatches)]), "SIZE MISMATCHES");
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
       XLSX.writeFile(wb, filename);
       setStatus("Audit comparison exported: " + filename + ".", "success");
@@ -2799,8 +2836,8 @@
         return;
       }
       occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
-      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED OCCUPIED UNITS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE.";
-      occupiedStatus.className = comparison.missingExpected.length ? "status warning" : "status success";
+      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED OCCUPIED UNITS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
+      occupiedStatus.className = comparison.missingExpected.length || comparison.sizeMismatches.length ? "status warning" : "status success";
       occupiedComparisonList.innerHTML = "";
       [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["FOUND NOT ON LIST", comparison.extraFound]].forEach(([title, codes]) => {
         const group = document.createElement("div");
@@ -2814,6 +2851,18 @@
         group.appendChild(sample);
         occupiedComparisonList.appendChild(group);
       });
+      const mismatchGroup = document.createElement("div");
+      mismatchGroup.className = "audit-group";
+      const mismatchHeading = document.createElement("h3");
+      mismatchHeading.textContent = "SIZE MISMATCHES (" + comparison.sizeMismatches.length + ")";
+      const mismatchSample = document.createElement("div");
+      mismatchSample.className = "audit-sample";
+      mismatchSample.textContent = comparison.sizeMismatches.length
+        ? comparison.sizeMismatches.slice(0, 10).map(item => item.code + " EXPECTED " + item.expectedSize + ", ENTERED " + item.enteredSize).join(", ") + (comparison.sizeMismatches.length > 10 ? " ..." : "")
+        : "NONE";
+      mismatchGroup.appendChild(mismatchHeading);
+      mismatchGroup.appendChild(mismatchSample);
+      occupiedComparisonList.appendChild(mismatchGroup);
     }
 
     function applyImportedData(data) {
