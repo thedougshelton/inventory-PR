@@ -635,6 +635,37 @@
       font-size: 18px;
     }
 
+    #occupiedFileInput { display: none; }
+
+    .audit-metrics { margin-top: 12px; }
+
+    .audit-comparison-list {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .audit-group {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+      padding: 10px;
+      min-width: 0;
+    }
+
+    .audit-group h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .audit-sample {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+
     .warning-list {
       display: grid;
       gap: 6px;
@@ -835,7 +866,8 @@
       .two-col,
       .three-col,
       .confirm-row,
-      .edit-grid {
+      .edit-grid,
+      .audit-comparison-list {
         grid-template-columns: 1fr;
       }
 
@@ -924,6 +956,28 @@
         <div class="label">Last Saved</div>
         <div class="value" id="lastSaved">—</div>
       </div>
+    </section>
+
+
+    <section class="card secondary-section">
+      <div class="list-head">
+        <h2>MONTHLY OCCUPIED AUDIT</h2>
+        <span class="small" id="occupiedAuditText">NO MONTHLY LIST LOADED</span>
+      </div>
+      <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
+      <div class="actions three">
+        <button id="chooseOccupiedFileBtn" type="button">UPLOAD MONTHLY LIST</button>
+        <button id="exportAuditBtn" type="button">EXPORT AUDIT COMPARISON</button>
+        <button id="clearOccupiedListBtn" type="button">CLEAR MONTHLY LIST</button>
+      </div>
+      <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
+      <div class="preview-metrics audit-metrics">
+        <div class="preview-metric"><div class="label">EXPECTED OCCUPIED</div><strong id="occupiedExpectedCount">0</strong></div>
+        <div class="preview-metric"><div class="label">FOUND IN WAREHOUSE</div><strong id="occupiedFoundCount">0</strong></div>
+        <div class="preview-metric"><div class="label">EXPECTED NOT FOUND</div><strong id="occupiedMissingCount">0</strong></div>
+        <div class="preview-metric"><div class="label">FOUND NOT ON LIST</div><strong id="occupiedExtraCount">0</strong></div>
+      </div>
+      <div id="occupiedComparisonList" class="audit-comparison-list"></div>
     </section>
 
     <section class="card entry-card">
@@ -1219,6 +1273,7 @@
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
+    const MONTHLY_OCCUPIED_KEY = "warehouse_inventory_monthly_occupied_v1";
 
     const input = document.getElementById("containerInput");
     const notesInput = document.getElementById("notesInput");
@@ -1260,6 +1315,17 @@
     const exportDeletedCsvBtn = document.getElementById("exportDeletedCsvBtn");
     const copyDeletedBtn = document.getElementById("copyDeletedBtn");
     const searchInput = document.getElementById("searchInput");
+    const occupiedFileInput = document.getElementById("occupiedFileInput");
+    const chooseOccupiedFileBtn = document.getElementById("chooseOccupiedFileBtn");
+    const exportAuditBtn = document.getElementById("exportAuditBtn");
+    const clearOccupiedListBtn = document.getElementById("clearOccupiedListBtn");
+    const occupiedAuditText = document.getElementById("occupiedAuditText");
+    const occupiedStatus = document.getElementById("occupiedStatus");
+    const occupiedExpectedCount = document.getElementById("occupiedExpectedCount");
+    const occupiedFoundCount = document.getElementById("occupiedFoundCount");
+    const occupiedMissingCount = document.getElementById("occupiedMissingCount");
+    const occupiedExtraCount = document.getElementById("occupiedExtraCount");
+    const occupiedComparisonList = document.getElementById("occupiedComparisonList");
 
     const editPanel = document.getElementById("editPanel");
     const editTitle = document.getElementById("editTitle");
@@ -1304,6 +1370,7 @@
 
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
+    let occupiedMaster = loadOccupiedMaster();
     let duplicateBlocks = loadNumberFromKeys([DUPE_KEY, ...OLD_DUPE_KEYS], 0);
     let nextSequence = loadNextSequence();
     let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
@@ -1407,6 +1474,20 @@
       }
     }
 
+    function loadOccupiedMaster() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(MONTHLY_OCCUPIED_KEY) || "{}");
+        const codes = Array.isArray(parsed.codes) ? parsed.codes.map(normalizeCode).filter(isValid) : [];
+        return {
+          fileName: normalizeUpperText(parsed.fileName || ""),
+          importedAt: parsed.importedAt || "",
+          codes: [...new Set(codes)].sort()
+        };
+      } catch {
+        return { fileName: "", importedAt: "", codes: [] };
+      }
+    }
+
     function loadNextSequence() {
       const savedNext = loadNumberFromKeys([NEXT_SEQUENCE_KEY, ...OLD_NEXT_KEYS], 0);
       const highestActive = entries.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
@@ -1431,6 +1512,10 @@
       localStorage.setItem(LAST_SAVED_KEY, lastSavedAt);
       localStorage.setItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false");
       savedText.textContent = "Saved on this device";
+    }
+
+    function saveOccupiedMaster() {
+      localStorage.setItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
     }
 
     function normalizeCode(value) {
@@ -2074,6 +2159,12 @@
         "Deleted Entries: " + deletedEntries.length,
         "Duplicate Attempts Blocked: " + duplicateBlocks,
         "",
+        "MONTHLY OCCUPIED AUDIT",
+        "EXPECTED OCCUPIED: " + occupiedComparison().expected.length,
+        "FOUND IN WAREHOUSE: " + occupiedComparison().foundExpected.length,
+        "EXPECTED NOT FOUND: " + occupiedComparison().missingExpected.length,
+        "Found Not On Monthly List: " + occupiedComparison().extraFound.length,
+        "",
         "CONDITION",
         "Good: " + goodCount,
         "Bad: " + badCount,
@@ -2098,22 +2189,28 @@
     function summaryArray() {
       const rows = [
         ["Session Name", sessionNameInput.value.trim()],
-        ["Export Date/Time", formatLocalTime(new Date().toISOString())],
+        ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
         ["Editing Status", editLocked ? "Locked" : "Unlocked"],
         ["Active Entries", entries.length],
         ["Deleted Entries", deletedEntries.length],
         ["Duplicate Attempts Blocked", duplicateBlocks],
         [],
-        ["By Size", "Count"],
+        ["MONTHLY OCCUPIED AUDIT", "COUNT"],
+        ["EXPECTED OCCUPIED", occupiedComparison().expected.length],
+        ["FOUND IN WAREHOUSE", occupiedComparison().foundExpected.length],
+        ["EXPECTED NOT FOUND", occupiedComparison().missingExpected.length],
+        ["Found Not On Monthly List", occupiedComparison().extraFound.length],
+        [],
+        ["By Size", "COUNT"],
         ["8 ft", entries.filter(item => item.size === "8 ft").length],
         ["12 ft", entries.filter(item => item.size === "12 ft").length],
         ["16 ft", entries.filter(item => item.size === "16 ft").length],
         [],
-        ["By Condition", "Count"],
+        ["By Condition", "COUNT"],
         ["Good", entries.filter(item => item.condition === "Good").length],
         ["Bad", entries.filter(item => item.condition === "Bad").length],
         [],
-        ["By Status", "Count"],
+        ["By Status", "COUNT"],
         ["Built", entries.filter(item => item.status === "Built").length],
         ["Flat", entries.filter(item => item.status === "Flat").length]
       ];
@@ -2143,6 +2240,11 @@
 
       const summarySheet = XLSX.utils.aoa_to_sheet(summaryArray());
       XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+      if (occupiedMaster.codes.length) {
+        const auditSheet = XLSX.utils.aoa_to_sheet(auditComparisonRows());
+        XLSX.utils.book_append_sheet(wb, auditSheet, "Occupied Audit");
+      }
 
       const reportSheet = XLSX.utils.aoa_to_sheet(buildReportText().split("\n").map(line => [line]));
       XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
@@ -2178,7 +2280,8 @@
         editLocked,
         finalExportSignature,
         entries,
-        deletedEntries
+        deletedEntries,
+        occupiedMaster
       };
 
       const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
@@ -2415,6 +2518,193 @@
         entries: importedEntries,
         deletedEntries: importedDeleted
       };
+    }
+
+
+    function extractCodeCandidates(value) {
+      const text = normalizeUpperText(value).replace(/[^A-Z0-9]+/g, " ");
+      return (text.match(/[A-Z0-9]{6}/g) || []).filter(isValid);
+    }
+
+    function findLikelyCodeColumns(rows) {
+      const headerWords = ["UNIT", "CONTAINER", "EQUIPMENT", "ASSET", "SERIAL", "NUMBER"];
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex++) {
+        const row = rows[rowIndex] || [];
+        const columns = [];
+        row.forEach((cell, index) => {
+          const header = normalizeUpperText(cell);
+          if (headerWords.some(word => header.includes(word))) columns.push(index);
+        });
+        if (columns.length) return { rowIndex, columns };
+      }
+      return null;
+    }
+
+    function extractOccupiedCodesFromRows(rows) {
+      const found = new Set();
+      const likely = findLikelyCodeColumns(rows);
+      if (likely) {
+        rows.slice(likely.rowIndex + 1).forEach(row => {
+          likely.columns.forEach(column => {
+            extractCodeCandidates(row[column] || "").forEach(code => found.add(code));
+          });
+        });
+      }
+      if (!found.size) {
+        rows.forEach(row => row.forEach(cell => extractCodeCandidates(cell || "").forEach(code => found.add(code))));
+      }
+      return [...found].sort();
+    }
+
+    function occupiedComparison() {
+      const expected = occupiedMaster.codes || [];
+      const expectedSet = new Set(expected);
+      const activeCodes = [...new Set(entries.map(item => item.code).filter(Boolean))].sort();
+      const activeSet = new Set(activeCodes);
+      return {
+        expected,
+        foundExpected: expected.filter(code => activeSet.has(code)),
+        missingExpected: expected.filter(code => !activeSet.has(code)),
+        extraFound: activeCodes.filter(code => !expectedSet.has(code))
+      };
+    }
+
+    function auditComparisonRows() {
+      const comparison = occupiedComparison();
+      return [
+        ["Session Name", sessionNameInput.value.trim()],
+        ["MONTHLY LIST FILE", occupiedMaster.fileName || ""],
+        ["MONTHLY LIST IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
+        ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
+        ["EXPECTED OCCUPIED", comparison.expected.length],
+        ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
+        ["EXPECTED NOT FOUND", comparison.missingExpected.length],
+        ["Found Not On Monthly List", comparison.extraFound.length],
+        [],
+        ["EXPECTED AND FOUND"],
+        ["UNIT NUMBER"],
+        ...comparison.foundExpected.map(code => [code]),
+        [],
+        ["EXPECTED NOT FOUND"],
+        ["UNIT NUMBER"],
+        ...comparison.missingExpected.map(code => [code]),
+        [],
+        ["FOUND NOT ON MONTHLY LIST"],
+        ["UNIT NUMBER"],
+        ...comparison.extraFound.map(code => [code])
+      ];
+    }
+
+    function exportAuditComparison() {
+      const comparison = occupiedComparison();
+      if (!occupiedMaster.codes.length) {
+        setStatus("Upload a monthly occupied list before exporting the audit comparison.", "warning");
+        occupiedStatus.textContent = "Upload a monthly occupied list before exporting the audit comparison.";
+        occupiedStatus.className = "status warning";
+        return;
+      }
+      if (typeof XLSX === "undefined") {
+        setStatus("XLSX export library did not load. Check internet connection, then reopen the app.", "error");
+        return;
+      }
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(auditComparisonRows()), "Audit Comparison");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(comparison.missingExpected.map(code => [code])), "EXPECTED NOT FOUND");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(comparison.extraFound.map(code => [code])), "FOUND NOT ON LIST");
+      const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
+      XLSX.writeFile(wb, filename);
+      setStatus("Audit comparison exported: " + filename + ".", "success");
+      input.focus();
+    }
+
+    async function importOccupiedList(file) {
+      if (!file) return;
+      try {
+        if (typeof XLSX === "undefined" && file.name.toLowerCase().endsWith(".xlsx")) {
+          throw new Error("XLSX library is not loaded. Check internet connection, then reopen the app.");
+        }
+        occupiedStatus.textContent = "READING " + normalizeUpperText(file.name) + "...";
+        occupiedStatus.className = "status info";
+        let rows = [];
+        const name = file.name.toLowerCase();
+        if (name.endsWith(".csv")) {
+          rows = parseCsv(await readFileAsText(file));
+        } else if (name.endsWith(".xlsx")) {
+          const buffer = await readFileAsArrayBuffer(file);
+          const workbook = XLSX.read(buffer, { type: "array" });
+          workbook.SheetNames.forEach(sheetName => {
+            rows.push(...XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" }));
+          });
+        } else {
+          throw new Error("Choose an XLSX or CSV file.");
+        }
+        const codes = extractOccupiedCodesFromRows(rows);
+        if (!codes.length) throw new Error("No 6-character unit numbers were found in that file.");
+        occupiedMaster = { fileName: normalizeUpperText(file.name), importedAt: new Date().toISOString(), codes };
+        saveOccupiedMaster();
+        occupiedFileInput.value = "";
+        render();
+        setStatus("Monthly occupied list loaded: " + codes.length + " expected units.", "success");
+      } catch (error) {
+        occupiedFileInput.value = "";
+        occupiedStatus.textContent = "MONTHLY LIST UPLOAD FAILED: " + normalizeUpperText(error.message);
+        occupiedStatus.className = "status error";
+        setStatus("Monthly list upload failed: " + error.message, "error");
+      }
+    }
+
+    function clearOccupiedList() {
+      if (!occupiedMaster.codes.length) {
+        setStatus("No monthly occupied list is loaded.", "info");
+        input.focus();
+        return;
+      }
+      const ok = confirm("This will clear the monthly occupied list from this device. Your scanned entries will stay saved. Continue?");
+      if (!ok) return;
+      occupiedMaster = { fileName: "", importedAt: "", codes: [] };
+      saveOccupiedMaster();
+      occupiedFileInput.value = "";
+      render();
+      setStatus("Monthly occupied list cleared. Scanned entries were not changed.", "success");
+      input.focus();
+    }
+
+    function sampleCodes(codes) {
+      if (!codes.length) return "NONE";
+      return codes.slice(0, 10).join(", ") + (codes.length > 10 ? " ..." : "");
+    }
+
+    function renderOccupiedAudit() {
+      const comparison = occupiedComparison();
+      occupiedExpectedCount.textContent = comparison.expected.length;
+      occupiedFoundCount.textContent = comparison.foundExpected.length;
+      occupiedMissingCount.textContent = comparison.missingExpected.length;
+      occupiedExtraCount.textContent = comparison.extraFound.length;
+      exportAuditBtn.disabled = !occupiedMaster.codes.length;
+      clearOccupiedListBtn.disabled = !occupiedMaster.codes.length;
+      if (!occupiedMaster.codes.length) {
+        occupiedAuditText.textContent = "NO MONTHLY LIST LOADED";
+        occupiedStatus.textContent = "UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.";
+        occupiedStatus.className = "status info";
+        occupiedComparisonList.innerHTML = '<div class="empty">NO MONTHLY OCCUPIED LIST LOADED YET.</div>';
+        return;
+      }
+      occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
+      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED OCCUPIED UNITS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE.";
+      occupiedStatus.className = comparison.missingExpected.length ? "status warning" : "status success";
+      occupiedComparisonList.innerHTML = "";
+      [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["FOUND NOT ON LIST", comparison.extraFound]].forEach(([title, codes]) => {
+        const group = document.createElement("div");
+        group.className = "audit-group";
+        const heading = document.createElement("h3");
+        heading.textContent = title + " (" + codes.length + ")";
+        const sample = document.createElement("div");
+        sample.className = "audit-sample";
+        sample.textContent = sampleCodes(codes);
+        group.appendChild(heading);
+        group.appendChild(sample);
+        occupiedComparisonList.appendChild(group);
+      });
     }
 
     function applyImportedData(data) {
@@ -2926,6 +3216,7 @@
       renderActiveEntries();
       renderDeletedEntries();
       renderReport();
+      renderOccupiedAudit();
       renderLockState();
 
       entryModeBtn.textContent = document.body.classList.contains("entry-mode")
@@ -3032,6 +3323,10 @@
     entryModeBtn.addEventListener("click", toggleEntryMode);
     importBackupBtn.addEventListener("click", importBackup);
     backupFileInput.addEventListener("change", importBackup);
+    chooseOccupiedFileBtn.addEventListener("click", () => occupiedFileInput.click());
+    occupiedFileInput.addEventListener("change", () => importOccupiedList(occupiedFileInput.files && occupiedFileInput.files[0]));
+    exportAuditBtn.addEventListener("click", exportAuditComparison);
+    clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
     clearFileBtn.addEventListener("click", cancelImportPreview);
     applyImportBtn.addEventListener("click", applyImportPreview);
     cancelImportBtn.addEventListener("click", cancelImportPreview);
