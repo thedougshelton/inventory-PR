@@ -1060,6 +1060,7 @@
         <button id="undoBtn" type="button">Undo Last Entry</button>
         <button id="copyBtn" type="button">Copy Active List</button>
         <button id="backupJsonBtn" type="button">Export Backup JSON</button>
+        <button id="phoneTransferBtn" type="button">PHONE TRANSFER FILE</button>
         <button id="unlockBtn" type="button">Unlock Editing</button>
         <button id="focusEntryBtn" type="button">Focus Entry Box</button>
         <button id="exportCsvBtn" type="button">Export CSV Backup</button>
@@ -1287,6 +1288,7 @@
     const undoBtn = document.getElementById("undoBtn");
     const copyBtn = document.getElementById("copyBtn");
     const backupJsonBtn = document.getElementById("backupJsonBtn");
+    const phoneTransferBtn = document.getElementById("phoneTransferBtn");
     const unlockBtn = document.getElementById("unlockBtn");
     const focusEntryBtn = document.getElementById("focusEntryBtn");
     const exportCsvBtn = document.getElementById("exportCsvBtn");
@@ -2313,6 +2315,29 @@
       input.focus();
     }
 
+    function exportPhoneTransferFile() {
+      if (!occupiedMaster.codes.length) {
+        setStatus("Upload a monthly occupied list before creating a phone transfer file.", "warning");
+        input.focus();
+        return;
+      }
+
+      const transfer = {
+        appName: "Tampa Inventory Entry",
+        appVersion: 4,
+        transferType: "monthlyOccupiedSetup",
+        exportedAt: new Date().toISOString(),
+        sessionName: sessionNameInput.value.trim(),
+        employeeInitials: employeeInitialsInput.value.trim(),
+        occupiedMaster
+      };
+
+      const filename = safeFilePart(sessionNameInput.value) + "_phone_transfer_" + dateStamp() + ".json";
+      downloadBlob(JSON.stringify(transfer, null, 2), filename, "application/json;charset=utf-8");
+      setStatus("Phone transfer file exported: " + filename + ". Open this file on your phone and import it in this app.", "success");
+      input.focus();
+    }
+
     function exportCsvBackup() {
       const filename = safeFilePart(sessionNameInput.value) + "_master_backup_" + dateStamp() + ".csv";
       downloadBlob(buildMasterCsv(), filename, "text/csv;charset=utf-8");
@@ -2453,6 +2478,18 @@
     }
 
     function dataFromJsonBackup(data) {
+      if (data.transferType === "monthlyOccupiedSetup") {
+        const items = data.occupiedMaster && Array.isArray(data.occupiedMaster.items) ? data.occupiedMaster.items : [];
+        const codes = data.occupiedMaster && Array.isArray(data.occupiedMaster.codes) ? data.occupiedMaster.codes : [];
+        if (!items.length && !codes.length) throw new Error("Phone transfer file does not contain a monthly occupied list.");
+        return {
+          transferType: "monthlyOccupiedSetup",
+          sessionName: normalizeUpperText(data.sessionName || defaultSessionName()),
+          employeeInitials: normalizeInitials(data.employeeInitials || ""),
+          occupiedMaster: loadTransferOccupiedMaster(data.occupiedMaster || {})
+        };
+      }
+
       if (!Array.isArray(data.entries) && !Array.isArray(data.deletedEntries)) {
         throw new Error("JSON backup does not contain entries.");
       }
@@ -2464,6 +2501,7 @@
         duplicateBlocks: Number(data.duplicateBlocks) || 0,
         editLocked: Boolean(data.editLocked),
         finalExportSignature: data.finalExportSignature || "",
+        occupiedMaster: data.occupiedMaster ? loadTransferOccupiedMaster(data.occupiedMaster) : null,
         entries: (data.entries || []).map((item, index) => normalizeEntry(item, index + 1)).filter(item => item.code),
         deletedEntries: (data.deletedEntries || []).map((item, index) => normalizeDeleted(item, index + 1)).filter(item => item.code)
       };
@@ -2865,6 +2903,43 @@
       occupiedComparisonList.appendChild(mismatchGroup);
     }
 
+    function loadTransferOccupiedMaster(source) {
+      const rawItems = Array.isArray(source.items) ? source.items : [];
+      let items = rawItems.map(item => ({
+        code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
+        type: normalizeOccupiedTypeSize(item.type || item.rawType || item["Type"] || "", item.code || item.unitName || item["UnitName"] || ""),
+        rawType: normalizeUpperText(item.rawType || item.type || item["Type"] || "")
+      })).filter(item => isValid(item.code));
+
+      if (!items.length && Array.isArray(source.codes)) {
+        items = source.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
+      }
+
+      const itemMap = new Map();
+      items.forEach(item => {
+        if (!itemMap.has(item.code)) itemMap.set(item.code, item);
+        if (!itemMap.get(item.code).type && item.type) itemMap.set(item.code, item);
+      });
+      const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
+
+      return {
+        fileName: normalizeUpperText(source.fileName || "PHONE TRANSFER FILE"),
+        importedAt: source.importedAt || new Date().toISOString(),
+        codes: cleanItems.map(item => item.code),
+        items: cleanItems
+      };
+    }
+
+    function applyPhoneTransfer(data) {
+      occupiedMaster = loadTransferOccupiedMaster(data.occupiedMaster || {});
+      sessionNameInput.value = normalizeUpperText(data.sessionName || sessionNameInput.value || defaultSessionName());
+      employeeInitialsInput.value = normalizeInitials(data.employeeInitials || employeeInitialsInput.value || "");
+      saveOccupiedMaster();
+      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
+      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase());
+      render();
+    }
+
     function applyImportedData(data) {
       entries = data.entries || [];
       deletedEntries = data.deletedEntries || [];
@@ -2882,6 +2957,11 @@
 
       sessionNameInput.value = normalizeUpperText(data.sessionName || defaultSessionName());
       employeeInitialsInput.value = normalizeInitials(data.employeeInitials || "");
+
+      if (data.occupiedMaster) {
+        occupiedMaster = data.occupiedMaster;
+        saveOccupiedMaster();
+      }
 
       if (finalExportSignature) {
         localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
@@ -2923,6 +3003,21 @@
     }
 
     function buildImportPreview(data, file) {
+      if (data.transferType === "monthlyOccupiedSetup") {
+        const occupiedCount = data.occupiedMaster && Array.isArray(data.occupiedMaster.codes) ? data.occupiedMaster.codes.length : 0;
+        return {
+          fileName: file ? file.name : "Selected file",
+          fileSize: file ? file.size : 0,
+          data,
+          activeCount: 0,
+          deletedCount: 0,
+          highestSequence: 0,
+          warnings: [{ type: "success", text: "PHONE TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED OCCUPIED UNITS AND WILL NOT REPLACE SCANNED ENTRIES." }],
+          canApply: occupiedCount > 0,
+          isPhoneTransfer: true
+        };
+      }
+
       const invalid = invalidImportedEntries(data);
       const internalDuplicates = duplicateCodes(allImportedEntries(data));
       const currentDuplicates = importedCurrentDuplicates(data);
@@ -3057,6 +3152,17 @@
 
       if (!pendingImport.canApply) {
         setStatus("Fix the import warnings before applying this file.", "error");
+        return;
+      }
+
+      if (pendingImport.isPhoneTransfer) {
+        applyPhoneTransfer(pendingImport.data);
+        const loadedCount = occupiedMaster.codes.length;
+        pendingImport = null;
+        backupFileInput.value = "";
+        renderImportPreview();
+        setStatus("Phone transfer imported. Monthly occupied list loaded: " + loadedCount + " expected units. Scanned entries were not changed.", "success");
+        input.focus();
         return;
       }
 
@@ -3474,6 +3580,7 @@
     undoBtn.addEventListener("click", undoLast);
     copyBtn.addEventListener("click", copyActiveList);
     backupJsonBtn.addEventListener("click", exportBackupJson);
+    phoneTransferBtn.addEventListener("click", exportPhoneTransferFile);
     unlockBtn.addEventListener("click", unlockEditing);
     focusEntryBtn.addEventListener("click", () => input.focus());
     exportCsvBtn.addEventListener("click", exportCsvBackup);
