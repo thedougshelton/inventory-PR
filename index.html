@@ -523,6 +523,23 @@
 
     .edit-panel.open { display: block; }
 
+    .delete-confirm-panel {
+      border-color: #fecaca;
+      background: #fff7f7;
+    }
+
+    .delete-confirm-details {
+      display: grid;
+      gap: 6px;
+      margin: 10px 0;
+      font-size: 14px;
+    }
+
+    .delete-confirm-details strong {
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
     .edit-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1085,6 +1102,16 @@
           </div>
         </div>
       </div>
+
+      <div id="deleteConfirmPanel" class="edit-panel delete-confirm-panel" role="region" aria-live="polite">
+        <h3 id="deleteConfirmTitle">CONFIRM DELETE</h3>
+        <div id="deleteConfirmDetails" class="delete-confirm-details"></div>
+        <p class="small">THIS WILL MOVE THE ENTRY TO DELETED ENTRIES.</p>
+        <div class="actions two">
+          <button id="confirmDeleteBtn" class="danger-solid" type="button">DELETE ENTRY</button>
+          <button id="cancelDeleteBtn" type="button">CANCEL</button>
+        </div>
+      </div>
     </section>
 
     <section class="card secondary-section">
@@ -1244,6 +1271,11 @@
     const editNotes = document.getElementById("editNotes");
     const saveEditBtn = document.getElementById("saveEditBtn");
     const cancelEditBtn = document.getElementById("cancelEditBtn");
+    const deleteConfirmPanel = document.getElementById("deleteConfirmPanel");
+    const deleteConfirmTitle = document.getElementById("deleteConfirmTitle");
+    const deleteConfirmDetails = document.getElementById("deleteConfirmDetails");
+    const confirmDeleteBtn = document.getElementById("confirmDeleteBtn");
+    const cancelDeleteBtn = document.getElementById("cancelDeleteBtn");
 
     const count = document.getElementById("count");
     const deletedMetric = document.getElementById("deletedMetric");
@@ -1279,6 +1311,7 @@
     let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
     let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
     let editingSequence = null;
+    let pendingDeleteSequence = null;
     let pendingImport = null;
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
@@ -1611,6 +1644,56 @@
       setStatus("Removed last entry #" + removed.sequence + ": " + removed.code + ". It was added to Deleted Entries.", "warning");
       render();
       input.focus();
+    }
+
+    function requestDeleteEntry(sequence) {
+      if (requireUnlocked("delete an entry")) return;
+
+      const item = entries.find(entry => entry.sequence === sequence);
+      if (!item) {
+        setStatus("Could not find that entry to delete.", "error");
+        return;
+      }
+
+      pendingDeleteSequence = sequence;
+      deleteConfirmTitle.textContent = "DELETE " + normalizeUpperText(item.code) + "?";
+      deleteConfirmDetails.innerHTML = "";
+
+      [
+        "ENTRY #" + item.sequence,
+        "SIZE: " + normalizeUpperText(item.size || "12 FT"),
+        "CONDITION: " + normalizeUpperText(item.condition || "GOOD"),
+        "STATUS: " + normalizeUpperText(item.status || "BUILT")
+      ].forEach((line, index) => {
+        const detail = document.createElement(index === 0 ? "strong" : "div");
+        detail.textContent = line;
+        deleteConfirmDetails.appendChild(detail);
+      });
+
+      deleteConfirmPanel.classList.add("open");
+      confirmDeleteBtn.focus();
+    }
+
+    function cancelDelete() {
+      const item = entries.find(entry => entry.sequence === pendingDeleteSequence);
+      pendingDeleteSequence = null;
+      deleteConfirmPanel.classList.remove("open");
+      setStatus(item ? "Delete cancelled for " + item.code + "." : "Delete cancelled.", "info");
+      input.focus();
+    }
+
+    function confirmPendingDelete() {
+      if (pendingDeleteSequence === null) {
+        deleteConfirmPanel.classList.remove("open");
+        setStatus("No entry is selected for deletion.", "warning");
+        input.focus();
+        return;
+      }
+
+      const sequence = pendingDeleteSequence;
+      pendingDeleteSequence = null;
+      deleteConfirmPanel.classList.remove("open");
+      deleteEntry(sequence);
     }
 
     function deleteEntry(sequence) {
@@ -2720,7 +2803,7 @@
         del.className = "danger";
         del.textContent = "Delete";
         del.disabled = editLocked;
-        del.addEventListener("click", () => deleteEntry(item.sequence));
+        del.addEventListener("click", () => requestDeleteEntry(item.sequence));
 
         rowActions.appendChild(edit);
         rowActions.appendChild(del);
@@ -2976,6 +3059,8 @@
     copyDeletedBtn.addEventListener("click", copyDeletedList);
     saveEditBtn.addEventListener("click", saveEdit);
     cancelEditBtn.addEventListener("click", cancelEdit);
+    confirmDeleteBtn.addEventListener("click", confirmPendingDelete);
+    cancelDeleteBtn.addEventListener("click", cancelDelete);
     copyReportBtn.addEventListener("click", copyReport);
     downloadReportBtn.addEventListener("click", downloadReport);
     printReportBtn.addEventListener("click", printReport);
