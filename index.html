@@ -432,6 +432,60 @@
       margin-top: 10px;
     }
 
+
+    .recent-panel {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .recent-panel .list-head {
+      margin-bottom: 8px;
+    }
+
+    .recent-panel h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .recent-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .recent-item {
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+      padding: 8px 10px;
+      min-height: 42px;
+    }
+
+    .recent-code {
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      overflow-wrap: anywhere;
+    }
+
+    .recent-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: end;
+    }
+
+    .recent-meta .tag {
+      font-size: 12px;
+      padding: 3px 7px;
+      background: #fff;
+    }
+
     .summary-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -921,6 +975,14 @@
         Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
       </p>
 
+      <div class="recent-panel" aria-label="Last 10 Entries">
+        <div class="list-head">
+          <h3>Last 10 Entries</h3>
+          <span class="small" id="recentEntriesCount">Most recent saved containers</span>
+        </div>
+        <div id="recentEntriesList" class="recent-list"></div>
+      </div>
+
       <div class="actions">
         <button id="exportXlsxBtn" type="button">Export XLSX</button>
         <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
@@ -1196,6 +1258,8 @@
     const deletedCountText = document.getElementById("deletedCountText");
     const savedText = document.getElementById("savedText");
     const searchCountText = document.getElementById("searchCountText");
+    const recentEntriesList = document.getElementById("recentEntriesList");
+    const recentEntriesCount = document.getElementById("recentEntriesCount");
     const sizeSummary = document.getElementById("sizeSummary");
     const conditionSummary = document.getElementById("conditionSummary");
     const statusSummary = document.getElementById("statusSummary");
@@ -2523,6 +2587,51 @@
       });
     }
 
+
+    function renderRecentEntries() {
+      recentEntriesCount.textContent = entries.length
+        ? Math.min(entries.length, 10) + " of " + entries.length + " shown"
+        : "Most recent saved containers";
+
+      if (!entries.length) {
+        recentEntriesList.innerHTML = '<div class="empty">No recent entries yet.</div>';
+        return;
+      }
+
+      recentEntriesList.innerHTML = "";
+      entries.slice(-10).reverse().forEach(item => {
+        const row = document.createElement("div");
+        row.className = "recent-item";
+
+        const num = document.createElement("div");
+        num.className = "num";
+        num.textContent = "#" + (item.sequence || "—");
+
+        const code = document.createElement("div");
+        code.className = "recent-code";
+        code.textContent = item.code || "—";
+
+        const meta = document.createElement("div");
+        meta.className = "recent-meta";
+
+        [
+          item.size || "12 ft",
+          item.condition || "Good",
+          item.status || "Built"
+        ].filter(Boolean).forEach(value => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = value;
+          meta.appendChild(tag);
+        });
+
+        row.appendChild(num);
+        row.appendChild(code);
+        row.appendChild(meta);
+        recentEntriesList.appendChild(row);
+      });
+    }
+
     function renderSummaries() {
       renderSummaryBox(sizeSummary, summaryCounts("size", ["8 ft", "12 ft", "16 ft", "ZM", "SHELL", "TR"]), ["8 ft", "12 ft", "16 ft", "ZM", "SHELL", "TR"]);
       renderSummaryBox(conditionSummary, summaryCounts("condition", ["Good", "Bad"]), ["Good", "Bad"]);
@@ -2730,6 +2839,7 @@
       lastSaved.textContent = formatShortTime(lastSavedAt);
 
       renderSummaries();
+      renderRecentEntries();
       renderActiveEntries();
       renderDeletedEntries();
       renderReport();
