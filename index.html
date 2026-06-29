@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
   <title>Tampa Inventory Entry</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -2092,6 +2092,50 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
+    function expectedCodeSet() {
+      return new Set(occupiedExpectedItems().map(item => item.code));
+    }
+
+    function isMonthlyPhysicalMatch(code) {
+      return expectedCodeSet().has(normalizeCode(code || ""));
+    }
+
+    function monthlyMatchText(code) {
+      return isMonthlyPhysicalMatch(code) ? "YES - PHYSICALLY FOUND" : "";
+    }
+
+    const monthlyMatchCellStyle = {
+      fill: { patternType: "solid", fgColor: { rgb: "DCFCE7" } },
+      font: { color: { rgb: "166534" }, bold: true }
+    };
+
+    function styleWorksheetRow(ws, rowNumber, columnCount, style) {
+      for (let col = 0; col < columnCount; col++) {
+        const ref = XLSX.utils.encode_cell({ r: rowNumber - 1, c: col });
+        if (!ws[ref]) ws[ref] = { t: "s", v: "" };
+        ws[ref].s = Object.assign({}, ws[ref].s || {}, style);
+      }
+    }
+
+    function styleActiveMonthlyMatches(ws, activeRows) {
+      if (!occupiedMaster.codes.length) return;
+      const columnCount = Object.keys(activeRows[0] || {}).length;
+      activeRows.forEach((row, index) => {
+        if (row["Monthly Audit Match"]) styleWorksheetRow(ws, index + 2, columnCount, monthlyMatchCellStyle);
+      });
+    }
+
+    function styleAuditSectionRows(ws, rows, sectionTitle) {
+      const sectionIndex = rows.findIndex(row => String(row[0] || "").trim().toUpperCase() === sectionTitle);
+      if (sectionIndex === -1) return;
+      const headerIndex = sectionIndex + 1;
+      const header = rows[headerIndex] || [];
+      for (let i = headerIndex + 1; i < rows.length; i++) {
+        if (!rows[i] || !rows[i].some(cell => String(cell || "").trim() !== "")) break;
+        styleWorksheetRow(ws, i + 1, Math.max(header.length, rows[i].length), monthlyMatchCellStyle);
+      }
+    }
+
     function activeArray() {
       return entries.map(item => ({
         "Entry Number": item.sequence || "",
@@ -2101,6 +2145,7 @@
         "Container Status": item.status || "",
         "Employee/User Initials": item.initials || "",
         "Notes": item.notes || "",
+        "Monthly Audit Match": monthlyMatchText(item.code),
         "Date/Time Entered": formatLocalTime(item.timestamp),
         "Edited Date/Time": formatLocalTime(item.editedAt),
         "Restored Date/Time": formatLocalTime(item.restoredAt)
@@ -2275,7 +2320,9 @@
 
       const wb = XLSX.utils.book_new();
 
-      const activeSheet = XLSX.utils.json_to_sheet(activeArray());
+      const activeRows = activeArray();
+      const activeSheet = XLSX.utils.json_to_sheet(activeRows);
+      styleActiveMonthlyMatches(activeSheet, activeRows);
       XLSX.utils.book_append_sheet(wb, activeSheet, "Active Entries");
 
       const deletedSheet = XLSX.utils.json_to_sheet(deletedArray());
@@ -2285,7 +2332,9 @@
       XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
 
       if (occupiedMaster.codes.length) {
-        const auditSheet = XLSX.utils.aoa_to_sheet(auditComparisonRows());
+        const auditRows = auditComparisonRows();
+        const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
+        styleAuditSectionRows(auditSheet, auditRows, "EXPECTED AND FOUND");
         XLSX.utils.book_append_sheet(wb, auditSheet, "Occupied Audit");
       }
 
@@ -2802,8 +2851,15 @@
         return;
       }
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(auditComparisonRows()), "Audit Comparison");
+      const auditRows = auditComparisonRows();
+      const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
+      styleAuditSectionRows(auditSheet, auditRows, "EXPECTED AND FOUND");
+      XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
+      const foundRows = [["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.foundExpected, comparison)];
+      const foundSheet = XLSX.utils.aoa_to_sheet(foundRows);
+      foundRows.slice(1).forEach((row, index) => styleWorksheetRow(foundSheet, index + 2, row.length, monthlyMatchCellStyle));
+      XLSX.utils.book_append_sheet(wb, foundSheet, "EXPECTED AND FOUND");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE"], ...sizeMismatchRows(comparison.sizeMismatches)]), "SIZE MISMATCHES");
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
