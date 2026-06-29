@@ -218,6 +218,16 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .setup-action {
+      display: flex;
+      align-items: end;
+    }
+
+    .setup-action button {
+      width: 100%;
+      min-height: 46px;
+    }
+
     .three-col {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -972,6 +982,9 @@
           <label for="employeeInitials">Employee/User initials</label>
           <input id="employeeInitials" type="text" autocomplete="off" maxlength="8" placeholder="EXAMPLE: DOUG SHELTON OR DS" />
         </div>
+        <div class="setup-action">
+          <button id="backupJsonBtn" type="button">Export Backup JSON</button>
+        </div>
       </div>
 
       <p class="help">Session name and initials are included in the XLSX export and final report.</p>
@@ -1097,7 +1110,6 @@
         <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
         <button id="undoBtn" type="button">Undo Last Entry</button>
         <button id="copyBtn" type="button">Copy Active List</button>
-        <button id="backupJsonBtn" type="button">Export Backup JSON</button>
         <button id="phoneTransferBtn" type="button">PHONE TRANSFER FILE</button>
         <button id="unlockBtn" type="button">Unlock Editing</button>
         <button id="focusEntryBtn" type="button">Focus Entry Box</button>
