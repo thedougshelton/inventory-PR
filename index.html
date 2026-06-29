@@ -1642,8 +1642,8 @@
     }
 
     function backupReminderDue() {
-      if (!lastBackupAt) return entries.length >= 50;
-      return entriesSinceBackup() >= 50;
+      if (!lastBackupAt) return entries.length >= 100;
+      return entriesSinceBackup() >= 100;
     }
 
     function currentSignature() {
