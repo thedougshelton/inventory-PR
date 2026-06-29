@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="Tampa Inventory Entry" />
+  <meta name="apple-mobile-web-app-title" content="Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
-  <title>Tampa Inventory Entry</title>
+  <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <style>
     :root {
@@ -959,7 +959,7 @@
 <body>
   <main class="wrap">
     <header>
-      <h1>Tampa Inventory Entry</h1>
+      <h1>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</h1>
       <p class="sub">Select size, condition, and status. Then type a 6-character container number and press Enter.</p>
       <div class="top-status">
         <span id="lockBadge" class="badge unlocked">Editing Unlocked</span>
@@ -2313,7 +2313,7 @@
       const activeInitials = [...new Set(entries.map(item => item.initials).filter(Boolean))].join(", ") || "—";
 
       return [
-        "TAMPA INVENTORY FINAL REPORT",
+        "PACK RAT TAMPA INVENTORY ENTRY - DOUG SHELTON VOL 1 FINAL REPORT",
         "",
         "Session: " + (sessionNameInput.value.trim() || "—"),
         "Report Date: " + todayStamp(),
@@ -2439,7 +2439,7 @@
 
     function exportBackupJson() {
       const backup = {
-        appName: "Tampa Inventory Entry",
+        appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
         appVersion: 4,
         exportedAt: new Date().toISOString(),
         sessionName: sessionNameInput.value.trim(),
@@ -2468,7 +2468,7 @@
       }
 
       const transfer = {
-        appName: "Tampa Inventory Entry",
+        appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
         appVersion: 4,
         transferType: "monthlyOccupiedSetup",
         exportedAt: new Date().toISOString(),
