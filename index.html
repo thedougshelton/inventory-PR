@@ -106,6 +106,13 @@
       font-weight: 700;
     }
 
+    .badge.warning {
+      color: var(--warning);
+      background: var(--yellowSoft);
+      border-color: #fde68a;
+      font-weight: 700;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -1302,6 +1309,7 @@
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const LAST_BACKUP_KEY = "warehouse_inventory_last_backup_v1";
+    const LAST_BACKUP_ENTRY_COUNT_KEY = "warehouse_inventory_last_backup_entry_count_v1";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
@@ -1408,6 +1416,7 @@
     let nextSequence = loadNextSequence();
     let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
     let lastBackupAt = localStorage.getItem(LAST_BACKUP_KEY) || "";
+    let lastBackupEntryCount = Number(localStorage.getItem(LAST_BACKUP_ENTRY_COUNT_KEY)) || 0;
     let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
     let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
     let editingSequence = null;
@@ -1622,8 +1631,19 @@
 
     function markBackupExported() {
       lastBackupAt = new Date().toISOString();
+      lastBackupEntryCount = entries.length;
       localStorage.setItem(LAST_BACKUP_KEY, lastBackupAt);
+      localStorage.setItem(LAST_BACKUP_ENTRY_COUNT_KEY, String(lastBackupEntryCount));
       renderBackupBadge();
+    }
+
+    function entriesSinceBackup() {
+      return Math.max(0, entries.length - (Number(lastBackupEntryCount) || 0));
+    }
+
+    function backupReminderDue() {
+      if (!lastBackupAt) return entries.length >= 50;
+      return entriesSinceBackup() >= 50;
     }
 
     function currentSignature() {
@@ -1739,8 +1759,8 @@
       notesInput.value = "";
       saveEntries();
 
-      if (entries.length % 100 === 0) {
-        setStatus("Saved #" + sequence + " " + code + ". Backup recommended at " + entries.length + " entries - tap Export XLSX or Export Backup JSON.", "warning");
+      if (backupReminderDue()) {
+        setStatus("Saved #" + sequence + " " + code + ". Backup recommended: tap Export Backup JSON before continuing.", "warning");
       } else if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
       } else {
@@ -2019,8 +2039,12 @@
       nextSequence = 1;
       finishConfirm.value = "";
       finalExportSignature = "";
+      lastBackupAt = "";
+      lastBackupEntryCount = 0;
       editLocked = false;
       localStorage.removeItem(FINAL_EXPORT_SIGNATURE_KEY);
+      localStorage.removeItem(LAST_BACKUP_KEY);
+      localStorage.removeItem(LAST_BACKUP_ENTRY_COUNT_KEY);
       localStorage.setItem(EDIT_LOCKED_KEY, "false");
       saveEntries();
       render();
@@ -3590,7 +3614,15 @@
     }
 
     function renderBackupBadge() {
-      backupBadge.textContent = lastBackupAt ? "Last export " + formatShortTime(lastBackupAt) : "No backup yet";
+      if (backupReminderDue()) {
+        backupBadge.textContent = !lastBackupAt
+          ? "Backup due"
+          : "Backup due: +" + entriesSinceBackup();
+        backupBadge.className = "badge warning";
+        return;
+      }
+
+      backupBadge.textContent = lastBackupAt ? "Last backup " + formatShortTime(lastBackupAt) : "No backup yet";
       backupBadge.className = "badge" + (lastBackupAt ? " unlocked" : "");
     }
 
