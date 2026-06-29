@@ -361,6 +361,18 @@
       background: #fff;
     }
 
+    .row.monthly-match,
+    .recent-item.monthly-match {
+      border-color: #86efac;
+      background: #ecfdf5;
+      box-shadow: inset 4px 0 0 #16a34a;
+    }
+
+    .row.monthly-match .code,
+    .recent-item.monthly-match .recent-code {
+      color: #166534;
+    }
+
     .num {
       color: var(--muted);
       font-variant-numeric: tabular-nums;
@@ -392,6 +404,13 @@
       line-height: 1;
       max-width: 100%;
       overflow-wrap: anywhere;
+    }
+
+    .tag.monthly-match-tag {
+      border-color: #86efac;
+      color: #166534;
+      background: #dcfce7;
+      font-weight: 700;
     }
 
     .note-preview {
@@ -3241,9 +3260,11 @@
       }
 
       recentEntriesList.innerHTML = "";
+      const expectedCodes = new Set(occupiedExpectedItems().map(item => item.code));
       entries.slice(-10).reverse().forEach(item => {
+        const isMonthlyMatch = expectedCodes.has(item.code);
         const row = document.createElement("div");
-        row.className = "recent-item";
+        row.className = "recent-item" + (isMonthlyMatch ? " monthly-match" : "");
 
         const num = document.createElement("div");
         num.className = "num";
@@ -3259,10 +3280,11 @@
         [
           item.size || "12 ft",
           item.condition || "Good",
-          item.status || "Built"
+          item.status || "Built",
+          isMonthlyMatch ? "Matched Monthly List" : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag";
+          tag.className = "tag" + (value === "Matched Monthly List" ? " monthly-match-tag" : "");
           tag.textContent = value;
           meta.appendChild(tag);
         });
@@ -3307,9 +3329,11 @@
       }
 
       list.innerHTML = "";
+      const expectedCodes = new Set(occupiedExpectedItems().map(item => item.code));
       filtered.slice().reverse().forEach(item => {
+        const isMonthlyMatch = expectedCodes.has(item.code);
         const row = document.createElement("div");
-        row.className = "row";
+        row.className = "row" + (isMonthlyMatch ? " monthly-match" : "");
 
         const num = document.createElement("div");
         num.className = "num";
@@ -3328,12 +3352,13 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
+          isMonthlyMatch ? "Matched Monthly List" : "",
           item.initials ? "By " + item.initials : "",
           item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
           item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag";
+          tag.className = "tag" + (value === "Matched Monthly List" ? " monthly-match-tag" : "");
           tag.textContent = value;
           details.appendChild(tag);
         });
