@@ -1846,8 +1846,6 @@
       if (backupReminderDue() && autoBackupToggle.checked) {
         exportBackupJson({ auto: true, keepFocus: true });
         setStatus("Saved #" + sequence + " " + code + ". Auto backup JSON downloaded at " + entries.length + " entries.", "success");
-      } else if (backupReminderDue()) {
-        setStatus("Saved #" + sequence + " " + code + ". Backup recommended: tap Export Backup JSON before continuing.", "warning");
       } else if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
       } else {
@@ -3857,14 +3855,6 @@
     }
 
     function renderBackupBadge() {
-      if (backupReminderDue()) {
-        backupBadge.textContent = !lastBackupAt
-          ? "Backup due"
-          : "Backup due: +" + entriesSinceBackup();
-        backupBadge.className = "badge warning";
-        return;
-      }
-
       backupBadge.textContent = lastBackupAt ? "Last backup " + formatShortTime(lastBackupAt) : "No backup yet";
       backupBadge.className = "badge" + (lastBackupAt ? " unlocked" : "");
     }
@@ -3990,7 +3980,7 @@
       setStatus(
         autoBackupToggle.checked
           ? "Auto backup enabled for this app session. A JSON backup will download every 100 entries."
-          : "Auto backup disabled. Backup reminders will still show every 100 entries.",
+          : "Auto backup disabled.",
         autoBackupToggle.checked ? "success" : "info"
       );
       input.focus();
