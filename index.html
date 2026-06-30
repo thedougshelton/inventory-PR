@@ -1611,6 +1611,17 @@
       }
     }
 
+    function safeRemoveItem(key) {
+      try {
+        localStorage.removeItem(key);
+        return true;
+      } catch (error) {
+        savedText.textContent = "Save failed on this device";
+        setStatus("Save failed because this device's browser storage is full or blocked. Export Backup JSON now, then clear old browser storage before continuing.", "error");
+        return false;
+      }
+    }
+
     function saveEntries() {
       lastSavedAt = new Date().toISOString();
       const ok = [
@@ -2080,8 +2091,13 @@
       }
 
       editLocked = false;
-      localStorage.setItem(EDIT_LOCKED_KEY, "false");
-      setStatus("Editing unlocked. Make another Final Export + Lock when finished.", "success");
+      const saveOk = safeSetItem(EDIT_LOCKED_KEY, "false");
+      setStatus(
+        saveOk
+          ? "Editing unlocked. Make another Final Export + Lock when finished."
+          : "Editing unlocked for this app session, but the unlock setting could not be saved on this device.",
+        saveOk ? "success" : "warning"
+      );
       render();
       input.focus();
     }
@@ -2118,13 +2134,20 @@
       lastBackupAt = "";
       lastBackupEntryCount = 0;
       editLocked = false;
-      localStorage.removeItem(FINAL_EXPORT_SIGNATURE_KEY);
-      localStorage.removeItem(LAST_BACKUP_KEY);
-      localStorage.removeItem(LAST_BACKUP_ENTRY_COUNT_KEY);
-      localStorage.setItem(EDIT_LOCKED_KEY, "false");
-      saveEntries();
+      const clearOk = [
+        safeRemoveItem(FINAL_EXPORT_SIGNATURE_KEY),
+        safeRemoveItem(LAST_BACKUP_KEY),
+        safeRemoveItem(LAST_BACKUP_ENTRY_COUNT_KEY),
+        safeSetItem(EDIT_LOCKED_KEY, "false")
+      ].every(Boolean);
+      const saveOk = saveEntries();
       render();
-      setStatus("Finished list cleared. Ready for a new inventory.", "success");
+      setStatus(
+        clearOk && saveOk
+          ? "Finished list cleared. Ready for a new inventory."
+          : "Finished list cleared for this app session, but the browser save did not fully complete. Export Backup JSON now.",
+        clearOk && saveOk ? "success" : "warning"
+      );
       input.focus();
     }
 
@@ -3124,7 +3147,13 @@
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mismatchSheetRows()), "SIZE MISMATCHES");
       appendOccupiedUploadSheets(wb);
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
-      XLSX.writeFile(wb, filename);
+      try {
+        XLSX.writeFile(wb, filename);
+      } catch (error) {
+        setStatus("Audit comparison export failed. Try Export Backup JSON, then reopen the app and export again.", "error");
+        input.focus();
+        return;
+      }
       setStatus("Audit comparison exported: " + filename + ".", "success");
       input.focus();
     }
@@ -3278,10 +3307,13 @@
       occupiedMaster = loadTransferOccupiedMaster(data.occupiedMaster || {});
       sessionNameInput.value = normalizeUpperText(data.sessionName || sessionNameInput.value || defaultSessionName());
       employeeInitialsInput.value = normalizeInitials(data.employeeInitials || employeeInitialsInput.value || "");
-      saveOccupiedMaster();
-      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
-      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase());
+      const saveOk = [
+        saveOccupiedMaster(),
+        safeSetItem(SESSION_KEY, sessionNameInput.value.trim()),
+        safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase())
+      ].every(Boolean);
       render();
+      return saveOk;
     }
 
     function applyImportedData(data) {
@@ -3308,13 +3340,14 @@
       }
 
       if (finalExportSignature) {
-        localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
+        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
       } else {
-        localStorage.removeItem(FINAL_EXPORT_SIGNATURE_KEY);
+        safeRemoveItem(FINAL_EXPORT_SIGNATURE_KEY);
       }
 
-      saveEntries();
+      const saveOk = saveEntries();
       render();
+      return saveOk;
     }
 
     function allImportedEntries(data) {
@@ -3505,12 +3538,17 @@
       }
 
       if (pendingImport.isPhoneTransfer) {
-        applyPhoneTransfer(pendingImport.data);
+        const saveOk = applyPhoneTransfer(pendingImport.data);
         const loadedCount = occupiedMaster.codes.length;
         pendingImport = null;
         backupFileInput.value = "";
         renderImportPreview();
-        setStatus("Phone transfer imported. Monthly occupied list loaded: " + loadedCount + " expected units. Scanned entries were not changed.", "success");
+        setStatus(
+          saveOk
+            ? "Phone transfer imported. Monthly occupied list loaded: " + loadedCount + " expected units. Scanned entries were not changed."
+            : "Phone transfer imported for this app session, but it could not be saved on this device. Export Backup JSON now.",
+          saveOk ? "success" : "warning"
+        );
         input.focus();
         return;
       }
@@ -3522,11 +3560,16 @@
       if (!ok) return;
 
       exportBackupJson();
-      applyImportedData(pendingImport.data);
+      const saveOk = applyImportedData(pendingImport.data);
       pendingImport = null;
       backupFileInput.value = "";
       renderImportPreview();
-      setStatus("Import applied successfully. Active: " + entries.length + ", Deleted: " + deletedEntries.length + ".", "success");
+      setStatus(
+        saveOk
+          ? "Import applied successfully. Active: " + entries.length + ", Deleted: " + deletedEntries.length + "."
+          : "Import applied for this app session, but it could not be saved on this device. Export Backup JSON now.",
+        saveOk ? "success" : "warning"
+      );
       input.focus();
     }
 
@@ -3874,7 +3917,7 @@
         importPanel.hidden = true;
         toggleImportBtn.textContent = "Import / Restore";
       }
-      localStorage.setItem(ENTRY_MODE_KEY, document.body.classList.contains("entry-mode") ? "true" : "false");
+      safeSetItem(ENTRY_MODE_KEY, document.body.classList.contains("entry-mode") ? "true" : "false");
       render();
       input.focus();
     }
@@ -3889,7 +3932,7 @@
 
     employeeInitialsInput.addEventListener("input", () => {
       employeeInitialsInput.value = normalizeInitials(employeeInitialsInput.value);
-      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value);
+      safeSetItem(INITIALS_KEY, employeeInitialsInput.value);
     });
 
     editInitials.addEventListener("input", () => {
@@ -3927,7 +3970,7 @@
 
     sessionNameInput.addEventListener("input", () => {
       sessionNameInput.value = normalizeUpperText(sessionNameInput.value);
-      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
+      safeSetItem(SESSION_KEY, sessionNameInput.value.trim());
       render();
     });
 
