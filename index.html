@@ -705,6 +705,14 @@
 
     #occupiedFileInput { display: none; }
 
+    .cloud-sync-panel {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 8px;
+    }
+
     .audit-metrics { margin-top: 12px; }
 
     .audit-comparison-list {
@@ -1045,6 +1053,31 @@
         <button id="exportAuditBtn" type="button">EXPORT AUDIT COMPARISON</button>
         <button id="clearOccupiedListBtn" type="button">CLEAR MONTHLY LIST</button>
       </div>
+      <div class="cloud-sync-panel">
+        <div class="two-col">
+          <div>
+            <label for="cloudUrl">Supabase Project URL</label>
+            <input id="cloudUrl" type="text" autocomplete="off" spellcheck="false" placeholder="HTTPS://YOUR-PROJECT.SUPABASE.CO" />
+          </div>
+          <div>
+            <label for="cloudAnonKey">Supabase Anon Key</label>
+            <input id="cloudAnonKey" type="text" autocomplete="off" spellcheck="false" placeholder="PASTE ANON PUBLIC KEY" />
+          </div>
+        </div>
+        <div class="session-row" style="margin-top: 10px;">
+          <div>
+            <label for="cloudSyncName">Cloud Sync Name</label>
+            <input id="cloudSyncName" type="text" autocomplete="off" spellcheck="false" placeholder="TAMPA_MONTHLY_AUDIT" />
+          </div>
+          <button id="saveCloudSettingsBtn" type="button">Save Cloud Settings</button>
+        </div>
+        <div class="actions three" style="margin-top: 10px;">
+          <button id="uploadCloudBtn" type="button">SAVE MONTHLY LIST TO CLOUD</button>
+          <button id="loadCloudBtn" type="button">LOAD MONTHLY LIST FROM CLOUD</button>
+          <button id="clearCloudSettingsBtn" type="button">CLEAR CLOUD SETTINGS</button>
+        </div>
+        <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS OPTIONAL. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
+      </div>
       <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
       <div class="preview-metrics audit-metrics">
         <div class="preview-metric"><div class="label">EXPECTED OCCUPIED</div><strong id="occupiedExpectedCount">0</strong></div>
@@ -1350,6 +1383,10 @@
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
     const MONTHLY_OCCUPIED_KEY = "warehouse_inventory_monthly_occupied_v1";
+    const CLOUD_URL_KEY = "warehouse_inventory_cloud_url_v1";
+    const CLOUD_ANON_KEY = "warehouse_inventory_cloud_anon_key_v1";
+    const CLOUD_SYNC_NAME_KEY = "warehouse_inventory_cloud_sync_name_v1";
+    const CLOUD_TABLE = "inventory_pr_cloud";
 
     const input = document.getElementById("containerInput");
     const notesInput = document.getElementById("notesInput");
@@ -1404,6 +1441,14 @@
     const occupiedMissingCount = document.getElementById("occupiedMissingCount");
     const occupiedExtraCount = document.getElementById("occupiedExtraCount");
     const occupiedComparisonList = document.getElementById("occupiedComparisonList");
+    const cloudUrlInput = document.getElementById("cloudUrl");
+    const cloudAnonKeyInput = document.getElementById("cloudAnonKey");
+    const cloudSyncNameInput = document.getElementById("cloudSyncName");
+    const saveCloudSettingsBtn = document.getElementById("saveCloudSettingsBtn");
+    const uploadCloudBtn = document.getElementById("uploadCloudBtn");
+    const loadCloudBtn = document.getElementById("loadCloudBtn");
+    const clearCloudSettingsBtn = document.getElementById("clearCloudSettingsBtn");
+    const cloudSyncStatus = document.getElementById("cloudSyncStatus");
 
     const editPanel = document.getElementById("editPanel");
     const editTitle = document.getElementById("editTitle");
@@ -1463,6 +1508,9 @@
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
     autoBackupToggle.checked = false;
+    cloudUrlInput.value = localStorage.getItem(CLOUD_URL_KEY) || "";
+    cloudAnonKeyInput.value = localStorage.getItem(CLOUD_ANON_KEY) || "";
+    cloudSyncNameInput.value = localStorage.getItem(CLOUD_SYNC_NAME_KEY) || "TAMPA_MONTHLY_AUDIT";
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -3220,6 +3268,187 @@
       input.focus();
     }
 
+    function normalizeCloudSyncName(value) {
+      return normalizeUpperText(value || "TAMPA_MONTHLY_AUDIT")
+        .replace(/[^A-Z0-9_-]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 64) || "TAMPA_MONTHLY_AUDIT";
+    }
+
+    function setCloudStatus(message, type) {
+      cloudSyncStatus.textContent = normalizeUpperText(message);
+      cloudSyncStatus.className = "status" + (type ? " " + type : "");
+    }
+
+    function cloudSettings() {
+      return {
+        url: cloudUrlInput.value.trim().replace(/\/+$/, ""),
+        anonKey: cloudAnonKeyInput.value.trim(),
+        syncName: normalizeCloudSyncName(cloudSyncNameInput.value)
+      };
+    }
+
+    function requireCloudSettings() {
+      const settings = cloudSettings();
+      cloudSyncNameInput.value = settings.syncName;
+      if (!settings.url || !settings.anonKey || !settings.syncName) {
+        setCloudStatus("Enter Supabase URL, anon key, and cloud sync name first.", "warning");
+        return null;
+      }
+      if (!/^https:\/\/[a-z0-9.-]+\.supabase\.co$/i.test(settings.url)) {
+        setCloudStatus("Supabase URL should look like https://your-project.supabase.co.", "warning");
+        cloudUrlInput.focus();
+        return null;
+      }
+      return settings;
+    }
+
+    function saveCloudSettings() {
+      const settings = cloudSettings();
+      cloudSyncNameInput.value = settings.syncName;
+      const ok = [
+        safeSetItem(CLOUD_URL_KEY, settings.url),
+        safeSetItem(CLOUD_ANON_KEY, settings.anonKey),
+        safeSetItem(CLOUD_SYNC_NAME_KEY, settings.syncName)
+      ].every(Boolean);
+      setCloudStatus(
+        ok
+          ? "Cloud settings saved on this device."
+          : "Cloud settings could not be saved on this device.",
+        ok ? "success" : "warning"
+      );
+      input.focus();
+      return ok;
+    }
+
+    function clearCloudSettings() {
+      cloudUrlInput.value = "";
+      cloudAnonKeyInput.value = "";
+      cloudSyncNameInput.value = "TAMPA_MONTHLY_AUDIT";
+      const ok = [
+        safeRemoveItem(CLOUD_URL_KEY),
+        safeRemoveItem(CLOUD_ANON_KEY),
+        safeRemoveItem(CLOUD_SYNC_NAME_KEY)
+      ].every(Boolean);
+      setCloudStatus(
+        ok
+          ? "Cloud settings cleared from this device."
+          : "Cloud settings cleared for this app session, but browser storage did not fully update.",
+        ok ? "success" : "warning"
+      );
+      input.focus();
+    }
+
+    async function supabaseRequest(settings, path, options) {
+      const response = await fetch(settings.url + "/rest/v1/" + path, {
+        ...options,
+        headers: {
+          apikey: settings.anonKey,
+          Authorization: "Bearer " + settings.anonKey,
+          "Content-Type": "application/json",
+          ...(options && options.headers ? options.headers : {})
+        }
+      });
+
+      const text = await response.text();
+      let data = null;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = text;
+        }
+      }
+
+      if (!response.ok) {
+        const detail = data && data.message ? data.message : text || response.statusText;
+        throw new Error(detail);
+      }
+
+      return data;
+    }
+
+    async function uploadOccupiedListToCloud() {
+      if (!occupiedMaster.codes.length) {
+        setCloudStatus("Upload a monthly occupied list before saving to cloud.", "warning");
+        return;
+      }
+
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      saveCloudSettings();
+
+      const record = {
+        sync_key: settings.syncName,
+        payload: {
+          appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
+          appVersion: 4,
+          syncType: "monthlyOccupiedList",
+          syncedAt: new Date().toISOString(),
+          sessionName: sessionNameInput.value.trim(),
+          employeeInitials: employeeInitialsInput.value.trim(),
+          occupiedMaster
+        },
+        updated_at: new Date().toISOString(),
+        updated_by: employeeInitialsInput.value.trim().toUpperCase()
+      };
+
+      uploadCloudBtn.disabled = true;
+      setCloudStatus("Saving monthly list to cloud...", "info");
+      try {
+        await supabaseRequest(settings, CLOUD_TABLE + "?on_conflict=sync_key", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify(record)
+        });
+        setCloudStatus("Monthly list saved to cloud: " + settings.syncName + ".", "success");
+        setStatus("Monthly occupied list saved to cloud.", "success");
+      } catch (error) {
+        setCloudStatus("Cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+      } finally {
+        uploadCloudBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function loadOccupiedListFromCloud() {
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      saveCloudSettings();
+
+      loadCloudBtn.disabled = true;
+      setCloudStatus("Loading monthly list from cloud...", "info");
+      try {
+        const rows = await supabaseRequest(
+          settings,
+          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
+          { method: "GET" }
+        );
+        const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (!row || !row.payload || !row.payload.occupiedMaster) {
+          setCloudStatus("No cloud monthly list found for " + settings.syncName + ".", "warning");
+          return;
+        }
+
+        occupiedMaster = loadTransferOccupiedMaster(row.payload.occupiedMaster);
+        const saveOk = saveOccupiedMaster();
+        occupiedFileInput.value = "";
+        render();
+        setCloudStatus(
+          saveOk
+            ? "Monthly list loaded from cloud: " + occupiedMaster.codes.length + " expected units."
+            : "Monthly list loaded for this app session, but could not be saved on this device.",
+          saveOk ? "success" : "warning"
+        );
+        setStatus("Monthly occupied list loaded from cloud: " + occupiedMaster.codes.length + " expected units.", saveOk ? "success" : "warning");
+      } catch (error) {
+        setCloudStatus("Cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+      } finally {
+        loadCloudBtn.disabled = false;
+        input.focus();
+      }
+    }
+
     function sampleCodes(codes, comparison) {
       if (!codes.length) return "NONE";
       return codes.slice(0, 10).map(code => {
@@ -3964,6 +4193,10 @@
       render();
     });
 
+    cloudSyncNameInput.addEventListener("input", () => {
+      cloudSyncNameInput.value = normalizeCloudSyncName(cloudSyncNameInput.value);
+    });
+
 
     searchInput.addEventListener("input", () => {
       searchInput.value = normalizeSearch(searchInput.value);
@@ -3997,6 +4230,10 @@
     occupiedFileInput.addEventListener("change", () => importOccupiedList(occupiedFileInput.files && occupiedFileInput.files[0]));
     exportAuditBtn.addEventListener("click", exportAuditComparison);
     clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
+    saveCloudSettingsBtn.addEventListener("click", saveCloudSettings);
+    uploadCloudBtn.addEventListener("click", uploadOccupiedListToCloud);
+    loadCloudBtn.addEventListener("click", loadOccupiedListFromCloud);
+    clearCloudSettingsBtn.addEventListener("click", clearCloudSettings);
     clearFileBtn.addEventListener("click", cancelImportPreview);
     applyImportBtn.addEventListener("click", applyImportPreview);
     cancelImportBtn.addEventListener("click", cancelImportPreview);
