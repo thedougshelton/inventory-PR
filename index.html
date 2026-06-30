@@ -1601,21 +1601,35 @@
       return highestExisting + 1;
     }
 
+    function safeSetItem(key, value) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (error) {
+        savedText.textContent = "Save failed on this device";
+        setStatus("Save failed because this device's browser storage is full or blocked. Export Backup JSON now, then clear old browser storage before continuing.", "error");
+        return false;
+      }
+    }
+
     function saveEntries() {
       lastSavedAt = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-      localStorage.setItem(DELETED_KEY, JSON.stringify(deletedEntries));
-      localStorage.setItem(DUPE_KEY, String(duplicateBlocks));
-      localStorage.setItem(NEXT_SEQUENCE_KEY, String(nextSequence));
-      localStorage.setItem(SESSION_KEY, sessionNameInput.value.trim());
-      localStorage.setItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase());
-      localStorage.setItem(LAST_SAVED_KEY, lastSavedAt);
-      localStorage.setItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false");
-      savedText.textContent = "Saved on this device";
+      const ok = [
+        safeSetItem(STORAGE_KEY, JSON.stringify(entries)),
+        safeSetItem(DELETED_KEY, JSON.stringify(deletedEntries)),
+        safeSetItem(DUPE_KEY, String(duplicateBlocks)),
+        safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence)),
+        safeSetItem(SESSION_KEY, sessionNameInput.value.trim()),
+        safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase()),
+        safeSetItem(LAST_SAVED_KEY, lastSavedAt),
+        safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false")
+      ].every(Boolean);
+      if (ok) savedText.textContent = "Saved on this device";
+      return ok;
     }
 
     function saveOccupiedMaster() {
-      localStorage.setItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
+      return safeSetItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
     }
 
     function normalizeCode(value) {
@@ -1672,9 +1686,12 @@
     function markBackupExported() {
       lastBackupAt = new Date().toISOString();
       lastBackupEntryCount = entries.length;
-      localStorage.setItem(LAST_BACKUP_KEY, lastBackupAt);
-      localStorage.setItem(LAST_BACKUP_ENTRY_COUNT_KEY, String(lastBackupEntryCount));
+      const ok = [
+        safeSetItem(LAST_BACKUP_KEY, lastBackupAt),
+        safeSetItem(LAST_BACKUP_ENTRY_COUNT_KEY, String(lastBackupEntryCount))
+      ].every(Boolean);
       renderBackupBadge();
+      return ok;
     }
 
     function entriesSinceBackup() {
@@ -1701,8 +1718,10 @@
     function markFinalExportedAndLocked() {
       finalExportSignature = currentSignature();
       editLocked = true;
-      localStorage.setItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
-      localStorage.setItem(EDIT_LOCKED_KEY, "true");
+      return [
+        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature),
+        safeSetItem(EDIT_LOCKED_KEY, "true")
+      ].every(Boolean);
     }
 
     function requireUnlocked(actionText) {
@@ -1752,7 +1771,12 @@
       const existing = entries.find(item => item.code === code);
       if (existing) {
         duplicateBlocks += 1;
-        saveEntries();
+        const saveOk = saveEntries();
+        if (!saveOk) {
+          input.select();
+          render();
+          return;
+        }
         setStatus(
           "Duplicate blocked: " + code + " is already active as entry #" + existing.sequence +
           " — " + existing.size + ", " + existing.condition + ", " + existing.status + ".",
@@ -1766,7 +1790,12 @@
       const deletedMatch = deletedEntries.find(item => item.code === code);
       if (deletedMatch) {
         duplicateBlocks += 1;
-        saveEntries();
+        const saveOk = saveEntries();
+        if (!saveOk) {
+          input.select();
+          render();
+          return;
+        }
         setStatus(
           "Duplicate found in deleted entries: " + code + " was deleted as entry #" + deletedMatch.sequence +
           ". Use Restore in the Deleted Entries section if this should be active again.",
@@ -1797,7 +1826,12 @@
 
       input.value = "";
       notesInput.value = "";
-      saveEntries();
+      const saveOk = saveEntries();
+      if (!saveOk) {
+        render();
+        input.focus();
+        return;
+      }
 
       if (backupReminderDue() && autoBackupToggle.checked) {
         exportBackupJson({ auto: true, keepFocus: true });
@@ -2552,19 +2586,31 @@
 
       const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
 
-      if (finalLock) {
-        markFinalExportedAndLocked();
+      try {
+        XLSX.writeFile(wb, filename);
+      } catch (error) {
+        setStatus("XLSX export failed. Editing was not locked. Try Export Backup JSON, then reopen the app and export again.", "error");
+        input.focus();
+        return;
       }
 
-      XLSX.writeFile(wb, filename);
-      saveEntries();
+      let lockSaved = true;
+      if (finalLock) {
+        lockSaved = markFinalExportedAndLocked();
+      }
+
+      const saveOk = saveEntries();
       render();
 
       setStatus(
-        finalLock
+        !saveOk
+          ? "XLSX exported, but the latest save could not be stored on this device. Export Backup JSON now before continuing."
+          : finalLock && lockSaved
           ? "Final XLSX exported and editing is now locked: " + filename + "."
+          : finalLock
+          ? "Final XLSX exported, but the lock could not be saved on this device. Export Backup JSON now before continuing."
           : "XLSX exported: " + filename + ".",
-        "success"
+        !saveOk || (finalLock && !lockSaved) ? "warning" : "success"
       );
       input.focus();
     }
