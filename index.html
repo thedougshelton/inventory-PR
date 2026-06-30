@@ -1346,7 +1346,6 @@
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const LAST_BACKUP_KEY = "warehouse_inventory_last_backup_v1";
     const LAST_BACKUP_ENTRY_COUNT_KEY = "warehouse_inventory_last_backup_entry_count_v1";
-    const AUTO_BACKUP_KEY = "warehouse_inventory_auto_backup_v1";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
@@ -1463,7 +1462,7 @@
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
-    autoBackupToggle.checked = localStorage.getItem(AUTO_BACKUP_KEY) === "true";
+    autoBackupToggle.checked = false;
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -3945,10 +3944,9 @@
     copyBtn.addEventListener("click", copyActiveList);
     backupJsonBtn.addEventListener("click", exportBackupJson);
     autoBackupToggle.addEventListener("change", () => {
-      localStorage.setItem(AUTO_BACKUP_KEY, autoBackupToggle.checked ? "true" : "false");
       setStatus(
         autoBackupToggle.checked
-          ? "Auto backup enabled. A JSON backup will download every 100 entries."
+          ? "Auto backup enabled for this app session. A JSON backup will download every 100 entries."
           : "Auto backup disabled. Backup reminders will still show every 100 entries.",
         autoBackupToggle.checked ? "success" : "info"
       );
