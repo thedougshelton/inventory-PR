@@ -1580,10 +1580,11 @@
           fileName: normalizeUpperText(parsed.fileName || ""),
           importedAt: parsed.importedAt || "",
           codes: cleanItems.map(item => item.code),
-          items: cleanItems
+          items: cleanItems,
+          rawRows: Array.isArray(parsed.rawRows) ? parsed.rawRows : []
         };
       } catch {
-        return { fileName: "", importedAt: "", codes: [], items: [] };
+        return { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
       }
     }
 
@@ -2243,6 +2244,66 @@
       }
     }
 
+    function uploadedDocumentRows() {
+      const rawRows = Array.isArray(occupiedMaster.rawRows) ? occupiedMaster.rawRows : [];
+      if (!rawRows.length) {
+        return [
+          ["UPLOADED FILE", occupiedMaster.fileName || ""],
+          ["IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
+          [],
+          ["FULL UPLOADED DOCUMENT WAS NOT SAVED FOR THIS OLDER UPLOAD. RE-UPLOAD THE MONTHLY LIST TO INCLUDE THIS TAB."]
+        ];
+      }
+
+      return [
+        ["UPLOADED FILE", occupiedMaster.fileName || ""],
+        ["IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
+        [],
+        ...rawRows
+      ];
+    }
+
+    function expectedUnitsRows() {
+      const activeMap = activeEntryByCode();
+      return [
+        ["UNIT NUMBER", "UPLOADED UNIT SIZE", "PHYSICALLY FOUND", "CONTAINER CONDITION", "ENTERED UNIT SIZE", "SIZE CHECK"],
+        ...occupiedExpectedItems().map(item => {
+          const activeItem = activeMap.get(item.code);
+          const found = Boolean(activeItem);
+          const expectedSize = item.type || "";
+          const enteredSize = activeItem ? activeItem.size || "" : "";
+          return [
+            item.code,
+            expectedSize,
+            found ? "YES" : "",
+            found ? activeItem.condition || "" : "",
+            enteredSize,
+            found && expectedSize && enteredSize && !sizesMatch(enteredSize, expectedSize) ? "SIZE MISMATCH" : ""
+          ];
+        })
+      ];
+    }
+
+    function styleExpectedUnitsSheet(ws, rows) {
+      const activeMap = activeEntryByCode();
+      rows.slice(1).forEach((row, index) => {
+        const activeItem = activeMap.get(normalizeCode(row[0] || ""));
+        if (activeItem) styleWorksheetRow(ws, index + 2, row.length, conditionCellStyle(activeItem.condition));
+      });
+    }
+
+    function appendOccupiedUploadSheets(wb) {
+      if (!occupiedMaster.codes.length) return;
+
+      const fullUploadSheet = XLSX.utils.aoa_to_sheet(uploadedDocumentRows());
+      XLSX.utils.book_append_sheet(wb, fullUploadSheet, "Full Uploaded Document");
+
+      const expectedRows = expectedUnitsRows();
+      const expectedSheet = XLSX.utils.aoa_to_sheet(expectedRows);
+      styleExpectedUnitsSheet(expectedSheet, expectedRows);
+      XLSX.utils.book_append_sheet(wb, expectedSheet, "Expected Units");
+    }
+
     function activeArray() {
       return entries.map(item => ({
         "Entry Number": item.sequence || "",
@@ -2443,6 +2504,7 @@
         const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
         styleAuditSectionRowsByCondition(auditSheet, auditRows, "EXPECTED AND FOUND");
         XLSX.utils.book_append_sheet(wb, auditSheet, "Occupied Audit");
+        appendOccupiedUploadSheets(wb);
       }
 
       const reportSheet = XLSX.utils.aoa_to_sheet(buildReportText().split("\n").map(line => [line]));
@@ -2975,6 +3037,7 @@
       XLSX.utils.book_append_sheet(wb, foundSheet, "EXPECTED AND FOUND");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE"], ...sizeMismatchRows(comparison.sizeMismatches)]), "SIZE MISMATCHES");
+      appendOccupiedUploadSheets(wb);
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
       XLSX.writeFile(wb, filename);
       setStatus("Audit comparison exported: " + filename + ".", "success");
@@ -2990,14 +3053,20 @@
         occupiedStatus.textContent = "READING " + normalizeUpperText(file.name) + "...";
         occupiedStatus.className = "status info";
         let rows = [];
+        let rawRows = [];
         const name = file.name.toLowerCase();
         if (name.endsWith(".csv")) {
           rows = parseCsv(await readFileAsText(file));
+          rawRows = rows;
         } else if (name.endsWith(".xlsx")) {
           const buffer = await readFileAsArrayBuffer(file);
           const workbook = XLSX.read(buffer, { type: "array" });
           workbook.SheetNames.forEach(sheetName => {
-            rows.push(...XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" }));
+            const sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
+            if (rawRows.length) rawRows.push([]);
+            rawRows.push(["SHEET: " + normalizeUpperText(sheetName)]);
+            rawRows.push(...sheetRows);
+            rows.push(...sheetRows);
           });
         } else {
           throw new Error("Choose an XLSX or CSV file.");
@@ -3008,7 +3077,8 @@
           fileName: normalizeUpperText(file.name),
           importedAt: new Date().toISOString(),
           codes: items.map(item => item.code),
-          items
+          items,
+          rawRows
         };
         saveOccupiedMaster();
         occupiedFileInput.value = "";
@@ -3030,7 +3100,7 @@
       }
       const ok = confirm("This will clear the monthly occupied list from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
-      occupiedMaster = { fileName: "", importedAt: "", codes: [], items: [] };
+      occupiedMaster = { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
       saveOccupiedMaster();
       occupiedFileInput.value = "";
       render();
@@ -3114,7 +3184,8 @@
         fileName: normalizeUpperText(source.fileName || "PHONE TRANSFER FILE"),
         importedAt: source.importedAt || new Date().toISOString(),
         codes: cleanItems.map(item => item.code),
-        items: cleanItems
+        items: cleanItems,
+        rawRows: Array.isArray(source.rawRows) ? source.rawRows : []
       };
     }
 
