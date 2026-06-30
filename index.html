@@ -220,12 +220,32 @@
 
     .setup-action {
       display: flex;
-      align-items: end;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: end;
+      gap: 8px;
     }
 
     .setup-action button {
       width: 100%;
       min-height: 46px;
+    }
+
+    .setup-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .setup-check input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      flex: 0 0 auto;
     }
 
     .three-col {
@@ -984,6 +1004,10 @@
         </div>
         <div class="setup-action">
           <button id="backupJsonBtn" type="button">Export Backup JSON</button>
+          <label class="setup-check" for="autoBackupToggle">
+            <input id="autoBackupToggle" type="checkbox" />
+            Auto backup every 100 entries
+          </label>
         </div>
       </div>
 
@@ -1322,6 +1346,7 @@
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const LAST_BACKUP_KEY = "warehouse_inventory_last_backup_v1";
     const LAST_BACKUP_ENTRY_COUNT_KEY = "warehouse_inventory_last_backup_entry_count_v1";
+    const AUTO_BACKUP_KEY = "warehouse_inventory_auto_backup_v1";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
@@ -1339,6 +1364,7 @@
     const undoBtn = document.getElementById("undoBtn");
     const copyBtn = document.getElementById("copyBtn");
     const backupJsonBtn = document.getElementById("backupJsonBtn");
+    const autoBackupToggle = document.getElementById("autoBackupToggle");
     const phoneTransferBtn = document.getElementById("phoneTransferBtn");
     const unlockBtn = document.getElementById("unlockBtn");
     const focusEntryBtn = document.getElementById("focusEntryBtn");
@@ -1437,6 +1463,7 @@
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
+    autoBackupToggle.checked = localStorage.getItem(AUTO_BACKUP_KEY) === "true";
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -1771,7 +1798,10 @@
       notesInput.value = "";
       saveEntries();
 
-      if (backupReminderDue()) {
+      if (backupReminderDue() && autoBackupToggle.checked) {
+        exportBackupJson({ auto: true, keepFocus: true });
+        setStatus("Saved #" + sequence + " " + code + ". Auto backup JSON downloaded at " + entries.length + " entries.", "success");
+      } else if (backupReminderDue()) {
         setStatus("Saved #" + sequence + " " + code + ". Backup recommended: tap Export Backup JSON before continuing.", "warning");
       } else if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
@@ -2437,7 +2467,9 @@
       input.focus();
     }
 
-    function exportBackupJson() {
+    function exportBackupJson(options = {}) {
+      if (options && options.type) options = {};
+
       const backup = {
         appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
         appVersion: 4,
@@ -2456,8 +2488,8 @@
       const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
       downloadBlob(JSON.stringify(backup, null, 2), filename, "application/json;charset=utf-8");
       markBackupExported();
-      setStatus("Backup JSON exported: " + filename + ". This is the safest file to import later.", "success");
-      input.focus();
+      setStatus((options.auto ? "Auto backup JSON downloaded: " : "Backup JSON exported: ") + filename + ". This is the safest file to import later.", "success");
+      if (!options.keepFocus) input.focus();
     }
 
     function exportPhoneTransferFile() {
@@ -3755,6 +3787,16 @@
     undoBtn.addEventListener("click", undoLast);
     copyBtn.addEventListener("click", copyActiveList);
     backupJsonBtn.addEventListener("click", exportBackupJson);
+    autoBackupToggle.addEventListener("change", () => {
+      localStorage.setItem(AUTO_BACKUP_KEY, autoBackupToggle.checked ? "true" : "false");
+      setStatus(
+        autoBackupToggle.checked
+          ? "Auto backup enabled. A JSON backup will download every 100 entries."
+          : "Auto backup disabled. Backup reminders will still show every 100 entries.",
+        autoBackupToggle.checked ? "success" : "info"
+      );
+      input.focus();
+    });
     phoneTransferBtn.addEventListener("click", exportPhoneTransferFile);
     unlockBtn.addEventListener("click", unlockEditing);
     focusEntryBtn.addEventListener("click", () => input.focus());
