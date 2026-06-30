@@ -1057,11 +1057,11 @@
         <div class="two-col">
           <div>
             <label for="cloudUrl">Supabase Project URL</label>
-            <input id="cloudUrl" type="text" autocomplete="off" spellcheck="false" placeholder="HTTPS://YOUR-PROJECT.SUPABASE.CO" />
+            <input id="cloudUrl" type="text" autocomplete="off" spellcheck="false" placeholder="HTTPS://YX...SUPABASE.CO" />
           </div>
           <div>
-            <label for="cloudAnonKey">Supabase Anon Key</label>
-            <input id="cloudAnonKey" type="text" autocomplete="off" spellcheck="false" placeholder="PASTE ANON PUBLIC KEY" />
+            <label for="cloudAnonKey">Supabase Publishable Key</label>
+            <input id="cloudAnonKey" type="text" autocomplete="off" spellcheck="false" placeholder="SB_PUBLISHABLE_..." />
           </div>
         </div>
         <div class="session-row" style="margin-top: 10px;">
@@ -1076,7 +1076,7 @@
           <button id="loadCloudBtn" type="button">LOAD MONTHLY LIST FROM CLOUD</button>
           <button id="clearCloudSettingsBtn" type="button">CLEAR CLOUD SETTINGS</button>
         </div>
-        <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS OPTIONAL. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
+        <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
       </div>
       <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
       <div class="preview-metrics audit-metrics">
@@ -1387,6 +1387,9 @@
     const CLOUD_ANON_KEY = "warehouse_inventory_cloud_anon_key_v1";
     const CLOUD_SYNC_NAME_KEY = "warehouse_inventory_cloud_sync_name_v1";
     const CLOUD_TABLE = "inventory_pr_cloud";
+    const DEFAULT_CLOUD_URL = "https://yxrqclpcggymogksaksx.supabase.co";
+    const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
+    const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
 
     const input = document.getElementById("containerInput");
     const notesInput = document.getElementById("notesInput");
@@ -1508,9 +1511,9 @@
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
     autoBackupToggle.checked = false;
-    cloudUrlInput.value = localStorage.getItem(CLOUD_URL_KEY) || "";
-    cloudAnonKeyInput.value = localStorage.getItem(CLOUD_ANON_KEY) || "";
-    cloudSyncNameInput.value = localStorage.getItem(CLOUD_SYNC_NAME_KEY) || "TAMPA_MONTHLY_AUDIT";
+    cloudUrlInput.value = localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_CLOUD_URL;
+    cloudAnonKeyInput.value = localStorage.getItem(CLOUD_ANON_KEY) || DEFAULT_CLOUD_PUBLISHABLE_KEY;
+    cloudSyncNameInput.value = localStorage.getItem(CLOUD_SYNC_NAME_KEY) || DEFAULT_CLOUD_SYNC_NAME;
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -3269,10 +3272,10 @@
     }
 
     function normalizeCloudSyncName(value) {
-      return normalizeUpperText(value || "TAMPA_MONTHLY_AUDIT")
+      return normalizeUpperText(value || DEFAULT_CLOUD_SYNC_NAME)
         .replace(/[^A-Z0-9_-]+/g, "_")
         .replace(/^_+|_+$/g, "")
-        .slice(0, 64) || "TAMPA_MONTHLY_AUDIT";
+        .slice(0, 64) || DEFAULT_CLOUD_SYNC_NAME;
     }
 
     function setCloudStatus(message, type) {
@@ -3292,7 +3295,7 @@
       const settings = cloudSettings();
       cloudSyncNameInput.value = settings.syncName;
       if (!settings.url || !settings.anonKey || !settings.syncName) {
-        setCloudStatus("Enter Supabase URL, anon key, and cloud sync name first.", "warning");
+        setCloudStatus("Enter Supabase URL, publishable key, and cloud sync name first.", "warning");
         return null;
       }
       if (!/^https:\/\/[a-z0-9.-]+\.supabase\.co$/i.test(settings.url)) {
@@ -3322,9 +3325,9 @@
     }
 
     function clearCloudSettings() {
-      cloudUrlInput.value = "";
-      cloudAnonKeyInput.value = "";
-      cloudSyncNameInput.value = "TAMPA_MONTHLY_AUDIT";
+      cloudUrlInput.value = DEFAULT_CLOUD_URL;
+      cloudAnonKeyInput.value = DEFAULT_CLOUD_PUBLISHABLE_KEY;
+      cloudSyncNameInput.value = DEFAULT_CLOUD_SYNC_NAME;
       const ok = [
         safeRemoveItem(CLOUD_URL_KEY),
         safeRemoveItem(CLOUD_ANON_KEY),
@@ -3332,8 +3335,8 @@
       ].every(Boolean);
       setCloudStatus(
         ok
-          ? "Cloud settings cleared from this device."
-          : "Cloud settings cleared for this app session, but browser storage did not fully update.",
+          ? "Cloud settings reset to Tampa defaults."
+          : "Cloud settings reset for this app session, but browser storage did not fully update.",
         ok ? "success" : "warning"
       );
       input.focus();
