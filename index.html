@@ -2216,6 +2216,8 @@
       }
     }
 
+    const CONTAINER_SIZES = ["8 ft", "12 ft", "16 ft", "ZM", "SHELL", "TR"];
+
     function styleActiveRowsByCondition(ws, activeRows) {
       const columnCount = Object.keys(activeRows[0] || {}).length;
       activeRows.forEach((row, index) => {
@@ -2282,6 +2284,44 @@
           ];
         })
       ];
+    }
+
+    function sizeSummaryRows() {
+      return CONTAINER_SIZES.map(size => {
+        const sizeEntries = entries.filter(item => item.size === size);
+        return [
+          size,
+          sizeEntries.length,
+          sizeEntries.filter(item => item.condition === "Good").length,
+          sizeEntries.filter(item => item.condition === "Bad").length,
+          sizeEntries.filter(item => item.status === "Built").length,
+          sizeEntries.filter(item => item.status === "Flat").length
+        ];
+      });
+    }
+
+    function mismatchSheetRows() {
+      const activeMap = activeEntryByCode();
+      return [
+        ["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE", "CONTAINER CONDITION", "CONTAINER STATUS", "EMPLOYEE/USER INITIALS", "DATE/TIME ENTERED"],
+        ...occupiedComparison().sizeMismatches.map(item => {
+          const activeItem = activeMap.get(item.code) || {};
+          return [
+            item.code,
+            item.expectedSize,
+            item.enteredSize,
+            activeItem.condition || "",
+            activeItem.status || "",
+            activeItem.initials || "",
+            formatLocalTime(activeItem.timestamp)
+          ];
+        })
+      ];
+    }
+
+    function appendMismatchSheet(wb, sheetName) {
+      if (!occupiedMaster.codes.length) return;
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mismatchSheetRows()), sheetName);
     }
 
     function styleExpectedUnitsSheet(ws, rows) {
@@ -2456,11 +2496,10 @@
         ["FOUND IN WAREHOUSE", occupiedComparison().foundExpected.length],
         ["EXPECTED NOT FOUND", occupiedComparison().missingExpected.length],
         ["Found Not On Monthly List", occupiedComparison().extraFound.length],
+        ["SIZE MISMATCHES", occupiedComparison().sizeMismatches.length],
         [],
-        ["By Size", "COUNT"],
-        ["8 ft", entries.filter(item => item.size === "8 ft").length],
-        ["12 ft", entries.filter(item => item.size === "12 ft").length],
-        ["16 ft", entries.filter(item => item.size === "16 ft").length],
+        ["BY SIZE", "TOTAL COUNT", "GOOD", "BAD", "BUILT", "FLAT"],
+        ...sizeSummaryRows(),
         [],
         ["By Condition", "COUNT"],
         ["Good", entries.filter(item => item.condition === "Good").length],
@@ -2504,6 +2543,7 @@
         const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
         styleAuditSectionRowsByCondition(auditSheet, auditRows, "EXPECTED AND FOUND");
         XLSX.utils.book_append_sheet(wb, auditSheet, "Occupied Audit");
+        appendMismatchSheet(wb, "Size Mismatches");
         appendOccupiedUploadSheets(wb);
       }
 
@@ -3036,7 +3076,7 @@
       });
       XLSX.utils.book_append_sheet(wb, foundSheet, "EXPECTED AND FOUND");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "EXPECTED SIZE", "ENTERED SIZE"], ...sizeMismatchRows(comparison.sizeMismatches)]), "SIZE MISMATCHES");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mismatchSheetRows()), "SIZE MISMATCHES");
       appendOccupiedUploadSheets(wb);
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
       XLSX.writeFile(wb, filename);
