@@ -1416,6 +1416,7 @@
     const DEFAULT_CLOUD_URL = "https://yxrqclpcggymogksaksx.supabase.co";
     const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
     const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
+    const CLOUD_SAVE_PIN = "6159";
     const CLOUD_PRESET_KEY = "warehouse_inventory_cloud_preset_v1";
     const CLOUD_PRESETS = {
       tampa: {
@@ -3326,6 +3327,23 @@
       cloudSyncStatus.className = "status" + (type ? " " + type : "");
     }
 
+    function requireCloudSavePin(actionText) {
+      const entered = prompt("ENTER CLOUD SAVE PIN TO " + normalizeUpperText(actionText) + ":");
+      if (entered === null) {
+        setCloudStatus("Cloud save canceled. Nothing was changed in the cloud.", "info");
+        input.focus();
+        return false;
+      }
+
+      if (String(entered).trim() !== CLOUD_SAVE_PIN) {
+        setCloudStatus("Incorrect cloud save PIN. Nothing was changed in the cloud.", "error");
+        input.focus();
+        return false;
+      }
+
+      return true;
+    }
+
     function cloudSettings() {
       const preset = CLOUD_PRESETS[cloudPresetSelect.value] || CLOUD_PRESETS.tampa;
       return {
@@ -3423,6 +3441,8 @@
         setCloudStatus("Upload a monthly occupied list before saving to cloud.", "warning");
         return;
       }
+
+      if (!requireCloudSavePin("save monthly list to cloud")) return;
 
       const settings = requireCloudSettings();
       if (!settings) return;
@@ -3534,6 +3554,8 @@
         input.focus();
         return;
       }
+
+      if (!requireCloudSavePin("save full audit to cloud")) return;
 
       const settings = requireCloudSettings();
       if (!settings) return;
