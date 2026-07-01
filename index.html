@@ -1106,6 +1106,10 @@
             <button id="syncCancelBtn" type="button">DO NOTHING</button>
           </div>
         </div>
+        <div class="actions two" style="margin-top: 10px;">
+          <button id="saveFullAuditCloudBtn" type="button">SAVE FULL AUDIT TO CLOUD</button>
+          <button id="loadFullAuditCloudBtn" type="button">LOAD FULL AUDIT FROM CLOUD</button>
+        </div>
         <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
       </div>
       <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
@@ -1487,6 +1491,8 @@
     const syncSendCloudBtn = document.getElementById("syncSendCloudBtn");
     const syncLoadCloudBtn = document.getElementById("syncLoadCloudBtn");
     const syncCancelBtn = document.getElementById("syncCancelBtn");
+    const saveFullAuditCloudBtn = document.getElementById("saveFullAuditCloudBtn");
+    const loadFullAuditCloudBtn = document.getElementById("loadFullAuditCloudBtn");
     const cloudSyncStatus = document.getElementById("cloudSyncStatus");
 
     const editPanel = document.getElementById("editPanel");
@@ -2722,10 +2728,8 @@
       input.focus();
     }
 
-    function exportBackupJson(options = {}) {
-      if (options && options.type) options = {};
-
-      const backup = {
+    function buildFullAuditBackup() {
+      return {
         appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
         appVersion: 4,
         exportedAt: new Date().toISOString(),
@@ -2739,6 +2743,12 @@
         deletedEntries,
         occupiedMaster
       };
+    }
+
+    function exportBackupJson(options = {}) {
+      if (options && options.type) options = {};
+
+      const backup = buildFullAuditBackup();
 
       const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
       downloadBlob(JSON.stringify(backup, null, 2), filename, "application/json;charset=utf-8");
@@ -3327,6 +3337,10 @@
       };
     }
 
+    function fullAuditCloudSyncName(settings) {
+      return normalizeCloudSyncName(settings.syncName + "_FULL_AUDIT");
+    }
+
     function requireCloudSettings() {
       const settings = cloudSettings();
       cloudSyncNameInput.value = settings.syncName;
@@ -3515,6 +3529,99 @@
     async function loadSyncChoiceFromCloud() {
       syncChoicePanel.hidden = true;
       await loadOccupiedListFromCloud();
+    }
+
+    async function saveFullAuditToCloud() {
+      if (!entries.length && !deletedEntries.length) {
+        setCloudStatus("No scanned entries yet. Scan containers before saving a full audit to cloud.", "warning");
+        input.focus();
+        return;
+      }
+
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      saveCloudSettings();
+
+      const syncName = fullAuditCloudSyncName(settings);
+      const backup = buildFullAuditBackup();
+      backup.syncType = "fullAuditBackup";
+      backup.cloudSavedAt = new Date().toISOString();
+
+      const record = {
+        sync_key: syncName,
+        payload: backup,
+        updated_at: new Date().toISOString(),
+        updated_by: employeeInitialsInput.value.trim().toUpperCase()
+      };
+
+      saveFullAuditCloudBtn.disabled = true;
+      setCloudStatus("Saving full audit to cloud...", "info");
+      try {
+        await supabaseRequest(settings, CLOUD_TABLE + "?on_conflict=sync_key", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify(record)
+        });
+        setCloudStatus("Full audit saved to cloud: " + syncName + ". Active entries: " + entries.length + ".", "success");
+        setStatus("Full audit saved to cloud. Active entries: " + entries.length + ".", "success");
+      } catch (error) {
+        setCloudStatus("Full audit cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+      } finally {
+        saveFullAuditCloudBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function loadFullAuditFromCloud() {
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      saveCloudSettings();
+
+      const syncName = fullAuditCloudSyncName(settings);
+      const replacingActive = entries.length;
+      const replacingDeleted = deletedEntries.length;
+      const ok = confirm(
+        "LOAD FULL AUDIT FROM CLOUD?\n\n" +
+        "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\n" +
+        "CURRENT DEVICE: " + replacingActive + " ACTIVE, " + replacingDeleted + " DELETED.\n\n" +
+        "A JSON BACKUP OF THIS DEVICE WILL DOWNLOAD FIRST."
+      );
+      if (!ok) {
+        setCloudStatus("Full audit cloud load canceled. This device was not changed.", "info");
+        input.focus();
+        return;
+      }
+
+      loadFullAuditCloudBtn.disabled = true;
+      setCloudStatus("Loading full audit from cloud...", "info");
+      try {
+        const rows = await supabaseRequest(
+          settings,
+          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(syncName) + "&select=payload,updated_at,updated_by&limit=1",
+          { method: "GET" }
+        );
+        const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (!row || !row.payload) {
+          setCloudStatus("No full audit cloud backup found for " + syncName + ".", "warning");
+          return;
+        }
+
+        const data = dataFromJsonBackup(row.payload);
+        exportBackupJson();
+        const saveOk = applyImportedData(data);
+        setCloudStatus(
+          saveOk
+            ? "Full audit loaded from cloud. Active entries: " + entries.length + "."
+            : "Full audit loaded for this app session, but could not be saved on this device.",
+          saveOk ? "success" : "warning"
+        );
+        setStatus("Full audit loaded from cloud. Active entries: " + entries.length + ".", saveOk ? "success" : "warning");
+      } catch (error) {
+        setCloudStatus("Full audit cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+      } finally {
+        loadFullAuditCloudBtn.disabled = false;
+        input.focus();
+      }
     }
 
     function sampleCodes(codes, comparison) {
@@ -4303,6 +4410,8 @@
     syncSendCloudBtn.addEventListener("click", sendSyncChoiceToCloud);
     syncLoadCloudBtn.addEventListener("click", loadSyncChoiceFromCloud);
     syncCancelBtn.addEventListener("click", closeSyncChoicePanel);
+    saveFullAuditCloudBtn.addEventListener("click", saveFullAuditToCloud);
+    loadFullAuditCloudBtn.addEventListener("click", loadFullAuditFromCloud);
     uploadCloudBtn.addEventListener("click", uploadOccupiedListToCloud);
     loadCloudBtn.addEventListener("click", loadOccupiedListFromCloud);
     clearCloudSettingsBtn.addEventListener("click", clearCloudSettings);
