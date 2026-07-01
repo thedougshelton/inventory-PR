@@ -349,6 +349,7 @@
 
     .actions.two { grid-template-columns: repeat(2, 1fr); }
     .actions.three { grid-template-columns: repeat(3, 1fr); }
+    .actions.four { grid-template-columns: repeat(4, 1fr); }
 
     .status {
       margin-top: 10px;
@@ -948,7 +949,8 @@
       }
 
       .actions,
-      .actions.three {
+      .actions.three,
+      .actions.four {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
       }
@@ -1071,7 +1073,8 @@
           </div>
           <button id="saveCloudSettingsBtn" type="button">Save Cloud Settings</button>
         </div>
-        <div class="actions three" style="margin-top: 10px;">
+        <div class="actions four" style="margin-top: 10px;">
+          <button id="syncCloudBtn" type="button">SYNC MONTHLY LIST</button>
           <button id="uploadCloudBtn" type="button">SAVE MONTHLY LIST TO CLOUD</button>
           <button id="loadCloudBtn" type="button">LOAD MONTHLY LIST FROM CLOUD</button>
           <button id="clearCloudSettingsBtn" type="button">CLEAR CLOUD SETTINGS</button>
@@ -1448,6 +1451,7 @@
     const cloudAnonKeyInput = document.getElementById("cloudAnonKey");
     const cloudSyncNameInput = document.getElementById("cloudSyncName");
     const saveCloudSettingsBtn = document.getElementById("saveCloudSettingsBtn");
+    const syncCloudBtn = document.getElementById("syncCloudBtn");
     const uploadCloudBtn = document.getElementById("uploadCloudBtn");
     const loadCloudBtn = document.getElementById("loadCloudBtn");
     const clearCloudSettingsBtn = document.getElementById("clearCloudSettingsBtn");
@@ -3452,6 +3456,33 @@
       }
     }
 
+    async function syncOccupiedListWithCloud() {
+      const localCount = occupiedMaster.codes.length;
+
+      if (!localCount) {
+        await loadOccupiedListFromCloud();
+        return;
+      }
+
+      const sendThisDevice = confirm(
+        "SYNC MONTHLY LIST\n\n" +
+        "THIS DEVICE HAS " + localCount + " EXPECTED UNITS.\n\n" +
+        "OK = SEND THIS DEVICE'S LIST TO CLOUD.\n" +
+        "CANCEL = LOAD THE CLOUD LIST ONTO THIS DEVICE."
+      );
+
+      syncCloudBtn.disabled = true;
+      try {
+        if (sendThisDevice) {
+          await uploadOccupiedListToCloud();
+        } else {
+          await loadOccupiedListFromCloud();
+        }
+      } finally {
+        syncCloudBtn.disabled = false;
+      }
+    }
+
     function sampleCodes(codes, comparison) {
       if (!codes.length) return "NONE";
       return codes.slice(0, 10).map(code => {
@@ -4234,6 +4265,7 @@
     exportAuditBtn.addEventListener("click", exportAuditComparison);
     clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
     saveCloudSettingsBtn.addEventListener("click", saveCloudSettings);
+    syncCloudBtn.addEventListener("click", syncOccupiedListWithCloud);
     uploadCloudBtn.addEventListener("click", uploadOccupiedListToCloud);
     loadCloudBtn.addEventListener("click", loadOccupiedListFromCloud);
     clearCloudSettingsBtn.addEventListener("click", clearCloudSettings);
