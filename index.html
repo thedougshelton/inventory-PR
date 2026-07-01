@@ -1075,22 +1075,14 @@
         <button id="clearOccupiedListBtn" type="button">CLEAR MONTHLY LIST</button>
       </div>
       <div class="cloud-sync-panel">
-        <div class="two-col">
+        <div class="session-row">
           <div>
-            <label for="cloudUrl">Supabase Project URL</label>
-            <input id="cloudUrl" type="text" autocomplete="off" spellcheck="false" placeholder="HTTPS://YX...SUPABASE.CO" />
+            <label for="cloudPreset">Cloud Audit Preset</label>
+            <select id="cloudPreset">
+              <option value="tampa">Tampa Occupied Audit</option>
+            </select>
           </div>
-          <div>
-            <label for="cloudAnonKey">Supabase Publishable Key</label>
-            <input id="cloudAnonKey" type="text" autocomplete="off" spellcheck="false" placeholder="SB_PUBLISHABLE_..." />
-          </div>
-        </div>
-        <div class="session-row" style="margin-top: 10px;">
-          <div>
-            <label for="cloudSyncName">Cloud Sync Name</label>
-            <input id="cloudSyncName" type="text" autocomplete="off" spellcheck="false" placeholder="TAMPA_MONTHLY_AUDIT" />
-          </div>
-          <button id="saveCloudSettingsBtn" type="button">Save Cloud Settings</button>
+          <button id="saveCloudSettingsBtn" type="button">Save Cloud Preset</button>
         </div>
         <div class="actions four" style="margin-top: 10px;">
           <button id="syncCloudBtn" type="button">SYNC MONTHLY LIST</button>
@@ -1424,6 +1416,15 @@
     const DEFAULT_CLOUD_URL = "https://yxrqclpcggymogksaksx.supabase.co";
     const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
     const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
+    const CLOUD_PRESET_KEY = "warehouse_inventory_cloud_preset_v1";
+    const CLOUD_PRESETS = {
+      tampa: {
+        label: "Tampa Occupied Audit",
+        url: DEFAULT_CLOUD_URL,
+        anonKey: DEFAULT_CLOUD_PUBLISHABLE_KEY,
+        syncName: DEFAULT_CLOUD_SYNC_NAME
+      }
+    };
 
     const input = document.getElementById("containerInput");
     const notesInput = document.getElementById("notesInput");
@@ -1478,9 +1479,7 @@
     const occupiedMissingCount = document.getElementById("occupiedMissingCount");
     const occupiedExtraCount = document.getElementById("occupiedExtraCount");
     const occupiedComparisonList = document.getElementById("occupiedComparisonList");
-    const cloudUrlInput = document.getElementById("cloudUrl");
-    const cloudAnonKeyInput = document.getElementById("cloudAnonKey");
-    const cloudSyncNameInput = document.getElementById("cloudSyncName");
+    const cloudPresetSelect = document.getElementById("cloudPreset");
     const saveCloudSettingsBtn = document.getElementById("saveCloudSettingsBtn");
     const syncCloudBtn = document.getElementById("syncCloudBtn");
     const uploadCloudBtn = document.getElementById("uploadCloudBtn");
@@ -1553,9 +1552,7 @@
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
     autoBackupToggle.checked = false;
-    cloudUrlInput.value = localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_CLOUD_URL;
-    cloudAnonKeyInput.value = localStorage.getItem(CLOUD_ANON_KEY) || DEFAULT_CLOUD_PUBLISHABLE_KEY;
-    cloudSyncNameInput.value = localStorage.getItem(CLOUD_SYNC_NAME_KEY) || DEFAULT_CLOUD_SYNC_NAME;
+    cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -3330,10 +3327,12 @@
     }
 
     function cloudSettings() {
+      const preset = CLOUD_PRESETS[cloudPresetSelect.value] || CLOUD_PRESETS.tampa;
       return {
-        url: cloudUrlInput.value.trim().replace(/\/+$/, ""),
-        anonKey: cloudAnonKeyInput.value.trim(),
-        syncName: normalizeCloudSyncName(cloudSyncNameInput.value)
+        label: preset.label,
+        url: preset.url,
+        anonKey: preset.anonKey,
+        syncName: normalizeCloudSyncName(preset.syncName)
       };
     }
 
@@ -3343,14 +3342,13 @@
 
     function requireCloudSettings() {
       const settings = cloudSettings();
-      cloudSyncNameInput.value = settings.syncName;
       if (!settings.url || !settings.anonKey || !settings.syncName) {
-        setCloudStatus("Enter Supabase URL, publishable key, and cloud sync name first.", "warning");
+        setCloudStatus("Choose a cloud audit preset first.", "warning");
         return null;
       }
       if (!/^https:\/\/[a-z0-9.-]+\.supabase\.co$/i.test(settings.url)) {
-        setCloudStatus("Supabase URL should look like https://your-project.supabase.co.", "warning");
-        cloudUrlInput.focus();
+        setCloudStatus("Cloud preset is not configured correctly.", "warning");
+        cloudPresetSelect.focus();
         return null;
       }
       return settings;
@@ -3358,16 +3356,16 @@
 
     function saveCloudSettings() {
       const settings = cloudSettings();
-      cloudSyncNameInput.value = settings.syncName;
       const ok = [
-        safeSetItem(CLOUD_URL_KEY, settings.url),
-        safeSetItem(CLOUD_ANON_KEY, settings.anonKey),
-        safeSetItem(CLOUD_SYNC_NAME_KEY, settings.syncName)
+        safeSetItem(CLOUD_PRESET_KEY, cloudPresetSelect.value),
+        safeRemoveItem(CLOUD_URL_KEY),
+        safeRemoveItem(CLOUD_ANON_KEY),
+        safeRemoveItem(CLOUD_SYNC_NAME_KEY)
       ].every(Boolean);
       setCloudStatus(
         ok
-          ? "Cloud settings saved on this device."
-          : "Cloud settings could not be saved on this device.",
+          ? "Cloud preset saved on this device: " + settings.label + "."
+          : "Cloud preset could not be saved on this device.",
         ok ? "success" : "warning"
       );
       input.focus();
@@ -3375,18 +3373,17 @@
     }
 
     function clearCloudSettings() {
-      cloudUrlInput.value = DEFAULT_CLOUD_URL;
-      cloudAnonKeyInput.value = DEFAULT_CLOUD_PUBLISHABLE_KEY;
-      cloudSyncNameInput.value = DEFAULT_CLOUD_SYNC_NAME;
+      cloudPresetSelect.value = "tampa";
       const ok = [
+        safeSetItem(CLOUD_PRESET_KEY, "tampa"),
         safeRemoveItem(CLOUD_URL_KEY),
         safeRemoveItem(CLOUD_ANON_KEY),
         safeRemoveItem(CLOUD_SYNC_NAME_KEY)
       ].every(Boolean);
       setCloudStatus(
         ok
-          ? "Cloud settings reset to Tampa defaults."
-          : "Cloud settings reset for this app session, but browser storage did not fully update.",
+          ? "Cloud preset reset to Tampa Occupied Audit."
+          : "Cloud preset reset for this app session, but browser storage did not fully update.",
         ok ? "success" : "warning"
       );
       input.focus();
@@ -4368,9 +4365,7 @@
       render();
     });
 
-    cloudSyncNameInput.addEventListener("input", () => {
-      cloudSyncNameInput.value = normalizeCloudSyncName(cloudSyncNameInput.value);
-    });
+    cloudPresetSelect.addEventListener("change", saveCloudSettings);
 
 
     searchInput.addEventListener("input", () => {
