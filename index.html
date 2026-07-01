@@ -714,6 +714,25 @@
       border-radius: 8px;
     }
 
+    .sync-choice-panel {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .sync-choice-panel[hidden] {
+      display: none;
+    }
+
+    .sync-choice-panel p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
     .audit-metrics { margin-top: 12px; }
 
     .audit-comparison-list {
@@ -1078,6 +1097,14 @@
           <button id="uploadCloudBtn" type="button">SAVE MONTHLY LIST TO CLOUD</button>
           <button id="loadCloudBtn" type="button">LOAD MONTHLY LIST FROM CLOUD</button>
           <button id="clearCloudSettingsBtn" type="button">CLEAR CLOUD SETTINGS</button>
+        </div>
+        <div id="syncChoicePanel" class="sync-choice-panel" hidden>
+          <p id="syncChoiceText">CHOOSE WHICH MONTHLY LIST SHOULD BE USED.</p>
+          <div class="actions three">
+            <button id="syncSendCloudBtn" type="button">SEND TO CLOUD</button>
+            <button id="syncLoadCloudBtn" type="button">LOAD FROM CLOUD</button>
+            <button id="syncCancelBtn" type="button">DO NOTHING</button>
+          </div>
         </div>
         <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
       </div>
@@ -1455,6 +1482,11 @@
     const uploadCloudBtn = document.getElementById("uploadCloudBtn");
     const loadCloudBtn = document.getElementById("loadCloudBtn");
     const clearCloudSettingsBtn = document.getElementById("clearCloudSettingsBtn");
+    const syncChoicePanel = document.getElementById("syncChoicePanel");
+    const syncChoiceText = document.getElementById("syncChoiceText");
+    const syncSendCloudBtn = document.getElementById("syncSendCloudBtn");
+    const syncLoadCloudBtn = document.getElementById("syncLoadCloudBtn");
+    const syncCancelBtn = document.getElementById("syncCancelBtn");
     const cloudSyncStatus = document.getElementById("cloudSyncStatus");
 
     const editPanel = document.getElementById("editPanel");
@@ -3464,23 +3496,25 @@
         return;
       }
 
-      const sendThisDevice = confirm(
-        "SYNC MONTHLY LIST\n\n" +
-        "THIS DEVICE HAS " + localCount + " EXPECTED UNITS.\n\n" +
-        "OK = SEND THIS DEVICE'S LIST TO CLOUD.\n" +
-        "CANCEL = LOAD THE CLOUD LIST ONTO THIS DEVICE."
-      );
+      syncChoiceText.textContent = "THIS DEVICE HAS " + localCount + " EXPECTED UNITS. CHOOSE SEND TO CLOUD, LOAD FROM CLOUD, OR DO NOTHING.";
+      syncChoicePanel.hidden = false;
+      setCloudStatus("Choose how to sync the monthly list.", "info");
+      syncSendCloudBtn.focus();
+    }
 
-      syncCloudBtn.disabled = true;
-      try {
-        if (sendThisDevice) {
-          await uploadOccupiedListToCloud();
-        } else {
-          await loadOccupiedListFromCloud();
-        }
-      } finally {
-        syncCloudBtn.disabled = false;
-      }
+    function closeSyncChoicePanel() {
+      syncChoicePanel.hidden = true;
+      input.focus();
+    }
+
+    async function sendSyncChoiceToCloud() {
+      syncChoicePanel.hidden = true;
+      await uploadOccupiedListToCloud();
+    }
+
+    async function loadSyncChoiceFromCloud() {
+      syncChoicePanel.hidden = true;
+      await loadOccupiedListFromCloud();
     }
 
     function sampleCodes(codes, comparison) {
@@ -4266,6 +4300,9 @@
     clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
     saveCloudSettingsBtn.addEventListener("click", saveCloudSettings);
     syncCloudBtn.addEventListener("click", syncOccupiedListWithCloud);
+    syncSendCloudBtn.addEventListener("click", sendSyncChoiceToCloud);
+    syncLoadCloudBtn.addEventListener("click", loadSyncChoiceFromCloud);
+    syncCancelBtn.addEventListener("click", closeSyncChoicePanel);
     uploadCloudBtn.addEventListener("click", uploadOccupiedListToCloud);
     loadCloudBtn.addEventListener("click", loadOccupiedListFromCloud);
     clearCloudSettingsBtn.addEventListener("click", clearCloudSettings);
