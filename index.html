@@ -1058,7 +1058,7 @@
 
     <section class="card secondary-section">
       <div class="list-head">
-        <h2>MONTHLY OCCUPIED AUDIT</h2>
+        <h2>INVENTORY AUDIT</h2>
         <span class="small" id="occupiedAuditText">NO MONTHLY LIST LOADED</span>
       </div>
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
@@ -2511,7 +2511,7 @@
         "Deleted Entries: " + deletedEntries.length,
         "Duplicate Attempts Blocked: " + duplicateBlocks,
         "",
-        "MONTHLY OCCUPIED AUDIT",
+        "INVENTORY AUDIT",
         "EXPECTED OCCUPIED: " + occupiedComparison().expected.length,
         "FOUND IN WAREHOUSE: " + occupiedComparison().foundExpected.length,
         "EXPECTED NOT FOUND: " + occupiedComparison().missingExpected.length,
@@ -2547,7 +2547,7 @@
         ["Deleted Entries", deletedEntries.length],
         ["Duplicate Attempts Blocked", duplicateBlocks],
         [],
-        ["MONTHLY OCCUPIED AUDIT", "COUNT"],
+        ["INVENTORY AUDIT", "COUNT"],
         ["EXPECTED OCCUPIED", occupiedComparison().expected.length],
         ["FOUND IN WAREHOUSE", occupiedComparison().foundExpected.length],
         ["EXPECTED NOT FOUND", occupiedComparison().missingExpected.length],
