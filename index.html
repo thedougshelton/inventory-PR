@@ -1059,7 +1059,7 @@
     <section class="card secondary-section">
       <div class="list-head">
         <h2>INVENTORY AUDIT</h2>
-        <span class="small" id="occupiedAuditText">NO MONTHLY LIST LOADED</span>
+        <span class="small" id="occupiedAuditText">NO LIST UPLOADED</span>
       </div>
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
       <div class="actions three">
@@ -3535,7 +3535,7 @@
       occupiedExtraCount.textContent = comparison.extraFound.length;
       clearOccupiedListBtn.disabled = !occupiedMaster.codes.length;
       if (!occupiedMaster.codes.length) {
-        occupiedAuditText.textContent = "NO MONTHLY LIST LOADED";
+        occupiedAuditText.textContent = "NO LIST UPLOADED";
         occupiedStatus.textContent = "UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.";
         occupiedStatus.className = "status info";
         occupiedComparisonList.innerHTML = '<div class="empty">NO MONTHLY OCCUPIED LIST LOADED YET.</div>';
