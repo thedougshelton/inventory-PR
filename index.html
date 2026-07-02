@@ -1013,7 +1013,6 @@
       <div class="top-status">
         <span id="lockBadge" class="badge unlocked">Editing Unlocked</span>
         <span id="xlsxBadge" class="badge">XLSX loading…</span>
-        <span id="backupBadge" class="badge">No backup yet</span>
       </div>
     </header>
 
@@ -1032,15 +1031,9 @@
           <input id="employeeInitials" type="text" autocomplete="off" maxlength="8" placeholder="EXAMPLE: DOUG SHELTON OR DS" />
         </div>
         <div class="setup-action">
-          <button id="backupJsonBtn" type="button">Export Backup JSON</button>
-          <label class="setup-check" for="autoBackupToggle">
-            <input id="autoBackupToggle" type="checkbox" />
-            Auto backup every 100 entries
-          </label>
+          <button id="saveCloudBtn" type="button">Save To Cloud</button>
         </div>
       </div>
-
-      <p class="help">Session name and initials are included in the XLSX export and final report.</p>
     </section>
 
     <section class="grid" aria-label="Inventory summary">
@@ -1071,7 +1064,6 @@
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
       <div class="actions three">
         <button id="chooseOccupiedFileBtn" type="button">UPLOAD MONTHLY LIST</button>
-        <button id="exportAuditBtn" type="button">EXPORT AUDIT COMPARISON</button>
         <button id="clearOccupiedListBtn" type="button">CLEAR MONTHLY LIST</button>
       </div>
       <div class="cloud-sync-panel">
@@ -1082,27 +1074,9 @@
               <option value="tampa">Tampa Occupied Audit</option>
             </select>
           </div>
-          <button id="saveCloudSettingsBtn" type="button">Save Cloud Preset</button>
+          <button id="loadCloudCombinedBtn" type="button">Load From Cloud</button>
         </div>
-        <div class="actions four" style="margin-top: 10px;">
-          <button id="syncCloudBtn" type="button">SYNC MONTHLY LIST</button>
-          <button id="uploadCloudBtn" type="button">SAVE MONTHLY LIST TO CLOUD</button>
-          <button id="loadCloudBtn" type="button">LOAD MONTHLY LIST FROM CLOUD</button>
-          <button id="clearCloudSettingsBtn" type="button">CLEAR CLOUD SETTINGS</button>
-        </div>
-        <div id="syncChoicePanel" class="sync-choice-panel" hidden>
-          <p id="syncChoiceText">CHOOSE WHICH MONTHLY LIST SHOULD BE USED.</p>
-          <div class="actions three">
-            <button id="syncSendCloudBtn" type="button">SEND TO CLOUD</button>
-            <button id="syncLoadCloudBtn" type="button">LOAD FROM CLOUD</button>
-            <button id="syncCancelBtn" type="button">DO NOTHING</button>
-          </div>
-        </div>
-        <div class="actions two" style="margin-top: 10px;">
-          <button id="saveFullAuditCloudBtn" type="button">SAVE FULL AUDIT TO CLOUD</button>
-          <button id="loadFullAuditCloudBtn" type="button">LOAD FULL AUDIT FROM CLOUD</button>
-        </div>
-        <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA. SAVE SETTINGS, THEN USE CLOUD BUTTONS TO SHARE THE MONTHLY LIST BETWEEN DESKTOP AND PHONE.</div>
+        <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA.</div>
       </div>
       <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
       <div class="preview-metrics audit-metrics">
@@ -1189,20 +1163,14 @@
       </div>
 
       <div class="actions">
-        <button id="exportXlsxBtn" type="button">Export XLSX</button>
         <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
         <button id="undoBtn" type="button">Undo Last Entry</button>
-        <button id="copyBtn" type="button">Copy Active List</button>
-        <button id="phoneTransferBtn" type="button">PHONE TRANSFER FILE</button>
         <button id="unlockBtn" type="button">Unlock Editing</button>
-        <button id="focusEntryBtn" type="button">Focus Entry Box</button>
-        <button id="exportCsvBtn" type="button">Export CSV Backup</button>
-        <button id="toggleImportBtn" type="button">Import / Restore</button>
       </div>
 
       <div id="importPanel" class="compact-import-panel" hidden>
         <div class="list-head">
-          <h2>Import / Restore from Backup</h2>
+          <h2>Hidden Import Tools</h2>
           <span class="small">JSON, TXT, CSV, OR XLSX</span>
         </div>
         <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-controls="backupFileInput">
@@ -1229,11 +1197,11 @@
           <div id="importWarningList" class="warning-list"></div>
           <div class="actions three">
             <button id="applyImportBtn" class="primary" type="button">Apply Import</button>
-            <button id="downloadBeforeImportBtn" type="button">Download Current Backup</button>
+            <button id="downloadBeforeImportBtn" type="button">Save Current To Cloud</button>
             <button id="cancelImportBtn" type="button">Cancel Import</button>
           </div>
         </div>
-        <p class="help">Import preview validates the file before anything is replaced. Applying an import downloads a current JSON backup first.</p>
+        <p class="help">Import preview validates the file before anything is replaced.</p>
       </div>
     </section>
 
@@ -1359,13 +1327,6 @@
         <span class="small" id="deletedCountText">0 deleted</span>
       </div>
       <div id="deletedList" class="inventory-list"></div>
-      <div class="actions two">
-        <button id="exportDeletedCsvBtn" type="button">Export Deleted CSV</button>
-        <button id="copyDeletedBtn" type="button">Copy Deleted List</button>
-      </div>
-      <p class="help">
-        Deleted entries stay here until the finished list is cleared. You can restore a deleted entry with the same original entry number.
-      </p>
     </section>
 
     <section class="card secondary-section">
@@ -1403,8 +1364,6 @@
     const SESSION_KEY = "warehouse_inventory_session_name_v2";
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
-    const LAST_BACKUP_KEY = "warehouse_inventory_last_backup_v1";
-    const LAST_BACKUP_ENTRY_COUNT_KEY = "warehouse_inventory_last_backup_entry_count_v1";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
@@ -1434,17 +1393,10 @@
     const employeeInitialsInput = document.getElementById("employeeInitials");
 
     const addBtn = document.getElementById("addBtn");
-    const exportXlsxBtn = document.getElementById("exportXlsxBtn");
     const finalExportBtn = document.getElementById("finalExportBtn");
     const undoBtn = document.getElementById("undoBtn");
-    const copyBtn = document.getElementById("copyBtn");
-    const backupJsonBtn = document.getElementById("backupJsonBtn");
-    const autoBackupToggle = document.getElementById("autoBackupToggle");
-    const phoneTransferBtn = document.getElementById("phoneTransferBtn");
+    const saveCloudBtn = document.getElementById("saveCloudBtn");
     const unlockBtn = document.getElementById("unlockBtn");
-    const focusEntryBtn = document.getElementById("focusEntryBtn");
-    const exportCsvBtn = document.getElementById("exportCsvBtn");
-    const toggleImportBtn = document.getElementById("toggleImportBtn");
     const importPanel = document.getElementById("importPanel");
     const entryModeBtn = document.getElementById("entryModeBtn");
 
@@ -1466,12 +1418,9 @@
 
     const finishConfirm = document.getElementById("finishConfirm");
     const finishClearBtn = document.getElementById("finishClearBtn");
-    const exportDeletedCsvBtn = document.getElementById("exportDeletedCsvBtn");
-    const copyDeletedBtn = document.getElementById("copyDeletedBtn");
     const searchInput = document.getElementById("searchInput");
     const occupiedFileInput = document.getElementById("occupiedFileInput");
     const chooseOccupiedFileBtn = document.getElementById("chooseOccupiedFileBtn");
-    const exportAuditBtn = document.getElementById("exportAuditBtn");
     const clearOccupiedListBtn = document.getElementById("clearOccupiedListBtn");
     const occupiedAuditText = document.getElementById("occupiedAuditText");
     const occupiedStatus = document.getElementById("occupiedStatus");
@@ -1481,18 +1430,11 @@
     const occupiedExtraCount = document.getElementById("occupiedExtraCount");
     const occupiedComparisonList = document.getElementById("occupiedComparisonList");
     const cloudPresetSelect = document.getElementById("cloudPreset");
-    const saveCloudSettingsBtn = document.getElementById("saveCloudSettingsBtn");
-    const syncCloudBtn = document.getElementById("syncCloudBtn");
-    const uploadCloudBtn = document.getElementById("uploadCloudBtn");
-    const loadCloudBtn = document.getElementById("loadCloudBtn");
-    const clearCloudSettingsBtn = document.getElementById("clearCloudSettingsBtn");
-    const syncChoicePanel = document.getElementById("syncChoicePanel");
-    const syncChoiceText = document.getElementById("syncChoiceText");
-    const syncSendCloudBtn = document.getElementById("syncSendCloudBtn");
-    const syncLoadCloudBtn = document.getElementById("syncLoadCloudBtn");
-    const syncCancelBtn = document.getElementById("syncCancelBtn");
-    const saveFullAuditCloudBtn = document.getElementById("saveFullAuditCloudBtn");
-    const loadFullAuditCloudBtn = document.getElementById("loadFullAuditCloudBtn");
+    const loadCloudCombinedBtn = document.getElementById("loadCloudCombinedBtn");
+    const uploadCloudBtn = saveCloudBtn;
+    const loadCloudBtn = loadCloudCombinedBtn;
+    const saveFullAuditCloudBtn = saveCloudBtn;
+    const loadFullAuditCloudBtn = loadCloudCombinedBtn;
     const cloudSyncStatus = document.getElementById("cloudSyncStatus");
 
     const editPanel = document.getElementById("editPanel");
@@ -1517,7 +1459,6 @@
     const lastSaved = document.getElementById("lastSaved");
     const lockBadge = document.getElementById("lockBadge");
     const xlsxBadge = document.getElementById("xlsxBadge");
-    const backupBadge = document.getElementById("backupBadge");
     const statusBox = document.getElementById("status");
     const list = document.getElementById("list");
     const deletedList = document.getElementById("deletedList");
@@ -1542,8 +1483,6 @@
     let duplicateBlocks = loadNumberFromKeys([DUPE_KEY, ...OLD_DUPE_KEYS], 0);
     let nextSequence = loadNextSequence();
     let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
-    let lastBackupAt = localStorage.getItem(LAST_BACKUP_KEY) || "";
-    let lastBackupEntryCount = Number(localStorage.getItem(LAST_BACKUP_ENTRY_COUNT_KEY)) || 0;
     let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
     let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
     let editingSequence = null;
@@ -1552,7 +1491,6 @@
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
-    autoBackupToggle.checked = false;
     cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
@@ -1697,7 +1635,7 @@
         return true;
       } catch (error) {
         savedText.textContent = "Save failed on this device";
-        setStatus("Save failed because this device's browser storage is full or blocked. Export Backup JSON now, then clear old browser storage before continuing.", "error");
+        setStatus("Save failed because this device's browser storage is full or blocked. Save to cloud now, then clear old browser storage before continuing.", "error");
         return false;
       }
     }
@@ -1708,7 +1646,7 @@
         return true;
       } catch (error) {
         savedText.textContent = "Save failed on this device";
-        setStatus("Save failed because this device's browser storage is full or blocked. Export Backup JSON now, then clear old browser storage before continuing.", "error");
+        setStatus("Save failed because this device's browser storage is full or blocked. Save to cloud now, then clear old browser storage before continuing.", "error");
         return false;
       }
     }
@@ -1782,26 +1720,6 @@
       if (bytes < 1024) return bytes + " B";
       if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
       return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-    }
-
-    function markBackupExported() {
-      lastBackupAt = new Date().toISOString();
-      lastBackupEntryCount = entries.length;
-      const ok = [
-        safeSetItem(LAST_BACKUP_KEY, lastBackupAt),
-        safeSetItem(LAST_BACKUP_ENTRY_COUNT_KEY, String(lastBackupEntryCount))
-      ].every(Boolean);
-      renderBackupBadge();
-      return ok;
-    }
-
-    function entriesSinceBackup() {
-      return Math.max(0, entries.length - (Number(lastBackupEntryCount) || 0));
-    }
-
-    function backupReminderDue() {
-      if (!lastBackupAt) return entries.length >= 100;
-      return entriesSinceBackup() >= 100;
     }
 
     function currentSignature() {
@@ -1934,10 +1852,7 @@
         return;
       }
 
-      if (backupReminderDue() && autoBackupToggle.checked) {
-        exportBackupJson({ auto: true, keepFocus: true });
-        setStatus("Saved #" + sequence + " " + code + ". Auto backup JSON downloaded at " + entries.length + " entries.", "success");
-      } else if (sizeMismatch) {
+      if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
       } else {
         setStatus("Saved #" + sequence + " " + code + " - " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
@@ -2220,13 +2135,9 @@
       nextSequence = 1;
       finishConfirm.value = "";
       finalExportSignature = "";
-      lastBackupAt = "";
-      lastBackupEntryCount = 0;
       editLocked = false;
       const clearOk = [
         safeRemoveItem(FINAL_EXPORT_SIGNATURE_KEY),
-        safeRemoveItem(LAST_BACKUP_KEY),
-        safeRemoveItem(LAST_BACKUP_ENTRY_COUNT_KEY),
         safeSetItem(EDIT_LOCKED_KEY, "false")
       ].every(Boolean);
       const saveOk = saveEntries();
@@ -2234,7 +2145,7 @@
       setStatus(
         clearOk && saveOk
           ? "Finished list cleared. Ready for a new inventory."
-          : "Finished list cleared for this app session, but the browser save did not fully complete. Export Backup JSON now.",
+          : "Finished list cleared for this app session, but the browser save did not fully complete. Save to cloud now.",
         clearOk && saveOk ? "success" : "warning"
       );
       input.focus();
@@ -2666,7 +2577,7 @@
       }
 
       if (typeof XLSX === "undefined") {
-        setStatus("XLSX export library did not load. Check internet connection, then reopen the app. CSV/JSON backup still works.", "error");
+        setStatus("XLSX export library did not load. Check internet connection, then reopen the app. Save to cloud still works.", "error");
         return;
       }
 
@@ -2700,7 +2611,7 @@
       try {
         XLSX.writeFile(wb, filename);
       } catch (error) {
-        setStatus("XLSX export failed. Editing was not locked. Try Export Backup JSON, then reopen the app and export again.", "error");
+        setStatus("XLSX export failed. Editing was not locked. Save to cloud, then reopen the app and export again.", "error");
         input.focus();
         return;
       }
@@ -2715,11 +2626,11 @@
 
       setStatus(
         !saveOk
-          ? "XLSX exported, but the latest save could not be stored on this device. Export Backup JSON now before continuing."
+          ? "XLSX exported, but the latest save could not be stored on this device. Save to cloud now before continuing."
           : finalLock && lockSaved
           ? "Final XLSX exported and editing is now locked: " + filename + "."
           : finalLock
-          ? "Final XLSX exported, but the lock could not be saved on this device. Export Backup JSON now before continuing."
+          ? "Final XLSX exported, but the lock could not be saved on this device. Save to cloud now before continuing."
           : "XLSX exported: " + filename + ".",
         !saveOk || (finalLock && !lockSaved) ? "warning" : "success"
       );
@@ -2743,61 +2654,6 @@
       };
     }
 
-    function exportBackupJson(options = {}) {
-      if (options && options.type) options = {};
-
-      const backup = buildFullAuditBackup();
-
-      const filename = safeFilePart(sessionNameInput.value) + "_backup_" + dateStamp() + ".json";
-      downloadBlob(JSON.stringify(backup, null, 2), filename, "application/json;charset=utf-8");
-      markBackupExported();
-      setStatus((options.auto ? "Auto backup JSON downloaded: " : "Backup JSON exported: ") + filename + ". This is the safest file to import later.", "success");
-      if (!options.keepFocus) input.focus();
-    }
-
-    function exportPhoneTransferFile() {
-      if (!occupiedMaster.codes.length) {
-        setStatus("Upload a monthly occupied list before creating a phone transfer file.", "warning");
-        input.focus();
-        return;
-      }
-
-      const transfer = {
-        appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
-        appVersion: 4,
-        transferType: "monthlyOccupiedSetup",
-        exportedAt: new Date().toISOString(),
-        sessionName: sessionNameInput.value.trim(),
-        employeeInitials: employeeInitialsInput.value.trim(),
-        occupiedMaster
-      };
-
-      const filename = safeFilePart(sessionNameInput.value) + "_phone_transfer_" + dateStamp() + ".json";
-      downloadBlob(JSON.stringify(transfer, null, 2), filename, "application/json;charset=utf-8");
-      setStatus("Phone transfer file exported: " + filename + ". Open this file on your phone and import it in this app.", "success");
-      input.focus();
-    }
-
-    function exportCsvBackup() {
-      const filename = safeFilePart(sessionNameInput.value) + "_master_backup_" + dateStamp() + ".csv";
-      downloadBlob(buildMasterCsv(), filename, "text/csv;charset=utf-8");
-      setStatus("CSV backup exported: " + filename + ".", "success");
-      input.focus();
-    }
-
-    function exportDeletedCsv() {
-      if (!deletedEntries.length) {
-        setStatus("No deleted entries to export yet.", "warning");
-        input.focus();
-        return;
-      }
-
-      const filename = safeFilePart(sessionNameInput.value) + "_deleted_" + dateStamp() + ".csv";
-      downloadBlob(deletedCsvRows().map(csvLine).join("\n"), filename, "text/csv;charset=utf-8");
-      setStatus("Deleted entries CSV exported: " + filename + ".", "success");
-      input.focus();
-    }
-
     async function copyText(text, successMessage) {
       try {
         await navigator.clipboard.writeText(text);
@@ -2813,48 +2669,6 @@
       }
 
       input.focus();
-    }
-
-    function copyActiveList() {
-      if (!entries.length) {
-        setStatus("No active entries to copy yet.", "warning");
-        input.focus();
-        return;
-      }
-
-      const text = entries.map(item => [
-        item.sequence || "",
-        item.code || "",
-        item.size || "",
-        item.condition || "",
-        item.status || "",
-        item.initials || "",
-        item.notes || ""
-      ].join("\t")).join("\n");
-
-      copyText(text, "Active container list copied.");
-    }
-
-    function copyDeletedList() {
-      if (!deletedEntries.length) {
-        setStatus("No deleted entries to copy yet.", "warning");
-        input.focus();
-        return;
-      }
-
-      const text = deletedEntries.map(item => [
-        item.sequence || "",
-        item.code || "",
-        item.size || "",
-        item.condition || "",
-        item.status || "",
-        item.initials || "",
-        item.notes || "",
-        item.deleteType || "",
-        formatLocalTime(item.deletedAt)
-      ].join("\t")).join("\n");
-
-      copyText(text, "Deleted entries copied.");
     }
 
     function copyReport() {
@@ -2921,7 +2735,7 @@
       if (data.transferType === "monthlyOccupiedSetup") {
         const items = data.occupiedMaster && Array.isArray(data.occupiedMaster.items) ? data.occupiedMaster.items : [];
         const codes = data.occupiedMaster && Array.isArray(data.occupiedMaster.codes) ? data.occupiedMaster.codes : [];
-        if (!items.length && !codes.length) throw new Error("Phone transfer file does not contain a monthly occupied list.");
+        if (!items.length && !codes.length) throw new Error("Imported file does not contain a monthly occupied list.");
         return {
           transferType: "monthlyOccupiedSetup",
           sessionName: normalizeUpperText(data.sessionName || defaultSessionName()),
@@ -2931,7 +2745,7 @@
       }
 
       if (!Array.isArray(data.entries) && !Array.isArray(data.deletedEntries)) {
-        throw new Error("JSON backup does not contain entries.");
+        throw new Error("Imported file does not contain entries.");
       }
 
       return {
@@ -3243,7 +3057,7 @@
       try {
         XLSX.writeFile(wb, filename);
       } catch (error) {
-        setStatus("Audit comparison export failed. Try Export Backup JSON, then reopen the app and export again.", "error");
+        setStatus("Audit comparison export failed. Save to cloud, then reopen the app and export again.", "error");
         input.focus();
         return;
       }
@@ -3436,13 +3250,13 @@
       return data;
     }
 
-    async function uploadOccupiedListToCloud() {
+    async function uploadOccupiedListToCloud(options = {}) {
       if (!occupiedMaster.codes.length) {
         setCloudStatus("Upload a monthly occupied list before saving to cloud.", "warning");
         return;
       }
 
-      if (!requireCloudSavePin("save monthly list to cloud")) return;
+      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return;
 
       const settings = requireCloudSettings();
       if (!settings) return;
@@ -3519,43 +3333,14 @@
       }
     }
 
-    async function syncOccupiedListWithCloud() {
-      const localCount = occupiedMaster.codes.length;
-
-      if (!localCount) {
-        await loadOccupiedListFromCloud();
-        return;
-      }
-
-      syncChoiceText.textContent = "THIS DEVICE HAS " + localCount + " EXPECTED UNITS. CHOOSE SEND TO CLOUD, LOAD FROM CLOUD, OR DO NOTHING.";
-      syncChoicePanel.hidden = false;
-      setCloudStatus("Choose how to sync the monthly list.", "info");
-      syncSendCloudBtn.focus();
-    }
-
-    function closeSyncChoicePanel() {
-      syncChoicePanel.hidden = true;
-      input.focus();
-    }
-
-    async function sendSyncChoiceToCloud() {
-      syncChoicePanel.hidden = true;
-      await uploadOccupiedListToCloud();
-    }
-
-    async function loadSyncChoiceFromCloud() {
-      syncChoicePanel.hidden = true;
-      await loadOccupiedListFromCloud();
-    }
-
-    async function saveFullAuditToCloud() {
+    async function saveFullAuditToCloud(options = {}) {
       if (!entries.length && !deletedEntries.length) {
         setCloudStatus("No scanned entries yet. Scan containers before saving a full audit to cloud.", "warning");
         input.focus();
         return;
       }
 
-      if (!requireCloudSavePin("save full audit to cloud")) return;
+      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return;
 
       const settings = requireCloudSettings();
       if (!settings) return;
@@ -3600,10 +3385,9 @@
       const replacingActive = entries.length;
       const replacingDeleted = deletedEntries.length;
       const ok = confirm(
-        "LOAD FULL AUDIT FROM CLOUD?\n\n" +
+        "LOAD SAVED CLOUD AUDIT?\n\n" +
         "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\n" +
-        "CURRENT DEVICE: " + replacingActive + " ACTIVE, " + replacingDeleted + " DELETED.\n\n" +
-        "A JSON BACKUP OF THIS DEVICE WILL DOWNLOAD FIRST."
+        "CURRENT DEVICE: " + replacingActive + " ACTIVE, " + replacingDeleted + " DELETED."
       );
       if (!ok) {
         setCloudStatus("Full audit cloud load canceled. This device was not changed.", "info");
@@ -3626,7 +3410,6 @@
         }
 
         const data = dataFromJsonBackup(row.payload);
-        exportBackupJson();
         const saveOk = applyImportedData(data);
         setCloudStatus(
           saveOk
@@ -3639,6 +3422,99 @@
         setCloudStatus("Full audit cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
       } finally {
         loadFullAuditCloudBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function saveAllToCloud() {
+      const hasMonthlyList = occupiedMaster.codes.length > 0;
+      const hasAuditEntries = entries.length > 0 || deletedEntries.length > 0;
+
+      if (!hasMonthlyList && !hasAuditEntries) {
+        setCloudStatus("Nothing to save to cloud yet. Upload a monthly list or scan containers first.", "warning");
+        input.focus();
+        return;
+      }
+
+      if (!requireCloudSavePin("save to cloud")) return;
+
+      saveCloudBtn.disabled = true;
+      try {
+        if (hasMonthlyList) {
+          await uploadOccupiedListToCloud({ skipPin: true });
+        }
+        if (hasAuditEntries) {
+          await saveFullAuditToCloud({ skipPin: true });
+        }
+        setCloudStatus(
+          "Cloud save complete. Monthly list: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
+          " expected. Active entries: " + entries.length + ".",
+          "success"
+        );
+        setStatus("Cloud save complete.", "success");
+      } finally {
+        saveCloudBtn.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function loadAllFromCloud() {
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      saveCloudSettings();
+
+      loadCloudCombinedBtn.disabled = true;
+      setCloudStatus("Loading from cloud...", "info");
+
+      let monthlyLoaded = false;
+      let fullAuditLoaded = false;
+
+      try {
+        const monthlyRows = await supabaseRequest(
+          settings,
+          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
+          { method: "GET" }
+        );
+        const monthlyRow = Array.isArray(monthlyRows) && monthlyRows.length ? monthlyRows[0] : null;
+        if (monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster) {
+          occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
+          saveOccupiedMaster();
+          occupiedFileInput.value = "";
+          monthlyLoaded = true;
+        }
+
+        const fullSyncName = fullAuditCloudSyncName(settings);
+        const fullRows = await supabaseRequest(
+          settings,
+          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(fullSyncName) + "&select=payload,updated_at,updated_by&limit=1",
+          { method: "GET" }
+        );
+        const fullRow = Array.isArray(fullRows) && fullRows.length ? fullRows[0] : null;
+        if (fullRow && fullRow.payload) {
+          const ok = confirm(
+            "LOAD SAVED CLOUD AUDIT?\n\n" +
+            "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\n" +
+            "CURRENT DEVICE: " + entries.length + " ACTIVE, " + deletedEntries.length + " DELETED."
+          );
+          if (ok) {
+            const data = dataFromJsonBackup(fullRow.payload);
+            applyImportedData(data);
+            fullAuditLoaded = true;
+          }
+        } else {
+          render();
+        }
+
+        setCloudStatus(
+          "Cloud load complete. Monthly list: " + (monthlyLoaded ? occupiedMaster.codes.length + " expected" : "not found") +
+          ". Full audit: " + (fullAuditLoaded ? entries.length + " active entries" : "not loaded") + ".",
+          monthlyLoaded || fullAuditLoaded ? "success" : "warning"
+        );
+        setStatus("Cloud load complete.", monthlyLoaded || fullAuditLoaded ? "success" : "warning");
+      } catch (error) {
+        setCloudStatus("Cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+      } finally {
+        loadCloudCombinedBtn.disabled = false;
         input.focus();
       }
     }
@@ -3657,7 +3533,6 @@
       occupiedFoundCount.textContent = comparison.foundExpected.length;
       occupiedMissingCount.textContent = comparison.missingExpected.length;
       occupiedExtraCount.textContent = comparison.extraFound.length;
-      exportAuditBtn.disabled = !occupiedMaster.codes.length;
       clearOccupiedListBtn.disabled = !occupiedMaster.codes.length;
       if (!occupiedMaster.codes.length) {
         occupiedAuditText.textContent = "NO MONTHLY LIST LOADED";
@@ -3716,7 +3591,7 @@
       const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
 
       return {
-        fileName: normalizeUpperText(source.fileName || "PHONE TRANSFER FILE"),
+        fileName: normalizeUpperText(source.fileName || "MONTHLY TRANSFER FILE"),
         importedAt: source.importedAt || new Date().toISOString(),
         codes: cleanItems.map(item => item.code),
         items: cleanItems,
@@ -3810,7 +3685,7 @@
           activeCount: 0,
           deletedCount: 0,
           highestSequence: 0,
-          warnings: [{ type: "success", text: "PHONE TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED OCCUPIED UNITS AND WILL NOT REPLACE SCANNED ENTRIES." }],
+          warnings: [{ type: "success", text: "MONTHLY TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED OCCUPIED UNITS AND WILL NOT REPLACE SCANNED ENTRIES." }],
           canApply: occupiedCount > 0,
           isPhoneTransfer: true
         };
@@ -3941,8 +3816,7 @@
     }
 
     function downloadCurrentBackupBeforeImport() {
-      exportBackupJson();
-      setStatus("Current JSON backup downloaded. Review the import preview, then apply when ready.", "success");
+      saveAllToCloud();
     }
 
     function applyImportPreview() {
@@ -3967,7 +3841,7 @@
         setStatus(
           saveOk
             ? "Phone transfer imported. Monthly occupied list loaded: " + loadedCount + " expected units. Scanned entries were not changed."
-            : "Phone transfer imported for this app session, but it could not be saved on this device. Export Backup JSON now.",
+            : "Phone transfer imported for this app session, but it could not be saved on this device. Save to cloud now.",
           saveOk ? "success" : "warning"
         );
         input.focus();
@@ -3976,11 +3850,10 @@
 
       const replacingActive = entries.length;
       const replacingDeleted = deletedEntries.length;
-      const message = "This will replace " + replacingActive + " active and " + replacingDeleted + " deleted entries with " + pendingImport.activeCount + " active and " + pendingImport.deletedCount + " deleted entries. A current JSON backup will download first. Continue?";
+      const message = "This will replace " + replacingActive + " active and " + replacingDeleted + " deleted entries with " + pendingImport.activeCount + " active and " + pendingImport.deletedCount + " deleted entries. Continue?";
       const ok = confirm(message);
       if (!ok) return;
 
-      exportBackupJson();
       const saveOk = applyImportedData(pendingImport.data);
       pendingImport = null;
       backupFileInput.value = "";
@@ -3988,7 +3861,7 @@
       setStatus(
         saveOk
           ? "Import applied successfully. Active: " + entries.length + ", Deleted: " + deletedEntries.length + "."
-          : "Import applied for this app session, but it could not be saved on this device. Export Backup JSON now.",
+          : "Import applied for this app session, but it could not be saved on this device. Save to cloud now.",
         saveOk ? "success" : "warning"
       );
       input.focus();
@@ -4274,12 +4147,6 @@
 
       unlockBtn.textContent = editLocked ? "Unlock Editing" : "Editing Unlocked";
       finishClearBtn.disabled = !(hasFreshFinalExport() && editLocked);
-      renderBackupBadge();
-    }
-
-    function renderBackupBadge() {
-      backupBadge.textContent = lastBackupAt ? "Last backup " + formatShortTime(lastBackupAt) : "No backup yet";
-      backupBadge.className = "badge" + (lastBackupAt ? " unlocked" : "");
     }
 
     function renderReport() {
@@ -4306,21 +4173,7 @@
         ? "Exit Big Entry Mode"
         : "Big Entry Mode";
 
-      if (toggleImportBtn && importPanel) {
-        toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
-      }
-
       renderImportPreview();
-    }
-
-    function toggleImportPanel() {
-      importPanel.hidden = !importPanel.hidden;
-      toggleImportBtn.textContent = importPanel.hidden ? "Import / Restore" : "Close Import";
-      if (!importPanel.hidden) {
-        dropZone.focus();
-      } else {
-        input.focus();
-      }
     }
 
     function toggleEntryMode() {
@@ -4328,7 +4181,6 @@
       if (document.body.classList.contains("entry-mode")) {
         notesInput.value = "";
         importPanel.hidden = true;
-        toggleImportBtn.textContent = "Import / Restore";
       }
       safeSetItem(ENTRY_MODE_KEY, document.body.classList.contains("entry-mode") ? "true" : "false");
       render();
@@ -4396,42 +4248,17 @@
     });
 
     addBtn.addEventListener("click", addEntry);
-    exportXlsxBtn.addEventListener("click", () => exportXlsx(false));
     finalExportBtn.addEventListener("click", () => exportXlsx(true));
     undoBtn.addEventListener("click", undoLast);
-    copyBtn.addEventListener("click", copyActiveList);
-    backupJsonBtn.addEventListener("click", exportBackupJson);
-    autoBackupToggle.addEventListener("change", () => {
-      setStatus(
-        autoBackupToggle.checked
-          ? "Auto backup enabled for this app session. A JSON backup will download every 100 entries."
-          : "Auto backup disabled.",
-        autoBackupToggle.checked ? "success" : "info"
-      );
-      input.focus();
-    });
-    phoneTransferBtn.addEventListener("click", exportPhoneTransferFile);
+    saveCloudBtn.addEventListener("click", saveAllToCloud);
     unlockBtn.addEventListener("click", unlockEditing);
-    focusEntryBtn.addEventListener("click", () => input.focus());
-    exportCsvBtn.addEventListener("click", exportCsvBackup);
-    toggleImportBtn.addEventListener("click", toggleImportPanel);
     entryModeBtn.addEventListener("click", toggleEntryMode);
     importBackupBtn.addEventListener("click", importBackup);
     backupFileInput.addEventListener("change", importBackup);
     chooseOccupiedFileBtn.addEventListener("click", () => occupiedFileInput.click());
     occupiedFileInput.addEventListener("change", () => importOccupiedList(occupiedFileInput.files && occupiedFileInput.files[0]));
-    exportAuditBtn.addEventListener("click", exportAuditComparison);
     clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
-    saveCloudSettingsBtn.addEventListener("click", saveCloudSettings);
-    syncCloudBtn.addEventListener("click", syncOccupiedListWithCloud);
-    syncSendCloudBtn.addEventListener("click", sendSyncChoiceToCloud);
-    syncLoadCloudBtn.addEventListener("click", loadSyncChoiceFromCloud);
-    syncCancelBtn.addEventListener("click", closeSyncChoicePanel);
-    saveFullAuditCloudBtn.addEventListener("click", saveFullAuditToCloud);
-    loadFullAuditCloudBtn.addEventListener("click", loadFullAuditFromCloud);
-    uploadCloudBtn.addEventListener("click", uploadOccupiedListToCloud);
-    loadCloudBtn.addEventListener("click", loadOccupiedListFromCloud);
-    clearCloudSettingsBtn.addEventListener("click", clearCloudSettings);
+    loadCloudCombinedBtn.addEventListener("click", loadAllFromCloud);
     clearFileBtn.addEventListener("click", cancelImportPreview);
     applyImportBtn.addEventListener("click", applyImportPreview);
     cancelImportBtn.addEventListener("click", cancelImportPreview);
@@ -4455,8 +4282,6 @@
       if (file) previewImportFile(file);
     });
     finishClearBtn.addEventListener("click", clearFinishedList);
-    exportDeletedCsvBtn.addEventListener("click", exportDeletedCsv);
-    copyDeletedBtn.addEventListener("click", copyDeletedList);
     saveEditBtn.addEventListener("click", saveEdit);
     cancelEditBtn.addEventListener("click", cancelEdit);
     confirmDeleteBtn.addEventListener("click", confirmPendingDelete);
