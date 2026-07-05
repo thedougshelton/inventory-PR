@@ -3538,7 +3538,7 @@
         occupiedAuditText.textContent = "NO LIST UPLOADED";
         occupiedStatus.textContent = "UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.";
         occupiedStatus.className = "status info";
-        occupiedComparisonList.innerHTML = '<div class="empty">NO MONTHLY OCCUPIED LIST LOADED YET.</div>';
+        occupiedComparisonList.innerHTML = "";
         return;
       }
       occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
