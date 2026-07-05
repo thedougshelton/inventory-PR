@@ -1064,14 +1064,15 @@
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
       <div class="actions three">
         <button id="chooseOccupiedFileBtn" type="button">UPLOAD EXCEL DOCUMENT TO APPLICATION</button>
-        <button id="clearOccupiedListBtn" type="button">REMOVE ALL OF THE UPLOADED DOCUMENTS ON APPLICATION</button>
+        <button id="clearOccupiedListBtn" type="button">REMOVE ALL UPLOADED DOCUMENTS ON APPLICATION</button>
       </div>
       <div class="cloud-sync-panel">
         <div class="session-row">
           <div>
-            <label for="cloudPreset">Cloud Audit Preset</label>
+            <label for="cloudPreset">Select your branch and Inventory Audit Type</label>
             <select id="cloudPreset">
               <option value="tampa">Tampa Occupied Audit</option>
+              <option value="tampa_vacant">Tampa Vacant Unit Audit</option>
             </select>
           </div>
           <button id="loadCloudCombinedBtn" type="button">Load From Cloud</button>
@@ -1080,7 +1081,7 @@
       </div>
       <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
       <div class="preview-metrics audit-metrics">
-        <div class="preview-metric"><div class="label">EXPECTED OCCUPIED</div><strong id="occupiedExpectedCount">0</strong></div>
+        <div class="preview-metric"><div class="label">EXPECTED CONTAINERS</div><strong id="occupiedExpectedCount">0</strong></div>
         <div class="preview-metric"><div class="label">FOUND IN WAREHOUSE</div><strong id="occupiedFoundCount">0</strong></div>
         <div class="preview-metric"><div class="label">EXPECTED NOT FOUND</div><strong id="occupiedMissingCount">0</strong></div>
         <div class="preview-metric"><div class="label">FOUND NOT ON LIST</div><strong id="occupiedExtraCount">0</strong></div>
@@ -1157,14 +1158,13 @@
       <div class="recent-panel" aria-label="Last 10 Entries">
         <div class="list-head">
           <h3>Last 10 Entries</h3>
-          <span class="small" id="recentEntriesCount">Most recent saved containers</span>
+          <span class="small" id="recentEntriesCount"></span>
         </div>
         <div id="recentEntriesList" class="recent-list"></div>
       </div>
 
       <div class="actions">
         <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
-        <button id="undoBtn" type="button">Undo Last Entry</button>
         <button id="unlockBtn" type="button">Unlock Editing</button>
       </div>
 
@@ -1304,29 +1304,34 @@
             <span class="small" id="reportUpdatedText">Auto-generated</span>
           </div>
           <div id="finalReport" class="report-box"></div>
-          <div class="actions three">
-            <button id="copyReportBtn" type="button">Copy Report</button>
-            <button id="downloadReportBtn" type="button">Download Report TXT</button>
-            <button id="printReportBtn" type="button">Print Report</button>
-          </div>
         </div>
       </details>
     </section>
 
     <section class="card secondary-section">
-      <div class="list-head">
-        <h2>Active Entries</h2>
-        <span class="small" id="savedText">Saved on this device</span>
-      </div>
-      <div id="list" class="inventory-list"></div>
+      <details class="collapsible-section">
+        <summary class="section-toggle">Active Entries</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h2>Active Entries</h2>
+            <span class="small" id="savedText">Saved on this device</span>
+          </div>
+          <div id="list" class="inventory-list"></div>
+        </div>
+      </details>
     </section>
 
     <section class="card secondary-section">
-      <div class="list-head">
-        <h2>Deleted Entries</h2>
-        <span class="small" id="deletedCountText">0 deleted</span>
-      </div>
-      <div id="deletedList" class="inventory-list"></div>
+      <details class="collapsible-section">
+        <summary class="section-toggle">Deleted Entries</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h2>Deleted Entries</h2>
+            <span class="small" id="deletedCountText">0 deleted</span>
+          </div>
+          <div id="deletedList" class="inventory-list"></div>
+        </div>
+      </details>
     </section>
 
     <section class="card secondary-section">
@@ -1383,6 +1388,12 @@
         url: DEFAULT_CLOUD_URL,
         anonKey: DEFAULT_CLOUD_PUBLISHABLE_KEY,
         syncName: DEFAULT_CLOUD_SYNC_NAME
+      },
+      tampa_vacant: {
+        label: "Tampa Vacant Unit Audit",
+        url: DEFAULT_CLOUD_URL,
+        anonKey: DEFAULT_CLOUD_PUBLISHABLE_KEY,
+        syncName: "TAMPA_VACANT_UNIT_AUDIT"
       }
     };
 
@@ -1394,7 +1405,6 @@
 
     const addBtn = document.getElementById("addBtn");
     const finalExportBtn = document.getElementById("finalExportBtn");
-    const undoBtn = document.getElementById("undoBtn");
     const saveCloudBtn = document.getElementById("saveCloudBtn");
     const unlockBtn = document.getElementById("unlockBtn");
     const importPanel = document.getElementById("importPanel");
@@ -1473,9 +1483,6 @@
     const initialsSummary = document.getElementById("initialsSummary");
     const finalReport = document.getElementById("finalReport");
     const reportUpdatedText = document.getElementById("reportUpdatedText");
-    const copyReportBtn = document.getElementById("copyReportBtn");
-    const downloadReportBtn = document.getElementById("downloadReportBtn");
-    const printReportBtn = document.getElementById("printReportBtn");
 
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
@@ -2512,7 +2519,7 @@
         "Duplicate Attempts Blocked: " + duplicateBlocks,
         "",
         "INVENTORY AUDIT",
-        "EXPECTED OCCUPIED: " + occupiedComparison().expected.length,
+        "EXPECTED CONTAINERS: " + occupiedComparison().expected.length,
         "FOUND IN WAREHOUSE: " + occupiedComparison().foundExpected.length,
         "EXPECTED NOT FOUND: " + occupiedComparison().missingExpected.length,
         "Found Not On Monthly List: " + occupiedComparison().extraFound.length,
@@ -2548,7 +2555,7 @@
         ["Duplicate Attempts Blocked", duplicateBlocks],
         [],
         ["INVENTORY AUDIT", "COUNT"],
-        ["EXPECTED OCCUPIED", occupiedComparison().expected.length],
+        ["EXPECTED CONTAINERS", occupiedComparison().expected.length],
         ["FOUND IN WAREHOUSE", occupiedComparison().foundExpected.length],
         ["EXPECTED NOT FOUND", occupiedComparison().missingExpected.length],
         ["Found Not On Monthly List", occupiedComparison().extraFound.length],
@@ -2652,50 +2659,6 @@
         deletedEntries,
         occupiedMaster
       };
-    }
-
-    async function copyText(text, successMessage) {
-      try {
-        await navigator.clipboard.writeText(text);
-        setStatus(successMessage, "success");
-      } catch {
-        const area = document.createElement("textarea");
-        area.value = text;
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand("copy");
-        area.remove();
-        setStatus(successMessage, "success");
-      }
-
-      input.focus();
-    }
-
-    function copyReport() {
-      copyText(buildReportText(), "Final report copied.");
-    }
-
-    function downloadReport() {
-      const filename = safeFilePart(sessionNameInput.value) + "_final_report_" + dateStamp() + ".txt";
-      downloadBlob(buildReportText(), filename, "text/plain;charset=utf-8");
-      setStatus("Final report downloaded: " + filename + ".", "success");
-    }
-
-    function printReport() {
-      const report = buildReportText();
-      const printWindow = window.open("", "_blank");
-      if (!printWindow) {
-        setStatus("Print window was blocked. Allow popups, then try Print Report again.", "warning");
-        return;
-      }
-
-      printWindow.document.write('<pre style="font: 14px/1.45 -apple-system, BlinkMacSystemFont, Segoe UI, Arial, sans-serif; white-space: pre-wrap;"></pre>');
-      printWindow.document.querySelector("pre").textContent = report;
-      printWindow.document.title = "Tampa Inventory Final Report";
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      setStatus("Final report opened for printing.", "success");
     }
 
     function readFileAsText(file) {
@@ -3000,7 +2963,7 @@
         ["MONTHLY LIST FILE", occupiedMaster.fileName || ""],
         ["MONTHLY LIST IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
         ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
-        ["EXPECTED OCCUPIED", comparison.expected.length],
+        ["EXPECTED CONTAINERS", comparison.expected.length],
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
         ["EXPECTED NOT FOUND", comparison.missingExpected.length],
         ["FOUND NOT ON MONTHLY LIST", comparison.extraFound.length],
@@ -3175,7 +3138,7 @@
     function requireCloudSettings() {
       const settings = cloudSettings();
       if (!settings.url || !settings.anonKey || !settings.syncName) {
-        setCloudStatus("Choose a cloud audit preset first.", "warning");
+        setCloudStatus("Choose a branch and inventory audit type first.", "warning");
         return null;
       }
       if (!/^https:\/\/[a-z0-9.-]+\.supabase\.co$/i.test(settings.url)) {
@@ -3542,7 +3505,7 @@
         return;
       }
       occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
-      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED OCCUPIED UNITS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
+      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED CONTAINERS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
       occupiedStatus.className = comparison.missingExpected.length || comparison.sizeMismatches.length ? "status warning" : "status success";
       occupiedComparisonList.innerHTML = "";
       [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["FOUND NOT ON LIST", comparison.extraFound]].forEach(([title, codes]) => {
@@ -3685,7 +3648,7 @@
           activeCount: 0,
           deletedCount: 0,
           highestSequence: 0,
-          warnings: [{ type: "success", text: "MONTHLY TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED OCCUPIED UNITS AND WILL NOT REPLACE SCANNED ENTRIES." }],
+          warnings: [{ type: "success", text: "MONTHLY TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED CONTAINERS AND WILL NOT REPLACE SCANNED ENTRIES." }],
           canApply: occupiedCount > 0,
           isPhoneTransfer: true
         };
@@ -3914,7 +3877,7 @@
     function renderRecentEntries() {
       recentEntriesCount.textContent = entries.length
         ? Math.min(entries.length, 10) + " of " + entries.length + " shown"
-        : "Most recent saved containers";
+        : "";
 
       if (!entries.length) {
         recentEntriesList.innerHTML = '<div class="empty">No recent entries yet.</div>';
@@ -4140,7 +4103,6 @@
       xlsxBadge.className = "badge" + (xlsxReady ? " unlocked" : " locked");
 
       addBtn.disabled = editLocked;
-      undoBtn.disabled = editLocked;
       importBackupBtn.disabled = editLocked;
       applyImportBtn.disabled = editLocked || !pendingImport || !pendingImport.canApply;
       saveEditBtn.disabled = editLocked;
@@ -4249,7 +4211,6 @@
 
     addBtn.addEventListener("click", addEntry);
     finalExportBtn.addEventListener("click", () => exportXlsx(true));
-    undoBtn.addEventListener("click", undoLast);
     saveCloudBtn.addEventListener("click", saveAllToCloud);
     unlockBtn.addEventListener("click", unlockEditing);
     entryModeBtn.addEventListener("click", toggleEntryMode);
@@ -4286,9 +4247,6 @@
     cancelEditBtn.addEventListener("click", cancelEdit);
     confirmDeleteBtn.addEventListener("click", confirmPendingDelete);
     cancelDeleteBtn.addEventListener("click", cancelDelete);
-    copyReportBtn.addEventListener("click", copyReport);
-    downloadReportBtn.addEventListener("click", downloadReport);
-    printReportBtn.addEventListener("click", printReport);
 
     setTimeout(render, 500);
     render();
