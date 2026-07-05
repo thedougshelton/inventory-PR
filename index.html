@@ -1891,23 +1891,6 @@
       });
     }
 
-    function undoLast() {
-      if (requireUnlocked("undo an entry")) return;
-
-      if (!entries.length) {
-        setStatus("There is nothing to undo.", "warning");
-        input.focus();
-        return;
-      }
-
-      const removed = entries.pop();
-      logDeletedEntry(removed, "Undo Last Entry");
-      saveEntries();
-      setStatus("Removed last entry #" + removed.sequence + ": " + removed.code + ". It was added to Deleted Entries.", "warning");
-      render();
-      input.focus();
-    }
-
     function requestDeleteEntry(sequence) {
       if (requireUnlocked("delete an entry")) return;
 
