@@ -1079,7 +1079,7 @@
         </div>
         <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA.</div>
       </div>
-      <div id="occupiedStatus" class="status info">UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.</div>
+      <div id="occupiedStatus" class="status info"></div>
       <div class="preview-metrics audit-metrics">
         <div class="preview-metric"><div class="label">EXPECTED CONTAINERS</div><strong id="occupiedExpectedCount">0</strong></div>
         <div class="preview-metric"><div class="label">FOUND IN WAREHOUSE</div><strong id="occupiedFoundCount">0</strong></div>
@@ -1155,13 +1155,16 @@
         Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
       </p>
 
-      <div class="recent-panel" aria-label="Last 10 Entries">
-        <div class="list-head">
-          <h3>Last 10 Entries</h3>
-          <span class="small" id="recentEntriesCount"></span>
+      <details id="recentEntriesDetails" class="recent-panel collapsible-section" aria-label="Last 10 Entries">
+        <summary class="section-toggle">Last 10 Entries</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h3>Last 10 Entries</h3>
+            <span class="small" id="recentEntriesCount"></span>
+          </div>
+          <div id="recentEntriesList" class="recent-list"></div>
         </div>
-        <div id="recentEntriesList" class="recent-list"></div>
-      </div>
+      </details>
 
       <div class="actions">
         <button id="finalExportBtn" class="success-solid" type="button">Final Export + Lock</button>
@@ -1204,13 +1207,6 @@
         <p class="help">Import preview validates the file before anything is replaced.</p>
       </div>
     </section>
-
-<section class="card secondary-section">
-      <div class="list-head">
-        <h2>Search Active Entries</h2>
-        <span class="small" id="searchCountText">Showing all</span>
-      </div>
-      <input id="searchInput" type="text" autocomplete="off" maxlength="6" autocapitalize="characters" spellcheck="false" placeholder="SEARCH CONTAINER NUMBER" />
 
       <div id="editPanel" class="edit-panel">
         <h3 id="editTitle">Edit Entry</h3>
@@ -1268,31 +1264,35 @@
           <button id="cancelDeleteBtn" type="button">CANCEL</button>
         </div>
       </div>
-    </section>
 
     <section class="card secondary-section">
-      <div class="list-head">
-        <h2>Summary Totals</h2>
-        <span class="small" id="summaryText">Active entries only</span>
-      </div>
-      <div class="summary-grid">
-        <div class="summary-box">
-          <h3>By Size</h3>
-          <div id="sizeSummary"></div>
+      <details id="summaryDetails" class="collapsible-section">
+        <summary class="section-toggle">Summary Totals</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h2>Summary Totals</h2>
+            <span class="small" id="summaryText">Active entries only</span>
+          </div>
+          <div class="summary-grid">
+            <div class="summary-box">
+              <h3>By Size</h3>
+              <div id="sizeSummary"></div>
+            </div>
+            <div class="summary-box">
+              <h3>By Condition</h3>
+              <div id="conditionSummary"></div>
+            </div>
+            <div class="summary-box">
+              <h3>By Status</h3>
+              <div id="statusSummary"></div>
+            </div>
+            <div class="summary-box">
+              <h3>By Initials</h3>
+              <div id="initialsSummary"></div>
+            </div>
+          </div>
         </div>
-        <div class="summary-box">
-          <h3>By Condition</h3>
-          <div id="conditionSummary"></div>
-        </div>
-        <div class="summary-box">
-          <h3>By Status</h3>
-          <div id="statusSummary"></div>
-        </div>
-        <div class="summary-box">
-          <h3>By Initials</h3>
-          <div id="initialsSummary"></div>
-        </div>
-      </div>
+      </details>
     </section>
 
     <section class="card secondary-section">
@@ -1428,7 +1428,6 @@
 
     const finishConfirm = document.getElementById("finishConfirm");
     const finishClearBtn = document.getElementById("finishClearBtn");
-    const searchInput = document.getElementById("searchInput");
     const occupiedFileInput = document.getElementById("occupiedFileInput");
     const chooseOccupiedFileBtn = document.getElementById("chooseOccupiedFileBtn");
     const clearOccupiedListBtn = document.getElementById("clearOccupiedListBtn");
@@ -1474,7 +1473,6 @@
     const deletedList = document.getElementById("deletedList");
     const deletedCountText = document.getElementById("deletedCountText");
     const savedText = document.getElementById("savedText");
-    const searchCountText = document.getElementById("searchCountText");
     const recentEntriesList = document.getElementById("recentEntriesList");
     const recentEntriesCount = document.getElementById("recentEntriesCount");
     const sizeSummary = document.getElementById("sizeSummary");
@@ -1501,7 +1499,6 @@
     let reportDirty = true;
     let activeEntriesDirty = true;
     let deletedEntriesDirty = true;
-    let searchRenderTimer = null;
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
@@ -3506,7 +3503,7 @@
       clearOccupiedListBtn.disabled = !occupiedMaster.codes.length;
       if (!occupiedMaster.codes.length) {
         occupiedAuditText.textContent = "NO LIST UPLOADED";
-        occupiedStatus.textContent = "UPLOAD THE MONTHLY OCCUPIED EXCEL LIST, THEN SCAN THE UNITS YOU LOCATE IN THE WAREHOUSE.";
+        occupiedStatus.textContent = "";
         occupiedStatus.className = "status info";
         occupiedComparisonList.innerHTML = "";
         return;
@@ -3913,10 +3910,10 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
-          isMonthlyMatch ? "Matched Monthly List" : ""
+          isMonthlyMatch ? "Matched Unit on List" : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag" + (value === "Matched Monthly List" ? " monthly-match-tag" : "");
+          tag.className = "tag" + (value === "Matched Unit on List" ? " monthly-match-tag" : "");
           tag.textContent = value;
           meta.appendChild(tag);
         });
@@ -3938,31 +3935,13 @@
       renderSummaryBox(initialsSummary, counts, keys.length ? keys : ["Blank"]);
     }
 
-    function entryMatchesSearch(item, query) {
-      if (!query) return true;
-      return normalizeCode(item.code || "").includes(query);
-    }
-
     function markLazySectionsDirty() {
       reportDirty = true;
       activeEntriesDirty = true;
       deletedEntriesDirty = true;
     }
 
-    function scheduleActiveEntriesRender() {
-      clearTimeout(searchRenderTimer);
-      searchRenderTimer = setTimeout(() => {
-        renderActiveEntries();
-      }, 120);
-    }
-
     function renderActiveEntries() {
-      const query = normalizeSearch(searchInput.value);
-      const filtered = entries.filter(item => entryMatchesSearch(item, query));
-      searchCountText.textContent = query
-        ? "Showing " + filtered.length + " of " + entries.length
-        : "Showing all";
-
       if (!activeEntriesDetails.open) {
         activeEntriesDirty = true;
         return;
@@ -3975,14 +3954,9 @@
         return;
       }
 
-      if (!filtered.length) {
-        list.innerHTML = '<div class="empty">No matching container number.</div>';
-        return;
-      }
-
       list.innerHTML = "";
       const expectedCodes = new Set(occupiedExpectedItems().map(item => item.code));
-      filtered.slice().reverse().forEach(item => {
+      entries.slice().reverse().forEach(item => {
         const isMonthlyMatch = expectedCodes.has(item.code);
         const row = document.createElement("div");
         row.className = "row" + (conditionClass(item.condition) ? " " + conditionClass(item.condition) : "");
@@ -4004,13 +3978,13 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
-          isMonthlyMatch ? "Matched Monthly List" : "",
+          isMonthlyMatch ? "Matched Unit on List" : "",
           item.initials ? "By " + item.initials : "",
           item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
           item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag" + (value === "Matched Monthly List" ? " monthly-match-tag" : "");
+          tag.className = "tag" + (value === "Matched Unit on List" ? " monthly-match-tag" : "");
           tag.textContent = value;
           details.appendChild(tag);
         });
@@ -4245,11 +4219,6 @@
 
     cloudPresetSelect.addEventListener("change", saveCloudSettings);
 
-
-    searchInput.addEventListener("input", () => {
-      searchInput.value = normalizeSearch(searchInput.value);
-      scheduleActiveEntriesRender();
-    });
 
     reportDetails.addEventListener("toggle", () => {
       if (reportDetails.open && reportDirty) renderReport();
