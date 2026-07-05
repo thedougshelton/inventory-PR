@@ -1296,7 +1296,7 @@
     </section>
 
     <section class="card secondary-section">
-      <details class="collapsible-section">
+      <details id="reportDetails" class="collapsible-section">
         <summary class="section-toggle">Final Inventory Report</summary>
         <div class="section-body">
           <div class="list-head">
@@ -1309,7 +1309,7 @@
     </section>
 
     <section class="card secondary-section">
-      <details class="collapsible-section">
+      <details id="activeEntriesDetails" class="collapsible-section">
         <summary class="section-toggle">Active Entries</summary>
         <div class="section-body">
           <div class="list-head">
@@ -1322,7 +1322,7 @@
     </section>
 
     <section class="card secondary-section">
-      <details class="collapsible-section">
+      <details id="deletedEntriesDetails" class="collapsible-section">
         <summary class="section-toggle">Deleted Entries</summary>
         <div class="section-body">
           <div class="list-head">
@@ -1483,6 +1483,9 @@
     const initialsSummary = document.getElementById("initialsSummary");
     const finalReport = document.getElementById("finalReport");
     const reportUpdatedText = document.getElementById("reportUpdatedText");
+    const reportDetails = document.getElementById("reportDetails");
+    const activeEntriesDetails = document.getElementById("activeEntriesDetails");
+    const deletedEntriesDetails = document.getElementById("deletedEntriesDetails");
 
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
@@ -1495,6 +1498,10 @@
     let editingSequence = null;
     let pendingDeleteSequence = null;
     let pendingImport = null;
+    let reportDirty = true;
+    let activeEntriesDirty = true;
+    let deletedEntriesDirty = true;
+    let searchRenderTimer = null;
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
@@ -3936,12 +3943,32 @@
       return normalizeCode(item.code || "").includes(query);
     }
 
+    function markLazySectionsDirty() {
+      reportDirty = true;
+      activeEntriesDirty = true;
+      deletedEntriesDirty = true;
+    }
+
+    function scheduleActiveEntriesRender() {
+      clearTimeout(searchRenderTimer);
+      searchRenderTimer = setTimeout(() => {
+        renderActiveEntries();
+      }, 120);
+    }
+
     function renderActiveEntries() {
       const query = normalizeSearch(searchInput.value);
       const filtered = entries.filter(item => entryMatchesSearch(item, query));
       searchCountText.textContent = query
         ? "Showing " + filtered.length + " of " + entries.length
         : "Showing all";
+
+      if (!activeEntriesDetails.open) {
+        activeEntriesDirty = true;
+        return;
+      }
+
+      activeEntriesDirty = false;
 
       if (!entries.length) {
         list.innerHTML = '<div class="empty">No containers entered yet.</div>';
@@ -4026,6 +4053,13 @@
 
     function renderDeletedEntries() {
       deletedCountText.textContent = deletedEntries.length + " deleted";
+
+      if (!deletedEntriesDetails.open) {
+        deletedEntriesDirty = true;
+        return;
+      }
+
+      deletedEntriesDirty = false;
 
       if (!deletedEntries.length) {
         deletedList.innerHTML = '<div class="empty">No deleted entries yet.</div>';
@@ -4112,12 +4146,20 @@
     }
 
     function renderReport() {
+      if (!reportDetails.open) {
+        reportDirty = true;
+        reportUpdatedText.textContent = "Open to update";
+        return;
+      }
+
+      reportDirty = false;
       const report = buildReportText();
       finalReport.textContent = report;
       reportUpdatedText.textContent = "Updated " + formatShortTime(new Date().toISOString());
     }
 
     function render() {
+      markLazySectionsDirty();
       count.textContent = entries.length;
       deletedMetric.textContent = deletedEntries.length;
       lastEntryMetric.textContent = entries.length ? entries[entries.length - 1].code : "—";
@@ -4206,7 +4248,19 @@
 
     searchInput.addEventListener("input", () => {
       searchInput.value = normalizeSearch(searchInput.value);
-      renderActiveEntries();
+      scheduleActiveEntriesRender();
+    });
+
+    reportDetails.addEventListener("toggle", () => {
+      if (reportDetails.open && reportDirty) renderReport();
+    });
+
+    activeEntriesDetails.addEventListener("toggle", () => {
+      if (activeEntriesDetails.open && activeEntriesDirty) renderActiveEntries();
+    });
+
+    deletedEntriesDetails.addEventListener("toggle", () => {
+      if (deletedEntriesDetails.open && deletedEntriesDirty) renderDeletedEntries();
     });
 
     addBtn.addEventListener("click", addEntry);
