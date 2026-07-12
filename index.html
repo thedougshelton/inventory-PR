@@ -2826,8 +2826,39 @@
       return text;
     }
 
+    function isUnitHeader(value) {
+      const header = cleanHeader(value);
+      const compact = compactHeader(value);
+      return ["UNIT", "UNITNAME", "UNIT NAME"].includes(header) || ["UNIT", "UNITNAME"].includes(compact);
+    }
+
+    function isTypeHeader(value) {
+      const header = cleanHeader(value);
+      const compact = compactHeader(value);
+      return ["TYPE", "UNIT TYPE", "CONTAINER TYPE"].includes(header) || ["TYPE", "UNITTYPE", "CONTAINERTYPE"].includes(compact);
+    }
+
+    function findOccupiedHeaderColumns(rows) {
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 10); rowIndex++) {
+        const row = rows[rowIndex] || [];
+        const firstColumns = row.slice(0, 3);
+        const unitColumns = [];
+        let typeColumn = -1;
+
+        firstColumns.forEach((cell, index) => {
+          if (isUnitHeader(cell)) unitColumns.push(index);
+          if (isTypeHeader(cell)) typeColumn = index;
+        });
+
+        if (unitColumns.length) return { rowIndex, unitColumns, typeColumn };
+      }
+
+      return null;
+    }
+
     function findLikelyCodeColumns(rows) {
       const exactHeaders = [
+        "UNIT",
         "UNITNAME",
         "UNIT NAME",
         "UNIT NUMBER",
@@ -2845,7 +2876,7 @@
         row.forEach((cell, index) => {
           const header = cleanHeader(cell);
           const compact = compactHeader(cell);
-          if (exactHeaders.includes(header) || exactHeaders.includes(compact)) exactColumns.push(index);
+          if (isUnitHeader(cell) || exactHeaders.includes(header) || exactHeaders.includes(compact)) exactColumns.push(index);
         });
         if (exactColumns.length) return { rowIndex, columns: exactColumns };
       }
@@ -2864,21 +2895,21 @@
     }
 
     function findTypeColumn(row) {
-      const typeHeaders = ["TYPE", "UNITTYPE", "UNIT TYPE", "CONTAINER TYPE"];
-      return (row || []).findIndex(cell => {
-        const header = cleanHeader(cell);
-        const compact = compactHeader(cell);
-        return typeHeaders.includes(header) || typeHeaders.includes(compact);
-      });
+      const firstThreeIndex = (row || []).slice(0, 3).findIndex(cell => isTypeHeader(cell));
+      if (firstThreeIndex >= 0) return firstThreeIndex;
+      return (row || []).findIndex(cell => isTypeHeader(cell));
     }
 
     function extractOccupiedItemsFromRows(rows) {
       const found = new Map();
-      const likely = findLikelyCodeColumns(rows);
+      const headerMatch = findOccupiedHeaderColumns(rows);
+      const likely = headerMatch
+        ? { rowIndex: headerMatch.rowIndex, columns: headerMatch.unitColumns, typeColumn: headerMatch.typeColumn }
+        : findLikelyCodeColumns(rows);
 
       if (likely) {
         const headerRow = rows[likely.rowIndex] || [];
-        const typeColumn = findTypeColumn(headerRow);
+        const typeColumn = typeof likely.typeColumn === "number" ? likely.typeColumn : findTypeColumn(headerRow);
         rows.slice(likely.rowIndex + 1).forEach(row => {
           const rawType = typeColumn >= 0 ? normalizeUpperText(row[typeColumn] || "") : "";
           likely.columns.forEach(column => {
