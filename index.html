@@ -1065,6 +1065,34 @@
       margin: 6px 0;
     }
 
+    body.entry-mode.keyboard-open .grid {
+      display: none;
+    }
+
+    body.entry-mode.keyboard-open .entry-mode-cloud-action {
+      display: none;
+    }
+
+    body.entry-mode.keyboard-open .card.entry-card {
+      margin-top: 6px;
+      padding: 12px;
+    }
+
+    body.entry-mode.keyboard-open .field-group {
+      margin-bottom: 10px;
+    }
+
+    body.entry-mode.keyboard-open #containerSize {
+      min-height: 46px;
+      padding: 8px 12px;
+      font-size: 16px;
+    }
+
+    body.entry-mode.keyboard-open #containerInput {
+      min-height: 58px;
+      font-size: 30px;
+    }
+
     body.entry-mode .keyboard-toggle {
       min-height: 54px;
       font-size: 18px;
@@ -1316,7 +1344,7 @@
         <input
           id="containerInput"
           type="text"
-          inputmode="none"
+          inputmode="text"
           autocomplete="off"
           autocapitalize="characters"
           spellcheck="false"
@@ -1938,6 +1966,7 @@
       document.body.classList.toggle("keyboard-open", isOpen);
       toggleContainerKeyboardBtn.textContent = isOpen ? "Hide Keyboard" : "Show Keyboard";
       toggleContainerKeyboardBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      input.setAttribute("inputmode", isOpen ? "none" : "text");
     }
 
     function toggleContainerKeyboard() {
