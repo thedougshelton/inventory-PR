@@ -1041,7 +1041,6 @@
     }
 
     body.entry-mode .notes-group,
-    body.entry-mode #entryHelp,
     body.entry-mode .entry-card .actions {
       display: none;
     }
@@ -1345,17 +1344,13 @@
           spellcheck="false"
           maxlength="6"
           placeholder="ABC123"
-          aria-describedby="entryHelp status"
+          aria-describedby="status"
         />
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
       <button id="toggleContainerKeyboardBtn" class="keyboard-toggle" type="button" aria-expanded="false" aria-controls="containerKeyboard">Show Keyboard</button>
       <div id="containerKeyboard" class="container-keyboard" aria-label="Container number keyboard" hidden></div>
-      <p id="entryHelp" class="help">
-        Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
-      </p>
-
       <div class="unit-photo-panel">
         <button id="takeUnitPhotoBtn" type="button">Take Compressed Photo For Last Entry</button>
         <input id="unitPhotoInput" type="file" accept="image/*" capture="environment" hidden />
