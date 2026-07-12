@@ -816,6 +816,16 @@
       border-radius: 8px;
     }
 
+    .cloud-preset-label {
+      line-height: 1.25;
+      max-width: 260px;
+      white-space: normal;
+    }
+
+    .cloud-preset-label span {
+      display: block;
+    }
+
     .sync-choice-panel {
       margin-top: 10px;
       padding: 12px;
@@ -1223,7 +1233,10 @@
       <div class="cloud-sync-panel">
         <div class="session-row">
           <div>
-            <label for="cloudPreset">Select your branch and Inventory Audit Type</label>
+            <label for="cloudPreset" class="cloud-preset-label">
+              <span>Select your branch</span>
+              <span>Inventory Audit Type</span>
+            </label>
             <select id="cloudPreset">
               <option value="tampa">Tampa Occupied Audit</option>
               <option value="tampa_vacant">Tampa Vacant Unit Audit</option>
