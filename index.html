@@ -1521,6 +1521,7 @@
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
     cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
+    updateCloudActionLabels();
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
@@ -3109,6 +3110,31 @@
       cloudSyncStatus.className = "status" + (type ? " " + type : "");
     }
 
+    function selectedCloudPresetKey() {
+      return CLOUD_PRESETS[cloudPresetSelect.value] ? cloudPresetSelect.value : "tampa";
+    }
+
+    function cloudSettingsForPreset(presetKey) {
+      const key = CLOUD_PRESETS[presetKey] ? presetKey : "tampa";
+      const preset = CLOUD_PRESETS[key];
+      return {
+        key,
+        label: preset.label,
+        url: preset.url,
+        anonKey: preset.anonKey,
+        syncName: normalizeCloudSyncName(preset.syncName)
+      };
+    }
+
+    function updateCloudActionLabels() {
+      const settings = cloudSettingsForPreset(selectedCloudPresetKey());
+      const saveText = "Save " + settings.label + " To Cloud";
+      const loadText = "Load " + settings.label + " From Cloud";
+      saveCloudBtn.textContent = saveText;
+      saveCloudEntryModeBtn.textContent = saveText;
+      loadCloudCombinedBtn.textContent = loadText;
+    }
+
     function requireCloudSavePin(actionText) {
       const entered = prompt("ENTER CLOUD SAVE PIN TO " + normalizeUpperText(actionText) + ":");
       if (entered === null) {
@@ -3127,13 +3153,7 @@
     }
 
     function cloudSettings() {
-      const preset = CLOUD_PRESETS[cloudPresetSelect.value] || CLOUD_PRESETS.tampa;
-      return {
-        label: preset.label,
-        url: preset.url,
-        anonKey: preset.anonKey,
-        syncName: normalizeCloudSyncName(preset.syncName)
-      };
+      return cloudSettingsForPreset(selectedCloudPresetKey());
     }
 
     function fullAuditCloudSyncName(settings) {
@@ -3157,14 +3177,15 @@
     function saveCloudSettings() {
       const settings = cloudSettings();
       const ok = [
-        safeSetItem(CLOUD_PRESET_KEY, cloudPresetSelect.value),
+        safeSetItem(CLOUD_PRESET_KEY, settings.key),
         safeRemoveItem(CLOUD_URL_KEY),
         safeRemoveItem(CLOUD_ANON_KEY),
         safeRemoveItem(CLOUD_SYNC_NAME_KEY)
       ].every(Boolean);
+      updateCloudActionLabels();
       setCloudStatus(
         ok
-          ? "Cloud preset saved on this device: " + settings.label + "."
+          ? settings.label + " selected. This audit saves and loads from its own cloud slot."
           : "Cloud preset could not be saved on this device.",
         ok ? "success" : "warning"
       );
