@@ -525,6 +525,13 @@
       font-weight: 700;
     }
 
+    .tag.inventory-no-match-tag {
+      border-color: #fbbf24;
+      color: #92400e;
+      background: #fffbeb;
+      font-weight: 700;
+    }
+
     .note-preview {
       margin-top: 6px;
       font-size: 13px;
@@ -1205,7 +1212,7 @@
         <div class="preview-metric"><div class="label">EXPECTED CONTAINERS</div><strong id="occupiedExpectedCount">0</strong></div>
         <div class="preview-metric"><div class="label">FOUND IN WAREHOUSE</div><strong id="occupiedFoundCount">0</strong></div>
         <div class="preview-metric"><div class="label">EXPECTED NOT FOUND</div><strong id="occupiedMissingCount">0</strong></div>
-        <div class="preview-metric"><div class="label">FOUND NOT ON LIST</div><strong id="occupiedExtraCount">0</strong></div>
+        <div class="preview-metric"><div class="label">NO MATCH TO INVENTORY</div><strong id="occupiedExtraCount">0</strong></div>
       </div>
       <div id="occupiedComparisonList" class="audit-comparison-list"></div>
     </section>
@@ -2168,6 +2175,8 @@
       }
 
       const expectedSize = expectedOccupiedSizeForCode(code);
+      const hasUploadedInventory = occupiedMaster.codes.length > 0;
+      const hasInventoryMatch = isMonthlyPhysicalMatch(code);
       const sizeMismatch = expectedSize && !sizesMatch(size, expectedSize);
       const sequence = nextSequence;
       nextSequence += 1;
@@ -2199,6 +2208,8 @@
 
       if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
+      } else if (hasUploadedInventory && !hasInventoryMatch) {
+        setStatus("Saved #" + sequence + " " + code + " - No Match To Inventory. This container was not found on the uploaded inventory list.", "warning");
       } else {
         setStatus("Saved #" + sequence + " " + code + " - " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
       }
@@ -2570,7 +2581,19 @@
     }
 
     function monthlyMatchText(code) {
-      return isMonthlyPhysicalMatch(code) ? "YES - PHYSICALLY FOUND" : "";
+      if (!occupiedMaster.codes.length) return "";
+      return isMonthlyPhysicalMatch(code) ? "YES - PHYSICALLY FOUND" : "NO MATCH TO INVENTORY";
+    }
+
+    function inventoryMatchTagText(code) {
+      if (!occupiedMaster.codes.length) return "";
+      return isMonthlyPhysicalMatch(code) ? "Matched Unit on List" : "No Match To Inventory";
+    }
+
+    function inventoryMatchTagClass(value) {
+      if (value === "Matched Unit on List") return " monthly-match-tag";
+      if (value === "No Match To Inventory") return " inventory-no-match-tag";
+      return "";
     }
 
     function conditionClass(condition) {
@@ -2846,7 +2869,7 @@
           : expectedItem.code
           ? "EXPECTED NOT SCANNED"
           : activeItem
-          ? "SCANNED NOT ON UPLOADED LIST"
+          ? "NO MATCH TO INVENTORY"
           : "DELETED ENTRY";
 
         rows.push([
@@ -3526,7 +3549,7 @@
         ["EXPECTED CONTAINERS", comparison.expected.length],
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
         ["EXPECTED NOT FOUND", comparison.missingExpected.length],
-        ["FOUND NOT ON MONTHLY LIST", comparison.extraFound.length],
+        ["NO MATCH TO INVENTORY", comparison.extraFound.length],
         ["SIZE MISMATCHES", comparison.sizeMismatches.length],
         [],
         ["EXPECTED AND FOUND"],
@@ -3537,7 +3560,7 @@
         ["UNIT NUMBER", "UNIT SIZE"],
         ...auditRowsForCodes(comparison.missingExpected, comparison),
         [],
-        ["FOUND NOT ON MONTHLY LIST"],
+        ["NO MATCH TO INVENTORY"],
         ["UNIT NUMBER", "UNIT SIZE"],
         ...comparison.extraFound.map(code => [code, ""]),
         [],
@@ -3573,7 +3596,7 @@
         styleWorksheetRow(foundSheet, index + 2, row.length, conditionCellStyle(activeItem && activeItem.condition));
       });
       XLSX.utils.book_append_sheet(wb, foundSheet, "EXPECTED AND FOUND");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "FOUND NOT ON LIST");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "NO MATCH TO INVENTORY");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mismatchSheetRows()), "SIZE MISMATCHES");
       appendOccupiedUploadSheets(wb);
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
@@ -4087,10 +4110,10 @@
         return;
       }
       occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
-      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED CONTAINERS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
-      occupiedStatus.className = comparison.missingExpected.length || comparison.sizeMismatches.length ? "status warning" : "status success";
+      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED CONTAINERS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. NO MATCH TO INVENTORY: " + comparison.extraFound.length + ". SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
+      occupiedStatus.className = comparison.missingExpected.length || comparison.extraFound.length || comparison.sizeMismatches.length ? "status warning" : "status success";
       occupiedComparisonList.innerHTML = "";
-      [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["FOUND NOT ON LIST", comparison.extraFound]].forEach(([title, codes]) => {
+      [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["NO MATCH TO INVENTORY", comparison.extraFound]].forEach(([title, codes]) => {
         const group = document.createElement("div");
         group.className = "audit-group";
         const heading = document.createElement("h3");
@@ -4476,9 +4499,8 @@
       }
 
       recentEntriesList.innerHTML = "";
-      const expectedCodes = new Set(occupiedExpectedItems().map(item => item.code));
       entries.slice(-10).reverse().forEach(item => {
-        const isMonthlyMatch = expectedCodes.has(item.code);
+        const inventoryTag = inventoryMatchTagText(item.code);
         const row = document.createElement("div");
         row.className = "recent-item" + (conditionClass(item.condition) ? " " + conditionClass(item.condition) : "");
 
@@ -4497,11 +4519,11 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
-          isMonthlyMatch ? "Matched Unit on List" : "",
+          inventoryTag,
           item.photoDataUrl ? "Photo" : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag" + (value === "Matched Unit on List" ? " monthly-match-tag" : "");
+          tag.className = "tag" + inventoryMatchTagClass(value);
           tag.textContent = value;
           meta.appendChild(tag);
         });
@@ -4545,9 +4567,8 @@
       }
 
       list.innerHTML = "";
-      const expectedCodes = new Set(occupiedExpectedItems().map(item => item.code));
       entries.slice().reverse().forEach(item => {
-        const isMonthlyMatch = expectedCodes.has(item.code);
+        const inventoryTag = inventoryMatchTagText(item.code);
         const row = document.createElement("div");
         row.className = "row" + (conditionClass(item.condition) ? " " + conditionClass(item.condition) : "");
 
@@ -4568,14 +4589,14 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
-          isMonthlyMatch ? "Matched Unit on List" : "",
+          inventoryTag,
           item.photoDataUrl ? "Photo" : "",
           item.initials ? "By " + item.initials : "",
           item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
           item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
-          tag.className = "tag" + (value === "Matched Unit on List" ? " monthly-match-tag" : "");
+          tag.className = "tag" + inventoryMatchTagClass(value);
           tag.textContent = value;
           details.appendChild(tag);
         });
