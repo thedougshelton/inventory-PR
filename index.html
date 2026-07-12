@@ -320,12 +320,16 @@
       gap: 6px;
     }
 
+    .keyboard-row.primary-letter {
+      grid-template-columns: 1fr;
+    }
+
     .keyboard-row.numbers {
-      grid-template-columns: repeat(10, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 
     .keyboard-row.letters {
-      grid-template-columns: repeat(9, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
     }
 
     .keyboard-row.actions {
@@ -1065,12 +1069,8 @@
         flex-direction: column;
       }
 
-      .keyboard-row.numbers {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-      }
-
       .keyboard-row.letters {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
 
       .session-row {
@@ -1893,8 +1893,10 @@
     function renderContainerKeyboard() {
       containerKeyboard.innerHTML = "";
       const rows = [
-        { className: "numbers", keys: "1234567890".split("") },
-        { className: "letters", keys: "ABCDMPRTZ".split("") },
+        { className: "primary-letter", keys: "D".split("") },
+        { className: "numbers", keys: "12345".split("") },
+        { className: "numbers", keys: "67890".split("") },
+        { className: "letters", keys: "ABCMPRTZ".split("") },
         {
           className: "actions",
           keys: [
