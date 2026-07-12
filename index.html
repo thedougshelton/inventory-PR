@@ -345,10 +345,6 @@
       line-height: 1;
     }
 
-    .keyboard-key.action-key {
-      font-size: 14px;
-    }
-
     button {
       appearance: none;
       border: 1px solid var(--border);
@@ -1114,11 +1110,6 @@
       border-radius: 9px;
     }
 
-    body.entry-mode.keyboard-open .keyboard-key.action-key {
-      min-height: 44px;
-      font-size: 13px;
-    }
-
     body.entry-mode .status {
       font-size: 18px;
       font-weight: 700;
@@ -1612,6 +1603,21 @@
         syncName: "TAMPA_VACANT_UNIT_AUDIT"
       }
     };
+    const CONTAINER_KEYBOARD_ROWS = [
+      { className: "primary-letter", keys: ["D"] },
+      { className: "numbers", keys: ["1", "2", "3", "4", "5"] },
+      { className: "numbers", keys: ["6", "7", "8", "9", "0"] },
+      { className: "letters", keys: ["A", "B", "C", "M"] },
+      { className: "letters", keys: ["P", "R", "T", "Z"] },
+      {
+        className: "actions",
+        keys: [
+          { label: "Backspace", key: "BACK" },
+          { label: "Clear", key: "CLEAR" },
+          { label: "Enter", key: "ENTER" }
+        ]
+      }
+    ];
 
     const input = document.getElementById("containerInput");
     const notesInput = document.getElementById("notesInput");
@@ -1981,23 +1987,7 @@
 
     function renderContainerKeyboard() {
       containerKeyboard.innerHTML = "";
-      const rows = [
-        { className: "primary-letter", keys: "D".split("") },
-        { className: "numbers", keys: "12345".split("") },
-        { className: "numbers", keys: "67890".split("") },
-        { className: "letters", keys: "ABCM".split("") },
-        { className: "letters", keys: "PRTZ".split("") },
-        {
-          className: "actions",
-          keys: [
-            { label: "Backspace", key: "BACK" },
-            { label: "Clear", key: "CLEAR" },
-            { label: "Enter", key: "ENTER" }
-          ]
-        }
-      ];
-
-      rows.forEach(rowInfo => {
+      CONTAINER_KEYBOARD_ROWS.forEach(rowInfo => {
         const row = document.createElement("div");
         row.className = "keyboard-row " + rowInfo.className;
         rowInfo.keys.forEach(item => {
