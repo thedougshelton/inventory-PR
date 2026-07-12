@@ -2529,16 +2529,28 @@
     }
 
     function sizeSummaryRows() {
-      return CONTAINER_SIZES.map(size => {
+      const detailedSizes = new Set(["8 ft", "12 ft", "16 ft", "ZM"]);
+      return CONTAINER_SIZES.flatMap(size => {
         const sizeEntries = entries.filter(item => item.size === size);
-        return [
+        const rows = [[
           size,
           sizeEntries.length,
           sizeEntries.filter(item => item.condition === "Good").length,
           sizeEntries.filter(item => item.condition === "Bad").length,
           sizeEntries.filter(item => item.status === "Built").length,
           sizeEntries.filter(item => item.status === "Flat").length
-        ];
+        ]];
+
+        if (detailedSizes.has(size)) {
+          rows.push(
+            [size + " - Good Built", sizeEntries.filter(item => item.condition === "Good" && item.status === "Built").length, "", "", "", ""],
+            [size + " - Good Flat", sizeEntries.filter(item => item.condition === "Good" && item.status === "Flat").length, "", "", "", ""],
+            [size + " - Bad Built", sizeEntries.filter(item => item.condition === "Bad" && item.status === "Built").length, "", "", "", ""],
+            [size + " - Bad Flat", sizeEntries.filter(item => item.condition === "Bad" && item.status === "Flat").length, "", "", "", ""]
+          );
+        }
+
+        return rows;
       });
     }
 
