@@ -1041,6 +1041,11 @@
       margin: 10px 0;
     }
 
+    body.entry-mode.keyboard-open .container-keyboard {
+      gap: 4px;
+      margin: 6px 0;
+    }
+
     body.entry-mode .keyboard-toggle {
       min-height: 54px;
       font-size: 18px;
@@ -1051,12 +1056,33 @@
       font-size: 19px;
     }
 
+    body.entry-mode.keyboard-open .keyboard-key {
+      min-height: 40px;
+      padding: 6px 4px;
+      font-size: 16px;
+      border-radius: 9px;
+    }
+
+    body.entry-mode.keyboard-open .keyboard-key.action-key {
+      min-height: 44px;
+      font-size: 13px;
+    }
+
     body.entry-mode .status {
       font-size: 18px;
       font-weight: 700;
       min-height: 52px;
       display: flex;
       align-items: center;
+    }
+
+    body.entry-mode.keyboard-open .status {
+      min-height: 34px;
+      max-height: 46px;
+      padding: 6px 8px;
+      font-size: 13px;
+      line-height: 1.2;
+      overflow: auto;
     }
 
     @media (max-width: 820px) {
@@ -1887,6 +1913,7 @@
 
     function updateContainerKeyboardToggle() {
       const isOpen = !containerKeyboard.hidden;
+      document.body.classList.toggle("keyboard-open", isOpen);
       toggleContainerKeyboardBtn.textContent = isOpen ? "Hide Keyboard" : "Show Keyboard";
       toggleContainerKeyboardBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
     }
