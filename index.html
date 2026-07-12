@@ -2026,6 +2026,14 @@
       return dataUrl ? Math.round(dataUrl.length * 0.75 / 1024) : 0;
     }
 
+    function auditPhotoCount() {
+      return [...entries, ...deletedEntries].filter(item => item.photoDataUrl).length;
+    }
+
+    function jsonSizeKb(value) {
+      return Math.round(JSON.stringify(value).length / 1024);
+    }
+
     function updateUnitPhotoControls() {
       const latest = latestEntry();
       takeUnitPhotoBtn.disabled = editLocked || !latest;
@@ -2299,7 +2307,7 @@
       }
 
       if (sizeMismatch) {
-        setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from monthly list, entered " + size + ".", "warning");
+        setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from uploaded document, entered " + size + ".", "warning");
       } else if (hasUploadedInventory && !hasInventoryMatch) {
         setStatus("Saved #" + sequence + " " + code + " - No Match To Inventory. This container was not found on the uploaded inventory list.", "warning");
       } else {
@@ -3076,8 +3084,6 @@
 
     function activeCsvRows() {
       return [
-        ["Session Name", sessionNameInput.value.trim()],
-        [],
         ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"],
         ...entries.map(item => [
           item.sequence || "",
@@ -3098,8 +3104,6 @@
 
     function deletedCsvRows() {
       return [
-        ["Session Name", sessionNameInput.value.trim()],
-        [],
         ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Original Date/Time Entered", "Edited Date/Time", "Deleted Date/Time", "Deleted By"],
         ...deletedEntries.map(item => [
           item.sequence || "",
@@ -3121,16 +3125,15 @@
 
     function buildMasterCsv() {
       const rows = [
-        ["Session Name", sessionNameInput.value.trim()],
         ["Exported", formatLocalTime(new Date().toISOString())],
         ["Active Entries", entries.length],
         ["Deleted Entries", deletedEntries.length],
         [],
         ["ACTIVE ENTRIES"],
-        ...activeCsvRows().slice(3),
+        ...activeCsvRows(),
         [],
         ["DELETED ENTRIES"],
-        ...deletedCsvRows().slice(2)
+        ...deletedCsvRows()
       ];
 
       return rows.map(csvLine).join("\n");
@@ -3143,12 +3146,9 @@
       const goodCount = entries.filter(item => item.condition === "Good").length;
       const firstEntry = entries.length ? formatLocalTime(entries[0].timestamp) : "—";
       const lastEntry = entries.length ? formatLocalTime(entries[entries.length - 1].timestamp) : "—";
-      const activeInitials = [...new Set(entries.map(item => item.initials).filter(Boolean))].join(", ") || "—";
-
       return [
         "PACK RAT TAMPA INVENTORY ENTRY - DOUG SHELTON VOL 1 FINAL REPORT",
         "",
-        "Session: " + (sessionNameInput.value.trim() || "—"),
         "Report Date: " + todayStamp(),
         "Editing Status: " + (editLocked ? "Locked after final export" : "Unlocked"),
         "",
@@ -3176,17 +3176,13 @@
         "Last Entry: " + lastEntry,
         "Last Saved: " + formatLocalTime(lastSavedAt),
         "",
-        "EMPLOYEE / USER INITIALS",
-        activeInitials,
-        "",
         "NOTES",
-        "Review the Active Entries and Deleted Entries sheets for container-level notes."
+        "Review the Scanned Units and Audit Comparison sheets for container-level notes."
       ].join("\n");
     }
 
     function summaryArray() {
       const rows = [
-        ["Session Name", sessionNameInput.value.trim()],
         ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
         ["Editing Status", editLocked ? "Locked" : "Unlocked"],
         ["Active Entries", entries.length],
@@ -3342,7 +3338,7 @@
       if (data.transferType === "monthlyOccupiedSetup") {
         const items = data.occupiedMaster && Array.isArray(data.occupiedMaster.items) ? data.occupiedMaster.items : [];
         const codes = data.occupiedMaster && Array.isArray(data.occupiedMaster.codes) ? data.occupiedMaster.codes : [];
-        if (!items.length && !codes.length) throw new Error("Imported file does not contain a monthly occupied list.");
+        if (!items.length && !codes.length) throw new Error("Imported file does not contain an uploaded document list.");
         return {
           transferType: "monthlyOccupiedSetup",
           sessionName: normalizeUpperText(data.sessionName || defaultSessionName()),
@@ -3634,9 +3630,8 @@
     function auditComparisonRows() {
       const comparison = occupiedComparison();
       return [
-        ["SESSION NAME", sessionNameInput.value.trim()],
-        ["MONTHLY LIST FILE", occupiedMaster.fileName || ""],
-        ["MONTHLY LIST IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
+        ["UPLOADED DOCUMENT FILE", occupiedMaster.fileName || ""],
+        ["UPLOADED DOCUMENT IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
         ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
         ["EXPECTED CONTAINERS", comparison.expected.length],
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
@@ -3665,8 +3660,8 @@
     function exportAuditComparison() {
       const comparison = occupiedComparison();
       if (!occupiedMaster.codes.length) {
-        setStatus("Upload a monthly occupied list before exporting the audit comparison.", "warning");
-        occupiedStatus.textContent = "UPLOAD A MONTHLY OCCUPIED LIST BEFORE EXPORTING THE AUDIT COMPARISON.";
+        setStatus("Upload an Excel document before exporting the audit comparison.", "warning");
+        occupiedStatus.textContent = "UPLOAD AN EXCEL DOCUMENT BEFORE EXPORTING THE AUDIT COMPARISON.";
         occupiedStatus.className = "status warning";
         return;
       }
@@ -3742,28 +3737,28 @@
         saveOccupiedMaster();
         occupiedFileInput.value = "";
         render();
-        setStatus("Monthly occupied list loaded: " + items.length + " expected units.", "success");
+        setStatus("Uploaded document loaded: " + items.length + " expected containers.", "success");
       } catch (error) {
         occupiedFileInput.value = "";
-        occupiedStatus.textContent = "MONTHLY LIST UPLOAD FAILED: " + normalizeUpperText(error.message);
+        occupiedStatus.textContent = "DOCUMENT UPLOAD FAILED: " + normalizeUpperText(error.message);
         occupiedStatus.className = "status error";
-        setStatus("Monthly list upload failed: " + error.message, "error");
+        setStatus("Document upload failed: " + error.message, "error");
       }
     }
 
     function clearOccupiedList() {
       if (!occupiedMaster.codes.length) {
-        setStatus("No monthly occupied list is loaded.", "info");
+        setStatus("No uploaded document is loaded.", "info");
         input.focus();
         return;
       }
-      const ok = confirm("This will clear the monthly occupied list from this device. Your scanned entries will stay saved. Continue?");
+      const ok = confirm("This will remove the uploaded document from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
       occupiedMaster = { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
       saveOccupiedMaster();
       occupiedFileInput.value = "";
       render();
-      setStatus("Monthly occupied list cleared. Scanned entries were not changed.", "success");
+      setStatus("Uploaded document removed. Scanned entries were not changed.", "success");
       input.focus();
     }
 
@@ -3910,14 +3905,14 @@
 
     async function uploadOccupiedListToCloud(options = {}) {
       if (!occupiedMaster.codes.length) {
-        setCloudStatus("Upload a monthly occupied list before saving to cloud.", "warning");
-        return;
+        setCloudStatus("Upload an Excel document before saving the uploaded list to cloud.", "warning");
+        return false;
       }
 
-      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return;
+      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return false;
 
       const settings = requireCloudSettings();
-      if (!settings) return;
+      if (!settings) return false;
       saveCloudSettings();
 
       const record = {
@@ -3936,17 +3931,19 @@
       };
 
       uploadCloudBtn.disabled = true;
-      setCloudStatus("Saving monthly list to cloud...", "info");
+      setCloudStatus("Saving uploaded document to cloud...", "info");
       try {
         await supabaseRequest(settings, CLOUD_TABLE + "?on_conflict=sync_key", {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=representation" },
           body: JSON.stringify(record)
         });
-        setCloudStatus("Monthly list saved to cloud: " + settings.syncName + ".", "success");
-        setStatus("Monthly occupied list saved to cloud.", "success");
+        setCloudStatus("Uploaded document saved to cloud: " + settings.syncName + ".", "success");
+        setStatus("Uploaded document saved to cloud.", "success");
+        return true;
       } catch (error) {
         setCloudStatus("Cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+        return false;
       } finally {
         uploadCloudBtn.disabled = false;
         input.focus();
@@ -3955,11 +3952,11 @@
 
     async function loadOccupiedListFromCloud() {
       const settings = requireCloudSettings();
-      if (!settings) return;
+      if (!settings) return false;
       saveCloudSettings();
 
       loadCloudBtn.disabled = true;
-      setCloudStatus("Loading monthly list from cloud...", "info");
+      setCloudStatus("Loading uploaded document from cloud...", "info");
       try {
         const rows = await supabaseRequest(
           settings,
@@ -3968,8 +3965,8 @@
         );
         const row = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!row || !row.payload || !row.payload.occupiedMaster) {
-          setCloudStatus("No cloud monthly list found for " + settings.syncName + ".", "warning");
-          return;
+          setCloudStatus("No uploaded document found in cloud for " + settings.syncName + ".", "warning");
+          return false;
         }
 
         occupiedMaster = loadTransferOccupiedMaster(row.payload.occupiedMaster);
@@ -3978,13 +3975,15 @@
         render();
         setCloudStatus(
           saveOk
-            ? "Monthly list loaded from cloud: " + occupiedMaster.codes.length + " expected units."
-            : "Monthly list loaded for this app session, but could not be saved on this device.",
+            ? "Uploaded document loaded from cloud: " + occupiedMaster.codes.length + " expected containers."
+            : "Uploaded document loaded for this app session, but could not be saved on this device.",
           saveOk ? "success" : "warning"
         );
-        setStatus("Monthly occupied list loaded from cloud: " + occupiedMaster.codes.length + " expected units.", saveOk ? "success" : "warning");
+        setStatus("Uploaded document loaded from cloud: " + occupiedMaster.codes.length + " expected containers.", saveOk ? "success" : "warning");
+        return saveOk;
       } catch (error) {
         setCloudStatus("Cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+        return false;
       } finally {
         loadCloudBtn.disabled = false;
         input.focus();
@@ -3995,13 +3994,13 @@
       if (!entries.length && !deletedEntries.length) {
         setCloudStatus("No scanned entries yet. Scan containers before saving a full audit to cloud.", "warning");
         input.focus();
-        return;
+        return false;
       }
 
-      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return;
+      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return false;
 
       const settings = requireCloudSettings();
-      if (!settings) return;
+      if (!settings) return false;
       saveCloudSettings();
 
       const syncName = fullAuditCloudSyncName(settings);
@@ -4015,6 +4014,20 @@
         updated_at: new Date().toISOString(),
         updated_by: employeeInitialsInput.value.trim().toUpperCase()
       };
+      const payloadKb = jsonSizeKb(record);
+      const photoCount = auditPhotoCount();
+      if (photoCount && payloadKb > 4500) {
+        const ok = confirm(
+          "THIS AUDIT HAS " + photoCount + " PHOTO(S) AND THE CLOUD SAVE IS ABOUT " + payloadKb + " KB.\n\n" +
+          "LARGE PHOTO SAVES CAN TAKE LONGER AND MAY FAIL ON SOME CONNECTIONS.\n\n" +
+          "CONTINUE SAVING TO CLOUD?"
+        );
+        if (!ok) {
+          setCloudStatus("Cloud save canceled. Nothing was changed in the cloud.", "info");
+          input.focus();
+          return false;
+        }
+      }
 
       saveFullAuditCloudBtn.disabled = true;
       setCloudStatus("Saving full audit to cloud...", "info");
@@ -4024,10 +4037,12 @@
           headers: { Prefer: "resolution=merge-duplicates,return=representation" },
           body: JSON.stringify(record)
         });
-        setCloudStatus("Full audit saved to cloud: " + syncName + ". Active entries: " + entries.length + ".", "success");
+        setCloudStatus("Full audit saved to cloud: " + syncName + ". Active entries: " + entries.length + ". Save size: " + payloadKb + " KB.", "success");
         setStatus("Full audit saved to cloud. Active entries: " + entries.length + ".", "success");
+        return true;
       } catch (error) {
         setCloudStatus("Full audit cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+        return false;
       } finally {
         saveFullAuditCloudBtn.disabled = false;
         input.focus();
@@ -4036,7 +4051,7 @@
 
     async function loadFullAuditFromCloud() {
       const settings = requireCloudSettings();
-      if (!settings) return;
+      if (!settings) return false;
       saveCloudSettings();
 
       const syncName = fullAuditCloudSyncName(settings);
@@ -4050,7 +4065,7 @@
       if (!ok) {
         setCloudStatus("Full audit cloud load canceled. This device was not changed.", "info");
         input.focus();
-        return;
+        return false;
       }
 
       loadFullAuditCloudBtn.disabled = true;
@@ -4064,7 +4079,7 @@
         const row = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!row || !row.payload) {
           setCloudStatus("No full audit cloud backup found for " + syncName + ".", "warning");
-          return;
+          return false;
         }
 
         const data = dataFromJsonBackup(row.payload);
@@ -4076,8 +4091,10 @@
           saveOk ? "success" : "warning"
         );
         setStatus("Full audit loaded from cloud. Active entries: " + entries.length + ".", saveOk ? "success" : "warning");
+        return saveOk;
       } catch (error) {
         setCloudStatus("Full audit cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
+        return false;
       } finally {
         loadFullAuditCloudBtn.disabled = false;
         input.focus();
@@ -4089,7 +4106,7 @@
       const hasAuditEntries = entries.length > 0 || deletedEntries.length > 0;
 
       if (!hasMonthlyList && !hasAuditEntries) {
-        setCloudStatus("Nothing to save to cloud yet. Upload a monthly list or scan containers first.", "warning");
+        setCloudStatus("Nothing to save to cloud yet. Upload an Excel document or scan containers first.", "warning");
         input.focus();
         return;
       }
@@ -4099,14 +4116,25 @@
       saveCloudBtn.disabled = true;
       saveCloudEntryModeBtn.disabled = true;
       try {
+        let listSaved = !hasMonthlyList;
+        let auditSaved = !hasAuditEntries;
         if (hasMonthlyList) {
-          await uploadOccupiedListToCloud({ skipPin: true });
+          listSaved = await uploadOccupiedListToCloud({ skipPin: true });
         }
         if (hasAuditEntries) {
-          await saveFullAuditToCloud({ skipPin: true });
+          auditSaved = await saveFullAuditToCloud({ skipPin: true });
+        }
+        if (!listSaved || !auditSaved) {
+          setCloudStatus(
+            "Cloud save incomplete. Uploaded document: " + (listSaved ? "saved" : "not saved") +
+            ". Full audit: " + (auditSaved ? "saved" : "not saved") + ".",
+            "error"
+          );
+          setStatus("Cloud save incomplete. Check the cloud message before continuing.", "error");
+          return;
         }
         setCloudStatus(
-          "Cloud save complete. Monthly list: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
+          "Cloud save complete. Uploaded document: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
           " expected. Active entries: " + entries.length + ".",
           "success"
         );
@@ -4136,12 +4164,6 @@
           { method: "GET" }
         );
         const monthlyRow = Array.isArray(monthlyRows) && monthlyRows.length ? monthlyRows[0] : null;
-        if (monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster) {
-          occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
-          saveOccupiedMaster();
-          occupiedFileInput.value = "";
-          monthlyLoaded = true;
-        }
 
         const fullSyncName = fullAuditCloudSyncName(settings);
         const fullRows = await supabaseRequest(
@@ -4150,23 +4172,43 @@
           { method: "GET" }
         );
         const fullRow = Array.isArray(fullRows) && fullRows.length ? fullRows[0] : null;
+        const hasCloudList = Boolean(monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster);
+        const hasCloudAudit = Boolean(fullRow && fullRow.payload);
+
+        if (!hasCloudList && !hasCloudAudit) {
+          setCloudStatus("No cloud data found for this audit.", "warning");
+          setStatus("No cloud data found.", "warning");
+          return;
+        }
+
+        const ok = confirm(
+          "LOAD FROM CLOUD?\n\n" +
+          (hasCloudList ? "THIS WILL LOAD THE UPLOADED DOCUMENT FROM CLOUD.\n" : "") +
+          (hasCloudAudit ? "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\nCURRENT DEVICE: " + entries.length + " ACTIVE, " + deletedEntries.length + " DELETED.\n" : "") +
+          "\nCONTINUE?"
+        );
+        if (!ok) {
+          setCloudStatus("Cloud load canceled. This device was not changed.", "info");
+          input.focus();
+          return;
+        }
+
+        if (hasCloudList) {
+          occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
+          const saveOk = saveOccupiedMaster();
+          occupiedFileInput.value = "";
+          monthlyLoaded = saveOk;
+        }
+
         if (fullRow && fullRow.payload) {
-          const ok = confirm(
-            "LOAD SAVED CLOUD AUDIT?\n\n" +
-            "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\n" +
-            "CURRENT DEVICE: " + entries.length + " ACTIVE, " + deletedEntries.length + " DELETED."
-          );
-          if (ok) {
-            const data = dataFromJsonBackup(fullRow.payload);
-            applyImportedData(data);
-            fullAuditLoaded = true;
-          }
+          const data = dataFromJsonBackup(fullRow.payload);
+          fullAuditLoaded = applyImportedData(data);
         } else {
           render();
         }
 
         setCloudStatus(
-          "Cloud load complete. Monthly list: " + (monthlyLoaded ? occupiedMaster.codes.length + " expected" : "not found") +
+          "Cloud load complete. Uploaded document: " + (monthlyLoaded ? occupiedMaster.codes.length + " expected" : "not loaded") +
           ". Full audit: " + (fullAuditLoaded ? entries.length + " active entries" : "not loaded") + ".",
           monthlyLoaded || fullAuditLoaded ? "success" : "warning"
         );
@@ -4251,7 +4293,7 @@
       const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
 
       return {
-        fileName: normalizeUpperText(source.fileName || "MONTHLY TRANSFER FILE"),
+        fileName: normalizeUpperText(source.fileName || "UPLOADED DOCUMENT TRANSFER FILE"),
         importedAt: source.importedAt || new Date().toISOString(),
         codes: cleanItems.map(item => item.code),
         items: cleanItems,
@@ -4345,7 +4387,7 @@
           activeCount: 0,
           deletedCount: 0,
           highestSequence: 0,
-          warnings: [{ type: "success", text: "MONTHLY TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED CONTAINERS AND WILL NOT REPLACE SCANNED ENTRIES." }],
+          warnings: [{ type: "success", text: "UPLOADED DOCUMENT TRANSFER FILE READY. THIS WILL LOAD " + occupiedCount + " EXPECTED CONTAINERS AND WILL NOT REPLACE SCANNED ENTRIES." }],
           canApply: occupiedCount > 0,
           isPhoneTransfer: true
         };
@@ -4500,7 +4542,7 @@
         renderImportPreview();
         setStatus(
           saveOk
-            ? "Phone transfer imported. Monthly occupied list loaded: " + loadedCount + " expected units. Scanned entries were not changed."
+            ? "Phone transfer imported. Uploaded document loaded: " + loadedCount + " expected containers. Scanned entries were not changed."
             : "Phone transfer imported for this app session, but it could not be saved on this device. Save to cloud now.",
           saveOk ? "success" : "warning"
         );
