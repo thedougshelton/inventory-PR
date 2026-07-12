@@ -2475,7 +2475,7 @@
           ["UPLOADED FILE", occupiedMaster.fileName || ""],
           ["IMPORTED", formatLocalTime(occupiedMaster.importedAt)],
           [],
-          ["FULL UPLOADED DOCUMENT WAS NOT SAVED FOR THIS OLDER UPLOAD. RE-UPLOAD THE MONTHLY LIST TO INCLUDE THIS TAB."]
+          [occupiedMaster.fileName ? "FULL UPLOADED DOCUMENT WAS NOT SAVED FOR THIS OLDER UPLOAD. RE-UPLOAD THE LIST TO INCLUDE THIS TAB." : "NO UPLOADED DOCUMENT IS SAVED IN THIS AUDIT."]
         ];
       }
 
@@ -2554,11 +2554,15 @@
       });
     }
 
+    function appendFullUploadedDocumentSheet(wb) {
+      const fullUploadSheet = XLSX.utils.aoa_to_sheet(uploadedDocumentRows());
+      XLSX.utils.book_append_sheet(wb, fullUploadSheet, "Full Uploaded Document");
+    }
+
     function appendOccupiedUploadSheets(wb) {
       if (!occupiedMaster.codes.length) return;
 
-      const fullUploadSheet = XLSX.utils.aoa_to_sheet(uploadedDocumentRows());
-      XLSX.utils.book_append_sheet(wb, fullUploadSheet, "Full Uploaded Document");
+      appendFullUploadedDocumentSheet(wb);
 
       const expectedRows = expectedUnitsRows();
       const expectedSheet = XLSX.utils.aoa_to_sheet(expectedRows);
@@ -2600,6 +2604,133 @@
         "Deleted Date/Time": formatLocalTime(item.deletedAt),
         "Deleted By": item.deleteType || ""
       }));
+    }
+
+    function auditComparisonCombinedRows() {
+      const activeMap = activeEntryByCode();
+      const deletedMap = new Map();
+      deletedEntries.forEach(item => {
+        const code = normalizeCode(item.code || "");
+        if (code && !deletedMap.has(code)) deletedMap.set(code, item);
+      });
+
+      const expectedItems = occupiedExpectedItems();
+      const expectedMap = new Map(expectedItems.map(item => [item.code, item]));
+      const allCodes = new Set([
+        ...expectedItems.map(item => item.code),
+        ...entries.map(item => item.code).filter(Boolean),
+        ...deletedEntries.map(item => item.code).filter(Boolean)
+      ]);
+
+      const rows = [
+        [
+          "Audit Status",
+          "Unit Number",
+          "Uploaded Unit Size",
+          "Physically Found",
+          "Scanned Entry Number",
+          "Scanned Unit Size",
+          "Size Check",
+          "Container Condition",
+          "Container Status",
+          "Employee/User Initials",
+          "Notes",
+          "Photo Attached",
+          "Photo Date/Time",
+          "Date/Time Entered",
+          "Edited Date/Time",
+          "Restored Date/Time",
+          "Deleted Entry Number",
+          "Deleted Unit Size",
+          "Deleted Condition",
+          "Deleted Status",
+          "Deleted Notes",
+          "Deleted Date/Time",
+          "Deleted By"
+        ]
+      ];
+
+      [...allCodes].sort().forEach(code => {
+        const expectedItem = expectedMap.get(code) || {};
+        const activeItem = activeMap.get(code) || null;
+        const deletedItem = deletedMap.get(code) || null;
+        const expectedSize = expectedItem.type || "";
+        const enteredSize = activeItem ? activeItem.size || "" : "";
+        const sizeCheck = activeItem && expectedSize && enteredSize && !sizesMatch(enteredSize, expectedSize)
+          ? "SIZE MISMATCH"
+          : activeItem && expectedSize
+          ? "MATCH"
+          : "";
+        const status = expectedItem.code && activeItem
+          ? "EXPECTED AND SCANNED"
+          : expectedItem.code
+          ? "EXPECTED NOT SCANNED"
+          : activeItem
+          ? "SCANNED NOT ON UPLOADED LIST"
+          : "DELETED ENTRY";
+
+        rows.push([
+          status,
+          code,
+          expectedSize,
+          activeItem ? "YES" : "",
+          activeItem ? activeItem.sequence || "" : "",
+          enteredSize,
+          sizeCheck,
+          activeItem ? activeItem.condition || "" : "",
+          activeItem ? activeItem.status || "" : "",
+          activeItem ? activeItem.initials || "" : "",
+          activeItem ? activeItem.notes || "" : "",
+          activeItem && activeItem.photoDataUrl ? "YES" : "",
+          activeItem ? formatLocalTime(activeItem.photoTakenAt) : "",
+          activeItem ? formatLocalTime(activeItem.timestamp) : "",
+          activeItem ? formatLocalTime(activeItem.editedAt) : "",
+          activeItem ? formatLocalTime(activeItem.restoredAt) : "",
+          deletedItem ? deletedItem.sequence || "" : "",
+          deletedItem ? deletedItem.size || "" : "",
+          deletedItem ? deletedItem.condition || "" : "",
+          deletedItem ? deletedItem.status || "" : "",
+          deletedItem ? deletedItem.notes || "" : "",
+          deletedItem ? formatLocalTime(deletedItem.deletedAt) : "",
+          deletedItem ? deletedItem.deleteType || "" : ""
+        ]);
+      });
+
+      if (rows.length === 1) rows.push(["NO AUDIT COMPARISON DATA"]);
+      return rows;
+    }
+
+    function styleAuditComparisonCombinedSheet(ws, rows) {
+      rows.slice(1).forEach((row, index) => {
+        const condition = row[7] || row[18] || "";
+        styleWorksheetRow(ws, index + 2, row.length, conditionCellStyle(condition));
+      });
+    }
+
+    function pictureRows() {
+      const rows = [
+        ["Entry Number", "Container Number", "List", "Container Size", "Container Condition", "Container Status", "Photo Date/Time", "Compressed Photo Size KB", "Notes"]
+      ];
+
+      [
+        ...entries.map(item => ({ ...item, source: "ACTIVE" })),
+        ...deletedEntries.map(item => ({ ...item, source: "DELETED" }))
+      ].filter(item => item.photoDataUrl).forEach(item => {
+        rows.push([
+          item.sequence || "",
+          item.code || "",
+          item.source,
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          formatLocalTime(item.photoTakenAt),
+          photoSizeKb(item.photoDataUrl),
+          item.notes || ""
+        ]);
+      });
+
+      if (rows.length === 1) rows.push(["NO PICTURES TAKEN"]);
+      return rows;
     }
 
     function activeCsvRows() {
@@ -2743,6 +2874,15 @@
       return rows;
     }
 
+    function finalReportSummaryRows() {
+      return [
+        ...summaryArray(),
+        [],
+        ["FINAL REPORT"],
+        ...buildReportText().split("\n").map(line => [line])
+      ];
+    }
+
     function exportXlsx(finalLock) {
       if (!entries.length && !deletedEntries.length) {
         setStatus("No entries to export yet.", "warning");
@@ -2760,24 +2900,19 @@
       const activeRows = activeArray();
       const activeSheet = XLSX.utils.json_to_sheet(activeRows);
       styleActiveRowsByCondition(activeSheet, activeRows);
-      XLSX.utils.book_append_sheet(wb, activeSheet, "Active Entries");
+      XLSX.utils.book_append_sheet(wb, activeSheet, "Scanned Units");
 
-      const deletedSheet = XLSX.utils.json_to_sheet(deletedArray());
-      XLSX.utils.book_append_sheet(wb, deletedSheet, "Deleted Entries");
+      const auditRows = auditComparisonCombinedRows();
+      const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
+      styleAuditComparisonCombinedSheet(auditSheet, auditRows);
+      XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
 
-      const summarySheet = XLSX.utils.aoa_to_sheet(summaryArray());
-      XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+      const picturesSheet = XLSX.utils.aoa_to_sheet(pictureRows());
+      XLSX.utils.book_append_sheet(wb, picturesSheet, "Pictures");
 
-      if (occupiedMaster.codes.length) {
-        const auditRows = auditComparisonRows();
-        const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
-        styleAuditSectionRowsByCondition(auditSheet, auditRows, "EXPECTED AND FOUND");
-        XLSX.utils.book_append_sheet(wb, auditSheet, "Occupied Audit");
-        appendMismatchSheet(wb, "Size Mismatches");
-        appendOccupiedUploadSheets(wb);
-      }
+      appendFullUploadedDocumentSheet(wb);
 
-      const reportSheet = XLSX.utils.aoa_to_sheet(buildReportText().split("\n").map(line => [line]));
+      const reportSheet = XLSX.utils.aoa_to_sheet(finalReportSummaryRows());
       XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
 
       const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
