@@ -1866,10 +1866,10 @@
           code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
           type: normalizeOccupiedTypeSize(item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
           rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
-        })).filter(item => isValid(item.code));
+        })).filter(item => isUploadedInventoryCode(item.code));
 
         if (!items.length && Array.isArray(parsed.codes)) {
-          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
+          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isUploadedInventoryCode(item.code));
         }
 
         const itemMap = new Map();
@@ -1964,6 +1964,20 @@
 
     function isValid(code) {
       return /^[A-Z0-9]{6}$/.test(code);
+    }
+
+    const IGNORED_UPLOADED_UNIT_CODES = new Set([
+      "SSITEN",
+      "SITEID",
+      "UNITID",
+      "TYPEID",
+      "SIZEID",
+      "STATUS"
+    ]);
+
+    function isUploadedInventoryCode(code) {
+      const normalized = normalizeCode(code || "");
+      return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
     function setStatus(message, type) {
@@ -3453,7 +3467,7 @@
 
     function extractCodeCandidates(value) {
       const text = normalizeUpperText(value).replace(/[^A-Z0-9]+/g, " ");
-      return (text.match(/[A-Z0-9]{6}/g) || []).filter(isValid);
+      return (text.match(/[A-Z0-9]{6}/g) || []).filter(isUploadedInventoryCode);
     }
 
     function cleanHeader(value) {
@@ -3586,8 +3600,8 @@
         code: normalizeCode(item.code || ""),
         type: normalizeOccupiedTypeSize(item.type || item.rawType || "", item.code || ""),
         rawType: normalizeUpperText(item.rawType || item.type || "")
-      })).filter(item => isValid(item.code));
-      return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
+      })).filter(item => isUploadedInventoryCode(item.code));
+      return (occupiedMaster.codes || []).map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isUploadedInventoryCode(item.code));
     }
 
     function occupiedComparison() {
@@ -4292,10 +4306,10 @@
         code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
         type: normalizeOccupiedTypeSize(item.type || item.rawType || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
         rawType: normalizeUpperText(item.rawType || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
-      })).filter(item => isValid(item.code));
+      })).filter(item => isUploadedInventoryCode(item.code));
 
       if (!items.length && Array.isArray(source.codes)) {
-        items = source.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isValid(item.code));
+        items = source.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isUploadedInventoryCode(item.code));
       }
 
       const itemMap = new Map();
