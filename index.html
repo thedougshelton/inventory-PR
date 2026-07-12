@@ -833,6 +833,14 @@
       gap: 8px;
     }
 
+    .cloud-preset-row > div {
+      min-width: 0;
+    }
+
+    .cloud-preset-row select {
+      min-width: 0;
+    }
+
     .cloud-preset-row button {
       width: 100%;
       min-height: 44px;
@@ -1185,18 +1193,23 @@
       }
 
       .cloud-preset-label {
-        font-size: 14px;
+        font-size: clamp(11px, 3.2vw, 14px);
         white-space: nowrap;
       }
 
       .cloud-preset-row {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
         gap: 8px;
       }
 
       .cloud-preset-row button {
+        display: block;
+        width: 100%;
         min-height: 42px;
         padding: 9px 10px;
         font-size: 13px;
+        line-height: 1.15;
       }
 
       .edit-grid .full { grid-column: auto; }
