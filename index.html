@@ -334,11 +334,6 @@
 
     .keyboard-row.actions {
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: var(--card);
-      padding-bottom: 2px;
     }
 
     .keyboard-key {
@@ -1905,6 +1900,10 @@
     function renderContainerKeyboard() {
       containerKeyboard.innerHTML = "";
       const rows = [
+        { className: "primary-letter", keys: "D".split("") },
+        { className: "numbers", keys: "12345".split("") },
+        { className: "numbers", keys: "67890".split("") },
+        { className: "letters", keys: "ABCMPRTZ".split("") },
         {
           className: "actions",
           keys: [
@@ -1912,11 +1911,7 @@
             { label: "Clear", key: "CLEAR" },
             { label: "Enter", key: "ENTER" }
           ]
-        },
-        { className: "primary-letter", keys: "D".split("") },
-        { className: "numbers", keys: "12345".split("") },
-        { className: "numbers", keys: "67890".split("") },
-        { className: "letters", keys: "ABCMPRTZ".split("") }
+        }
       ];
 
       rows.forEach(rowInfo => {
