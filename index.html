@@ -315,26 +315,6 @@
       font-weight: 800;
     }
 
-    .keyboard-action-bar {
-      display: none;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin: 8px 0;
-    }
-
-    body.keyboard-open .keyboard-action-bar {
-      display: grid;
-    }
-
-    .keyboard-action-bar button {
-      min-height: 48px;
-      border-color: var(--accent);
-      background: var(--accent);
-      color: var(--accentText);
-      font-size: 14px;
-      font-weight: 800;
-    }
-
     .keyboard-row {
       display: grid;
       gap: 6px;
@@ -349,7 +329,7 @@
     }
 
     .keyboard-row.letters {
-      grid-template-columns: repeat(8, minmax(0, 1fr));
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .keyboard-row.actions {
@@ -1383,11 +1363,6 @@
       </div>
       <button id="toggleContainerKeyboardBtn" class="keyboard-toggle" type="button" aria-expanded="false" aria-controls="containerKeyboard">Show Keyboard</button>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
-      <div id="keyboardActionBar" class="keyboard-action-bar" aria-label="Keyboard actions">
-        <button id="keyboardBackspaceBtn" type="button">Backspace</button>
-        <button id="keyboardClearBtn" type="button">Clear</button>
-        <button id="keyboardEnterBtn" type="button">Enter</button>
-      </div>
       <div id="containerKeyboard" class="container-keyboard" aria-label="Container number keyboard" hidden></div>
       <p id="entryHelp" class="help">
         Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
@@ -1715,10 +1690,6 @@
     const xlsxBadge = document.getElementById("xlsxBadge");
     const statusBox = document.getElementById("status");
     const toggleContainerKeyboardBtn = document.getElementById("toggleContainerKeyboardBtn");
-    const keyboardActionBar = document.getElementById("keyboardActionBar");
-    const keyboardBackspaceBtn = document.getElementById("keyboardBackspaceBtn");
-    const keyboardClearBtn = document.getElementById("keyboardClearBtn");
-    const keyboardEnterBtn = document.getElementById("keyboardEnterBtn");
     const containerKeyboard = document.getElementById("containerKeyboard");
     const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
     const unitPhotoInput = document.getElementById("unitPhotoInput");
@@ -2014,6 +1985,11 @@
     function renderContainerKeyboard() {
       containerKeyboard.innerHTML = "";
       const rows = [
+        { className: "primary-letter", keys: "D".split("") },
+        { className: "numbers", keys: "12345".split("") },
+        { className: "numbers", keys: "67890".split("") },
+        { className: "letters", keys: "ABCM".split("") },
+        { className: "letters", keys: "PRTZ".split("") },
         {
           className: "actions",
           keys: [
@@ -2021,11 +1997,7 @@
             { label: "Clear", key: "CLEAR" },
             { label: "Enter", key: "ENTER" }
           ]
-        },
-        { className: "primary-letter", keys: "D".split("") },
-        { className: "numbers", keys: "12345".split("") },
-        { className: "numbers", keys: "67890".split("") },
-        { className: "letters", keys: "ABCMPRTZ".split("") }
+        }
       ];
 
       rows.forEach(rowInfo => {
@@ -4843,9 +4815,6 @@
 
       addBtn.disabled = editLocked;
       toggleContainerKeyboardBtn.disabled = editLocked;
-      keyboardActionBar.querySelectorAll("button").forEach(button => {
-        button.disabled = editLocked;
-      });
       containerKeyboard.querySelectorAll("button").forEach(button => {
         button.disabled = editLocked;
       });
@@ -4974,9 +4943,6 @@
 
     addBtn.addEventListener("click", addEntry);
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
-    keyboardBackspaceBtn.addEventListener("click", () => pressContainerKeyboardKey("BACK"));
-    keyboardClearBtn.addEventListener("click", () => pressContainerKeyboardKey("CLEAR"));
-    keyboardEnterBtn.addEventListener("click", () => pressContainerKeyboardKey("ENTER"));
     takeUnitPhotoBtn.addEventListener("click", () => {
       if (requireUnlocked("add a photo")) return;
       if (!latestEntry()) {
