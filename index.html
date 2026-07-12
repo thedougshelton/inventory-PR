@@ -1864,8 +1864,8 @@
         const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
         let items = rawItems.map(item => ({
           code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
-          type: normalizeOccupiedTypeSize(item.type || item["Type"] || "", item.code || item.unitName || item["UnitName"] || ""),
-          rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || "")
+          type: normalizeOccupiedTypeSize(item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
+          rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
         })).filter(item => isValid(item.code));
 
         if (!items.length && Array.isArray(parsed.codes)) {
@@ -3482,7 +3482,7 @@
     function isTypeHeader(value) {
       const header = cleanHeader(value);
       const compact = compactHeader(value);
-      return ["TYPE", "UNIT TYPE", "CONTAINER TYPE"].includes(header) || ["TYPE", "UNITTYPE", "CONTAINERTYPE"].includes(compact);
+      return ["TYPE", "UNIT TYPE", "CONTAINER TYPE", "CONTAINER SIZE", "UNIT SIZE", "SIZE"].includes(header) || ["TYPE", "UNITTYPE", "CONTAINERTYPE", "CONTAINERSIZE", "UNITSIZE", "SIZE"].includes(compact);
     }
 
     function findOccupiedHeaderColumns(rows) {
@@ -4290,8 +4290,8 @@
       const rawItems = Array.isArray(source.items) ? source.items : [];
       let items = rawItems.map(item => ({
         code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
-        type: normalizeOccupiedTypeSize(item.type || item.rawType || item["Type"] || "", item.code || item.unitName || item["UnitName"] || ""),
-        rawType: normalizeUpperText(item.rawType || item.type || item["Type"] || "")
+        type: normalizeOccupiedTypeSize(item.type || item.rawType || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
+        rawType: normalizeUpperText(item.rawType || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
       })).filter(item => isValid(item.code));
 
       if (!items.length && Array.isArray(source.codes)) {
