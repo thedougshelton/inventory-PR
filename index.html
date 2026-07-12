@@ -826,6 +826,15 @@
       display: block;
     }
 
+    .cloud-preset-row {
+      grid-template-columns: 1fr;
+      align-items: stretch;
+    }
+
+    .cloud-preset-row button {
+      width: 100%;
+    }
+
     .sync-choice-panel {
       margin-top: 10px;
       padding: 12px;
@@ -1231,7 +1240,7 @@
         <button id="clearOccupiedListBtn" type="button">REMOVE ALL UPLOADED DOCUMENTS ON APPLICATION</button>
       </div>
       <div class="cloud-sync-panel">
-        <div class="session-row">
+        <div class="session-row cloud-preset-row">
           <div>
             <label for="cloudPreset" class="cloud-preset-label">
               <span>Select your branch</span>
