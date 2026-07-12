@@ -332,7 +332,7 @@
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
-    .keyboard-row.actions {
+    .keyboard-row.keyboard-actions {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
@@ -1060,18 +1060,6 @@
       margin: 6px 0;
     }
 
-    body.entry-mode.keyboard-open .grid {
-      display: none;
-    }
-
-    body.entry-mode.keyboard-open .entry-mode-cloud-action {
-      display: none;
-    }
-
-    body.entry-mode.keyboard-open .unit-photo-panel {
-      display: none;
-    }
-
     body.entry-mode.keyboard-open .card.entry-card {
       margin-top: 6px;
       padding: 12px;
@@ -1604,7 +1592,7 @@
       { className: "letters", keys: ["A", "B", "C", "M"] },
       { className: "letters", keys: ["P", "R", "T", "Z"] },
       {
-        className: "actions",
+        className: "keyboard-actions",
         keys: [
           { label: "Backspace", key: "BACK" },
           { label: "Clear", key: "CLEAR" },
@@ -1987,7 +1975,7 @@
         rowInfo.keys.forEach(item => {
           const label = typeof item === "string" ? item : item.label;
           const key = typeof item === "string" ? item : item.key;
-          row.appendChild(createKeyboardButton(label, key, rowInfo.className === "actions" ? "action-key" : ""));
+          row.appendChild(createKeyboardButton(label, key, rowInfo.className === "keyboard-actions" ? "action-key" : ""));
         });
         containerKeyboard.appendChild(row);
       });
