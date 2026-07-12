@@ -481,6 +481,39 @@
       overflow-wrap: anywhere;
     }
 
+    .unit-photo-panel {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+
+    .unit-photo-panel button {
+      min-height: 46px;
+      width: 100%;
+    }
+
+    .unit-photo-status {
+      min-height: 18px;
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .unit-photo-thumb {
+      display: block;
+      width: 72px;
+      height: 54px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 6px;
+      background: #fff;
+    }
+
     .row-actions {
       display: flex;
       gap: 6px;
@@ -1172,6 +1205,12 @@
         Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
       </p>
 
+      <div class="unit-photo-panel">
+        <button id="takeUnitPhotoBtn" type="button">Take Compressed Photo For Last Entry</button>
+        <input id="unitPhotoInput" type="file" accept="image/*" capture="environment" hidden />
+        <div id="unitPhotoStatus" class="unit-photo-status">Photos are compressed before saving.</div>
+      </div>
+
       <details id="recentEntriesDetails" class="recent-panel collapsible-section" aria-label="Last 10 Entries">
         <summary class="section-toggle">Last 10 Entries</summary>
         <div class="section-body">
@@ -1487,6 +1526,9 @@
     const lockBadge = document.getElementById("lockBadge");
     const xlsxBadge = document.getElementById("xlsxBadge");
     const statusBox = document.getElementById("status");
+    const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
+    const unitPhotoInput = document.getElementById("unitPhotoInput");
+    const unitPhotoStatus = document.getElementById("unitPhotoStatus");
     const list = document.getElementById("list");
     const deletedList = document.getElementById("deletedList");
     const deletedCountText = document.getElementById("deletedCountText");
@@ -1567,7 +1609,9 @@
         notes: normalizeUpperText(item.notes || item["Notes"] || ""),
         timestamp: item.timestamp || item["Date/Time Entered"] || item.dateTimeEntered || new Date().toISOString(),
         editedAt: item.editedAt || item["Edited Date/Time"] || "",
-        restoredAt: item.restoredAt || ""
+        restoredAt: item.restoredAt || "",
+        photoDataUrl: item.photoDataUrl || item.unitPhoto || "",
+        photoTakenAt: item.photoTakenAt || ""
       };
     }
 
@@ -1726,6 +1770,109 @@
       statusBox.className = "status" + (type ? " " + type : "");
     }
 
+    function latestEntry() {
+      return entries.length ? entries[entries.length - 1] : null;
+    }
+
+    function photoSizeKb(dataUrl) {
+      return dataUrl ? Math.round(dataUrl.length * 0.75 / 1024) : 0;
+    }
+
+    function updateUnitPhotoControls() {
+      const latest = latestEntry();
+      takeUnitPhotoBtn.disabled = editLocked || !latest;
+      if (!latest) {
+        unitPhotoStatus.textContent = "Save an entry first, then add a compressed unit photo.";
+        return;
+      }
+
+      unitPhotoStatus.textContent = latest.photoDataUrl
+        ? "Photo saved for #" + latest.sequence + " " + latest.code + " (" + photoSizeKb(latest.photoDataUrl) + " KB)."
+        : "Next photo will attach to #" + latest.sequence + " " + latest.code + ".";
+    }
+
+    function readImageFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function loadImageFromDataUrl(dataUrl) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Photo could not be loaded."));
+        image.src = dataUrl;
+      });
+    }
+
+    async function compressUnitPhoto(file) {
+      const original = await readImageFileAsDataUrl(file);
+      const image = await loadImageFromDataUrl(original);
+      const attempts = [
+        { maxSide: 640, quality: 0.42 },
+        { maxSide: 520, quality: 0.36 },
+        { maxSide: 420, quality: 0.30 },
+        { maxSide: 340, quality: 0.26 }
+      ];
+      let best = "";
+
+      for (const attempt of attempts) {
+        const scale = Math.min(1, attempt.maxSide / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("Photo compression is not available on this device.");
+        context.fillStyle = "#FFFFFF";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        best = canvas.toDataURL("image/jpeg", attempt.quality);
+        if (photoSizeKb(best) <= 120) break;
+      }
+
+      return best;
+    }
+
+    async function attachPhotoToLatestEntry(file) {
+      if (!file) return;
+      if (requireUnlocked("add a photo")) return;
+
+      const latest = latestEntry();
+      if (!latest) {
+        setStatus("Save a container entry first, then take a photo.", "warning");
+        updateUnitPhotoControls();
+        return;
+      }
+
+      unitPhotoStatus.textContent = "Compressing photo for #" + latest.sequence + " " + latest.code + "...";
+      takeUnitPhotoBtn.disabled = true;
+
+      try {
+        const photoDataUrl = await compressUnitPhoto(file);
+        latest.photoDataUrl = photoDataUrl;
+        latest.photoTakenAt = new Date().toISOString();
+        const saveOk = saveEntries();
+        setStatus(
+          saveOk
+            ? "Compressed photo saved for #" + latest.sequence + " " + latest.code + " (" + photoSizeKb(photoDataUrl) + " KB)."
+            : "Photo compressed, but this device could not save it. Save to cloud now.",
+          saveOk ? "success" : "warning"
+        );
+      } catch (error) {
+        setStatus("Photo was not saved: " + error.message, "error");
+      } finally {
+        unitPhotoInput.value = "";
+        render();
+        input.focus();
+      }
+    }
+
     function formatLocalTime(iso) {
       if (!iso) return "";
       const date = new Date(iso);
@@ -1870,7 +2017,9 @@
         notes,
         timestamp: new Date().toISOString(),
         editedAt: "",
-        restoredAt: ""
+        restoredAt: "",
+        photoDataUrl: "",
+        photoTakenAt: ""
       });
 
       input.value = "";
@@ -1905,6 +2054,8 @@
         originalTimestamp: item.timestamp || "",
         editedAt: item.editedAt || "",
         restoredAt: item.restoredAt || "",
+        photoDataUrl: item.photoDataUrl || "",
+        photoTakenAt: item.photoTakenAt || "",
         deletedAt: new Date().toISOString(),
         deleteType
       });
@@ -2004,7 +2155,9 @@
         notes: item.notes || "",
         timestamp: item.originalTimestamp || item.timestamp || new Date().toISOString(),
         editedAt: item.editedAt || "",
-        restoredAt: new Date().toISOString()
+        restoredAt: new Date().toISOString(),
+        photoDataUrl: item.photoDataUrl || "",
+        photoTakenAt: item.photoTakenAt || ""
       });
 
       entries.sort((a, b) => Number(a.sequence) - Number(b.sequence));
@@ -2422,6 +2575,8 @@
         "Container Status": item.status || "",
         "Employee/User Initials": item.initials || "",
         "Notes": item.notes || "",
+        "Photo Attached": item.photoDataUrl ? "YES" : "",
+        "Photo Date/Time": formatLocalTime(item.photoTakenAt),
         "Monthly Audit Match": monthlyMatchText(item.code),
         "Date/Time Entered": formatLocalTime(item.timestamp),
         "Edited Date/Time": formatLocalTime(item.editedAt),
@@ -2438,6 +2593,8 @@
         "Container Status": item.status || "",
         "Employee/User Initials": item.initials || "",
         "Notes": item.notes || "",
+        "Photo Attached": item.photoDataUrl ? "YES" : "",
+        "Photo Date/Time": formatLocalTime(item.photoTakenAt),
         "Original Date/Time Entered": formatLocalTime(item.originalTimestamp || item.timestamp),
         "Edited Date/Time": formatLocalTime(item.editedAt),
         "Deleted Date/Time": formatLocalTime(item.deletedAt),
@@ -2449,7 +2606,7 @@
       return [
         ["Session Name", sessionNameInput.value.trim()],
         [],
-        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"],
+        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"],
         ...entries.map(item => [
           item.sequence || "",
           item.code || "",
@@ -2458,6 +2615,8 @@
           item.status || "",
           item.initials || "",
           item.notes || "",
+          item.photoDataUrl ? "YES" : "",
+          formatLocalTime(item.photoTakenAt),
           formatLocalTime(item.timestamp),
           formatLocalTime(item.editedAt),
           formatLocalTime(item.restoredAt)
@@ -2469,7 +2628,7 @@
       return [
         ["Session Name", sessionNameInput.value.trim()],
         [],
-        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Original Date/Time Entered", "Edited Date/Time", "Deleted Date/Time", "Deleted By"],
+        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Original Date/Time Entered", "Edited Date/Time", "Deleted Date/Time", "Deleted By"],
         ...deletedEntries.map(item => [
           item.sequence || "",
           item.code || "",
@@ -2478,6 +2637,8 @@
           item.status || "",
           item.initials || "",
           item.notes || "",
+          item.photoDataUrl ? "YES" : "",
+          formatLocalTime(item.photoTakenAt),
           formatLocalTime(item.originalTimestamp || item.timestamp),
           formatLocalTime(item.editedAt),
           formatLocalTime(item.deletedAt),
@@ -3932,6 +4093,15 @@
       });
     }
 
+    function appendUnitPhotoThumb(container, item) {
+      if (!item.photoDataUrl) return;
+      const photo = document.createElement("img");
+      photo.className = "unit-photo-thumb";
+      photo.src = item.photoDataUrl;
+      photo.alt = "Photo for " + (item.code || "unit");
+      container.appendChild(photo);
+    }
+
 
     function renderRecentEntries() {
       recentEntriesCount.textContent = entries.length
@@ -3965,13 +4135,16 @@
           item.size || "12 ft",
           item.condition || "Good",
           item.status || "Built",
-          isMonthlyMatch ? "Matched Unit on List" : ""
+          isMonthlyMatch ? "Matched Unit on List" : "",
+          item.photoDataUrl ? "Photo" : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
           tag.className = "tag" + (value === "Matched Unit on List" ? " monthly-match-tag" : "");
           tag.textContent = value;
           meta.appendChild(tag);
         });
+
+        appendUnitPhotoThumb(code, item);
 
         row.appendChild(num);
         row.appendChild(code);
@@ -4034,6 +4207,7 @@
           item.condition || "Good",
           item.status || "Built",
           isMonthlyMatch ? "Matched Unit on List" : "",
+          item.photoDataUrl ? "Photo" : "",
           item.initials ? "By " + item.initials : "",
           item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
           item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
@@ -4053,6 +4227,8 @@
           note.textContent = "Notes: " + item.notes;
           info.appendChild(note);
         }
+
+        appendUnitPhotoThumb(info, item);
 
         const rowActions = document.createElement("div");
         rowActions.className = "row-actions";
@@ -4118,6 +4294,7 @@
           item.size || "",
           item.condition || "",
           item.status || "",
+          item.photoDataUrl ? "Photo" : "",
           item.initials ? "By " + item.initials : "",
           item.deleteType || "",
           item.deletedAt ? "Deleted " + formatShortTime(item.deletedAt) : ""
@@ -4137,6 +4314,8 @@
           note.textContent = "Notes: " + item.notes;
           info.appendChild(note);
         }
+
+        appendUnitPhotoThumb(info, item);
 
         const rowActions = document.createElement("div");
         rowActions.className = "row-actions";
@@ -4166,6 +4345,7 @@
       xlsxBadge.className = "badge" + (xlsxReady ? " unlocked" : " locked");
 
       addBtn.disabled = editLocked;
+      takeUnitPhotoBtn.disabled = editLocked || !latestEntry();
       importBackupBtn.disabled = editLocked;
       applyImportBtn.disabled = editLocked || !pendingImport || !pendingImport.canApply;
       saveEditBtn.disabled = editLocked;
@@ -4201,6 +4381,7 @@
       renderReport();
       renderOccupiedAudit();
       renderLockState();
+      updateUnitPhotoControls();
 
       entryModeBtn.textContent = document.body.classList.contains("entry-mode")
         ? "Exit Big Entry Mode"
@@ -4288,6 +4469,17 @@
     });
 
     addBtn.addEventListener("click", addEntry);
+    takeUnitPhotoBtn.addEventListener("click", () => {
+      if (requireUnlocked("add a photo")) return;
+      if (!latestEntry()) {
+        setStatus("Save a container entry first, then take a photo.", "warning");
+        updateUnitPhotoControls();
+        input.focus();
+        return;
+      }
+      unitPhotoInput.click();
+    });
+    unitPhotoInput.addEventListener("change", () => attachPhotoToLatestEntry(unitPhotoInput.files && unitPhotoInput.files[0]));
     finalExportBtn.addEventListener("click", () => exportXlsx(true));
     saveCloudBtn.addEventListener("click", saveAllToCloud);
     saveCloudEntryModeBtn.addEventListener("click", saveAllToCloud);
