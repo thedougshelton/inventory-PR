@@ -351,6 +351,16 @@
     .actions.three { grid-template-columns: repeat(3, 1fr); }
     .actions.four { grid-template-columns: repeat(4, 1fr); }
 
+    .entry-mode-cloud-action {
+      display: none;
+      margin: 8px 0 10px;
+    }
+
+    .entry-mode-cloud-action button {
+      width: 100%;
+      min-height: 52px;
+    }
+
     .status {
       margin-top: 10px;
       padding: 10px 12px;
@@ -896,6 +906,10 @@
       margin: 10px 0;
     }
 
+    body.entry-mode .entry-mode-cloud-action {
+      display: block;
+    }
+
     body.entry-mode .metric {
       min-height: 66px;
       padding: 8px 6px;
@@ -1055,6 +1069,9 @@
       </div>
     </section>
 
+    <div class="entry-mode-cloud-action">
+      <button id="saveCloudEntryModeBtn" type="button">Save To Cloud</button>
+    </div>
 
     <section class="card secondary-section">
       <div class="list-head">
@@ -1406,6 +1423,7 @@
     const addBtn = document.getElementById("addBtn");
     const finalExportBtn = document.getElementById("finalExportBtn");
     const saveCloudBtn = document.getElementById("saveCloudBtn");
+    const saveCloudEntryModeBtn = document.getElementById("saveCloudEntryModeBtn");
     const unlockBtn = document.getElementById("unlockBtn");
     const importPanel = document.getElementById("importPanel");
     const entryModeBtn = document.getElementById("entryModeBtn");
@@ -3389,6 +3407,7 @@
       if (!requireCloudSavePin("save to cloud")) return;
 
       saveCloudBtn.disabled = true;
+      saveCloudEntryModeBtn.disabled = true;
       try {
         if (hasMonthlyList) {
           await uploadOccupiedListToCloud({ skipPin: true });
@@ -3404,6 +3423,7 @@
         setStatus("Cloud save complete.", "success");
       } finally {
         saveCloudBtn.disabled = false;
+        saveCloudEntryModeBtn.disabled = false;
         input.focus();
       }
     }
@@ -4218,6 +4238,7 @@
     addBtn.addEventListener("click", addEntry);
     finalExportBtn.addEventListener("click", () => exportXlsx(true));
     saveCloudBtn.addEventListener("click", saveAllToCloud);
+    saveCloudEntryModeBtn.addEventListener("click", saveAllToCloud);
     unlockBtn.addEventListener("click", unlockEditing);
     entryModeBtn.addEventListener("click", toggleEntryMode);
     importBackupBtn.addEventListener("click", importBackup);
