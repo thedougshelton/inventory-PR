@@ -304,6 +304,17 @@
       user-select: none;
     }
 
+    .container-keyboard[hidden] {
+      display: none;
+    }
+
+    .keyboard-toggle {
+      width: 100%;
+      min-height: 46px;
+      margin: 10px 0 0;
+      font-weight: 800;
+    }
+
     .keyboard-row {
       display: grid;
       gap: 6px;
@@ -1019,6 +1030,11 @@
       margin: 10px 0;
     }
 
+    body.entry-mode .keyboard-toggle {
+      min-height: 54px;
+      font-size: 18px;
+    }
+
     body.entry-mode .keyboard-key {
       min-height: 52px;
       font-size: 19px;
@@ -1255,7 +1271,8 @@
         />
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
-      <div id="containerKeyboard" class="container-keyboard" aria-label="Container number keyboard"></div>
+      <button id="toggleContainerKeyboardBtn" class="keyboard-toggle" type="button" aria-expanded="false" aria-controls="containerKeyboard">Show Keyboard</button>
+      <div id="containerKeyboard" class="container-keyboard" aria-label="Container number keyboard" hidden></div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
       <p id="entryHelp" class="help">
         Accepted format: exactly 6 letters/numbers. Entry numbers are permanent, so deleted numbers are not reused.
@@ -1582,6 +1599,7 @@
     const lockBadge = document.getElementById("lockBadge");
     const xlsxBadge = document.getElementById("xlsxBadge");
     const statusBox = document.getElementById("status");
+    const toggleContainerKeyboardBtn = document.getElementById("toggleContainerKeyboardBtn");
     const containerKeyboard = document.getElementById("containerKeyboard");
     const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
     const unitPhotoInput = document.getElementById("unitPhotoInput");
@@ -1858,6 +1876,18 @@
       button.addEventListener("pointerdown", event => event.preventDefault());
       button.addEventListener("click", () => pressContainerKeyboardKey(key));
       return button;
+    }
+
+    function updateContainerKeyboardToggle() {
+      const isOpen = !containerKeyboard.hidden;
+      toggleContainerKeyboardBtn.textContent = isOpen ? "Hide Keyboard" : "Show Keyboard";
+      toggleContainerKeyboardBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    function toggleContainerKeyboard() {
+      containerKeyboard.hidden = !containerKeyboard.hidden;
+      updateContainerKeyboardToggle();
+      input.focus();
     }
 
     function renderContainerKeyboard() {
@@ -4675,6 +4705,7 @@
       xlsxBadge.className = "badge" + (xlsxReady ? " unlocked" : " locked");
 
       addBtn.disabled = editLocked;
+      toggleContainerKeyboardBtn.disabled = editLocked;
       containerKeyboard.querySelectorAll("button").forEach(button => {
         button.disabled = editLocked;
       });
@@ -4802,6 +4833,7 @@
     });
 
     addBtn.addEventListener("click", addEntry);
+    toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
     takeUnitPhotoBtn.addEventListener("click", () => {
       if (requireUnlocked("add a photo")) return;
       if (!latestEntry()) {
@@ -4853,6 +4885,7 @@
     cancelDeleteBtn.addEventListener("click", cancelDelete);
 
     renderContainerKeyboard();
+    updateContainerKeyboardToggle();
     setTimeout(render, 500);
     render();
     input.focus();
