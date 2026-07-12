@@ -314,7 +314,7 @@
     }
 
     .keyboard-row.letters {
-      grid-template-columns: repeat(13, minmax(0, 1fr));
+      grid-template-columns: repeat(9, minmax(0, 1fr));
     }
 
     .keyboard-row.actions {
@@ -1054,7 +1054,7 @@
       }
 
       .keyboard-row.letters {
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .session-row {
@@ -1864,8 +1864,7 @@
       containerKeyboard.innerHTML = "";
       const rows = [
         { className: "numbers", keys: "1234567890".split("") },
-        { className: "letters", keys: "ABCDEFGHIJKLM".split("") },
-        { className: "letters", keys: "NOPQRSTUVWXYZ".split("") },
+        { className: "letters", keys: "ABCDMPRTZ".split("") },
         {
           className: "actions",
           keys: [
