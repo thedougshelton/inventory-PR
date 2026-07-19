@@ -1598,21 +1598,29 @@
 
   <script>
     const STORAGE_KEY = "warehouse_inventory_entries_v4";
+    const STORAGE_KEY_PREFIX = "warehouse_inventory_entries_v4_";
     const OLD_KEYS = ["warehouse_inventory_entries_v3", "warehouse_inventory_entries_v2", "warehouse_inventory_entries_v1"];
     const DELETED_KEY = "warehouse_inventory_deleted_entries_v4";
+    const DELETED_KEY_PREFIX = "warehouse_inventory_deleted_entries_v4_";
     const OLD_DELETED_KEYS = ["warehouse_inventory_deleted_entries_v2", "warehouse_inventory_deleted_entries_v1"];
     const DUPE_KEY = "warehouse_inventory_dupes_v4";
+    const DUPE_KEY_PREFIX = "warehouse_inventory_dupes_v4_";
     const OLD_DUPE_KEYS = ["warehouse_inventory_dupes_v3", "warehouse_inventory_dupes_v2", "warehouse_inventory_dupes_v1"];
     const NEXT_SEQUENCE_KEY = "warehouse_inventory_next_sequence_v4";
+    const NEXT_SEQUENCE_KEY_PREFIX = "warehouse_inventory_next_sequence_v4_";
     const OLD_NEXT_KEYS = ["warehouse_inventory_next_sequence_v2", "warehouse_inventory_next_sequence_v1"];
     const SESSION_KEY = "warehouse_inventory_session_name_v2";
     const SESSION_KEY_PREFIX = "warehouse_inventory_session_name_v2_";
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
     const INITIALS_KEY_PREFIX = "warehouse_inventory_initials_v1_";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
+    const LAST_SAVED_KEY_PREFIX = "warehouse_inventory_last_saved_v2_";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
+    const FINAL_EXPORT_SIGNATURE_KEY_PREFIX = "warehouse_inventory_final_export_signature_v1_";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
+    const EDIT_LOCKED_KEY_PREFIX = "warehouse_inventory_edit_locked_v1_";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
+    const ENTRY_FORM_STATE_KEY_PREFIX = "warehouse_inventory_entry_form_state_v1_";
     const MONTHLY_OCCUPIED_KEY = "warehouse_inventory_monthly_occupied_v1";
     const MONTHLY_OCCUPIED_KEY_PREFIX = "warehouse_inventory_monthly_occupied_v1_";
     const CLOUD_URL_KEY = "warehouse_inventory_cloud_url_v1";
@@ -1754,11 +1762,11 @@
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
     let occupiedMaster = loadOccupiedMaster();
-    let duplicateBlocks = loadNumberFromKeys([DUPE_KEY, ...OLD_DUPE_KEYS], 0);
+    let duplicateBlocks = loadDuplicateBlocks();
     let nextSequence = loadNextSequence();
-    let lastSavedAt = localStorage.getItem(LAST_SAVED_KEY) || "";
-    let finalExportSignature = localStorage.getItem(FINAL_EXPORT_SIGNATURE_KEY) || "";
-    let editLocked = localStorage.getItem(EDIT_LOCKED_KEY) === "true";
+    let lastSavedAt = loadLastSavedAt();
+    let finalExportSignature = loadFinalExportSignature();
+    let editLocked = loadEditLocked();
     let editingSequence = null;
     let pendingDeleteSequence = null;
     let pendingImport = null;
@@ -1768,6 +1776,7 @@
 
     sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = loadEmployeeInitials();
+    applyEntryFormState();
     updateCloudActionLabels();
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
@@ -1827,9 +1836,51 @@
       return Number.isFinite(number) ? number : fallback;
     }
 
+    function auditStorageKey(prefix, presetKey = selectedCloudPresetKey()) {
+      return prefix + presetKey;
+    }
+
+    function legacyKeysForPreset(presetKey, keys) {
+      return presetKey === "tampa" ? keys : [];
+    }
+
     function getRadioValue(name) {
       const checked = document.querySelector('input[name="' + name + '"]:checked');
       return checked ? checked.value : "";
+    }
+
+    function setRadioValue(name, value) {
+      const target = document.querySelector('input[name="' + name + '"][value="' + value + '"]');
+      if (target) target.checked = true;
+    }
+
+    function entryFormStateStorageKey(presetKey = selectedCloudPresetKey()) {
+      return ENTRY_FORM_STATE_KEY_PREFIX + presetKey;
+    }
+
+    function loadEntryFormState(presetKey = selectedCloudPresetKey()) {
+      try {
+        return JSON.parse(localStorage.getItem(entryFormStateStorageKey(presetKey)) || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function saveEntryFormState(presetKey = selectedCloudPresetKey()) {
+      return safeSetItem(entryFormStateStorageKey(presetKey), JSON.stringify({
+        size: sizeSelect.value || "12 ft",
+        condition: getRadioValue("containerCondition") || "Good",
+        status: getRadioValue("containerStatus") || "Built"
+      }));
+    }
+
+    function applyEntryFormState(presetKey = selectedCloudPresetKey()) {
+      const state = loadEntryFormState(presetKey);
+      if (state.size && [...sizeSelect.options].some(option => option.value === state.size)) {
+        sizeSelect.value = state.size;
+      }
+      setRadioValue("containerCondition", state.condition || "Good");
+      setRadioValue("containerStatus", state.status || "Built");
     }
 
     function normalizeEntry(item, fallbackSequence) {
@@ -1865,9 +1916,12 @@
       };
     }
 
-    function loadEntries() {
+    function loadEntries(presetKey = selectedCloudPresetKey()) {
       try {
-        const raw = firstLocalStorageValue([STORAGE_KEY, ...OLD_KEYS]);
+        const raw = firstLocalStorageValue([
+          auditStorageKey(STORAGE_KEY_PREFIX, presetKey),
+          ...legacyKeysForPreset(presetKey, [STORAGE_KEY, ...OLD_KEYS])
+        ]);
         const parsed = raw ? JSON.parse(raw) : [];
         let fallbackSequence = 1;
 
@@ -1881,9 +1935,12 @@
       }
     }
 
-    function loadDeletedEntries() {
+    function loadDeletedEntries(presetKey = selectedCloudPresetKey()) {
       try {
-        const raw = firstLocalStorageValue([DELETED_KEY, ...OLD_DELETED_KEYS]);
+        const raw = firstLocalStorageValue([
+          auditStorageKey(DELETED_KEY_PREFIX, presetKey),
+          ...legacyKeysForPreset(presetKey, [DELETED_KEY, ...OLD_DELETED_KEYS])
+        ]);
         const parsed = raw ? JSON.parse(raw) : [];
         let fallbackSequence = 1;
 
@@ -1945,10 +2002,13 @@
       }
     }
 
-    function loadNextSequence() {
-      const savedNext = loadNumberFromKeys([NEXT_SEQUENCE_KEY, ...OLD_NEXT_KEYS], 0);
-      const highestActive = entries.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
-      const highestDeleted = deletedEntries.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
+    function loadNextSequence(presetKey = selectedCloudPresetKey(), activeItems = entries, deletedItems = deletedEntries) {
+      const savedNext = loadNumberFromKeys([
+        auditStorageKey(NEXT_SEQUENCE_KEY_PREFIX, presetKey),
+        ...legacyKeysForPreset(presetKey, [NEXT_SEQUENCE_KEY, ...OLD_NEXT_KEYS])
+      ], 0);
+      const highestActive = activeItems.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
+      const highestDeleted = deletedItems.reduce((highest, item) => Math.max(highest, Number(item.sequence) || 0), 0);
       const highestExisting = Math.max(highestActive, highestDeleted);
 
       if (Number.isFinite(savedNext) && savedNext > highestExisting) {
@@ -1956,6 +2016,34 @@
       }
 
       return highestExisting + 1;
+    }
+
+    function loadDuplicateBlocks(presetKey = selectedCloudPresetKey()) {
+      return loadNumberFromKeys([
+        auditStorageKey(DUPE_KEY_PREFIX, presetKey),
+        ...legacyKeysForPreset(presetKey, [DUPE_KEY, ...OLD_DUPE_KEYS])
+      ], 0);
+    }
+
+    function loadLastSavedAt(presetKey = selectedCloudPresetKey()) {
+      return firstLocalStorageValue([
+        auditStorageKey(LAST_SAVED_KEY_PREFIX, presetKey),
+        ...legacyKeysForPreset(presetKey, [LAST_SAVED_KEY])
+      ]) || "";
+    }
+
+    function loadFinalExportSignature(presetKey = selectedCloudPresetKey()) {
+      return firstLocalStorageValue([
+        auditStorageKey(FINAL_EXPORT_SIGNATURE_KEY_PREFIX, presetKey),
+        ...legacyKeysForPreset(presetKey, [FINAL_EXPORT_SIGNATURE_KEY])
+      ]) || "";
+    }
+
+    function loadEditLocked(presetKey = selectedCloudPresetKey()) {
+      return firstLocalStorageValue([
+        auditStorageKey(EDIT_LOCKED_KEY_PREFIX, presetKey),
+        ...legacyKeysForPreset(presetKey, [EDIT_LOCKED_KEY])
+      ]) === "true";
     }
 
     function safeSetItem(key, value) {
@@ -1980,18 +2068,28 @@
       }
     }
 
-    function saveEntries() {
-      lastSavedAt = new Date().toISOString();
+    function saveEntries(presetKey = selectedCloudPresetKey(), options = {}) {
+      if (options.updateLastSaved !== false) lastSavedAt = new Date().toISOString();
       const ok = [
-        safeSetItem(STORAGE_KEY, JSON.stringify(entries)),
-        safeSetItem(DELETED_KEY, JSON.stringify(deletedEntries)),
-        safeSetItem(DUPE_KEY, String(duplicateBlocks)),
-        safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence)),
-        saveSessionName(),
-        saveEmployeeInitials(),
-        safeSetItem(LAST_SAVED_KEY, lastSavedAt),
-        safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false")
+        safeSetItem(auditStorageKey(STORAGE_KEY_PREFIX, presetKey), JSON.stringify(entries)),
+        safeSetItem(auditStorageKey(DELETED_KEY_PREFIX, presetKey), JSON.stringify(deletedEntries)),
+        safeSetItem(auditStorageKey(DUPE_KEY_PREFIX, presetKey), String(duplicateBlocks)),
+        safeSetItem(auditStorageKey(NEXT_SEQUENCE_KEY_PREFIX, presetKey), String(nextSequence)),
+        saveSessionName(presetKey),
+        saveEmployeeInitials(presetKey),
+        safeSetItem(auditStorageKey(LAST_SAVED_KEY_PREFIX, presetKey), lastSavedAt),
+        safeSetItem(auditStorageKey(EDIT_LOCKED_KEY_PREFIX, presetKey), editLocked ? "true" : "false"),
+        safeSetItem(auditStorageKey(FINAL_EXPORT_SIGNATURE_KEY_PREFIX, presetKey), finalExportSignature)
       ].every(Boolean);
+      if (ok && presetKey === "tampa") {
+        safeSetItem(STORAGE_KEY, JSON.stringify(entries));
+        safeSetItem(DELETED_KEY, JSON.stringify(deletedEntries));
+        safeSetItem(DUPE_KEY, String(duplicateBlocks));
+        safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence));
+        safeSetItem(LAST_SAVED_KEY, lastSavedAt);
+        safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false");
+        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
+      }
       if (ok) savedText.textContent = "Saved on this device";
       return ok;
     }
@@ -2270,10 +2368,7 @@
     function markFinalExportedAndLocked() {
       finalExportSignature = currentSignature();
       editLocked = true;
-      return [
-        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature),
-        safeSetItem(EDIT_LOCKED_KEY, "true")
-      ].every(Boolean);
+      return saveEntries();
     }
 
     function requireUnlocked(actionText) {
@@ -2624,7 +2719,7 @@
       }
 
       editLocked = false;
-      const saveOk = safeSetItem(EDIT_LOCKED_KEY, "false");
+      const saveOk = saveEntries();
       setStatus(
         saveOk
           ? "Editing unlocked. Make another Final Export + Lock when finished."
@@ -2665,17 +2760,13 @@
       finishConfirm.value = "";
       finalExportSignature = "";
       editLocked = false;
-      const clearOk = [
-        safeRemoveItem(FINAL_EXPORT_SIGNATURE_KEY),
-        safeSetItem(EDIT_LOCKED_KEY, "false")
-      ].every(Boolean);
       const saveOk = saveEntries();
       render();
       setStatus(
-        clearOk && saveOk
+        saveOk
           ? "Finished list cleared. Ready for a new inventory."
           : "Finished list cleared for this app session, but the browser save did not fully complete. Save to cloud now.",
-        clearOk && saveOk ? "success" : "warning"
+        saveOk ? "success" : "warning"
       );
       input.focus();
     }
@@ -4041,17 +4132,29 @@
     }
 
     function switchCloudPreset() {
-      saveSessionName(activeCloudPresetKey);
-      saveEmployeeInitials(activeCloudPresetKey);
+      saveEntryFormState(activeCloudPresetKey);
+      saveEntries(activeCloudPresetKey, { updateLastSaved: false });
       activeCloudPresetKey = selectedCloudPresetKey();
       const settings = cloudSettings();
       saveCloudSettings();
+      entries = loadEntries(activeCloudPresetKey);
+      deletedEntries = loadDeletedEntries(activeCloudPresetKey);
       occupiedMaster = loadOccupiedMaster();
+      duplicateBlocks = loadDuplicateBlocks(activeCloudPresetKey);
+      nextSequence = loadNextSequence(activeCloudPresetKey, entries, deletedEntries);
+      lastSavedAt = loadLastSavedAt(activeCloudPresetKey);
+      finalExportSignature = loadFinalExportSignature(activeCloudPresetKey);
+      editLocked = loadEditLocked(activeCloudPresetKey);
+      editingSequence = null;
+      pendingDeleteSequence = null;
       sessionNameInput.value = loadSessionName(activeCloudPresetKey);
       employeeInitialsInput.value = loadEmployeeInitials(activeCloudPresetKey);
+      applyEntryFormState(activeCloudPresetKey);
+      input.value = "";
+      notesInput.value = "";
       occupiedFileInput.value = "";
       render();
-      setStatus(settings.label + " selected. Session name, employee initials, and uploaded document list switched.", "info");
+      setStatus(settings.label + " selected. Audit data switched.", "info");
       input.focus();
     }
 
@@ -4533,12 +4636,6 @@
       if (data.occupiedMaster) {
         occupiedMaster = data.occupiedMaster;
         saveOccupiedMaster();
-      }
-
-      if (finalExportSignature) {
-        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
-      } else {
-        safeRemoveItem(FINAL_EXPORT_SIGNATURE_KEY);
       }
 
       const saveOk = saveEntries();
@@ -5135,6 +5232,11 @@
 
     editInitials.addEventListener("input", () => {
       editInitials.value = normalizeInitials(editInitials.value);
+    });
+
+    sizeSelect.addEventListener("change", saveEntryFormState);
+    document.querySelectorAll('input[name="containerCondition"], input[name="containerStatus"]').forEach(option => {
+      option.addEventListener("change", saveEntryFormState);
     });
 
     notesInput.addEventListener("input", () => {
