@@ -3371,7 +3371,12 @@
       const expectedScannedRows = expectedAndScannedRows();
       const expectedScannedSheet = XLSX.utils.aoa_to_sheet(expectedScannedRows);
       styleAoaRowsByCondition(expectedScannedSheet, expectedScannedRows, 5);
-      XLSX.utils.book_append_sheet(wb, expectedScannedSheet, "Expected And Scanned");
+      XLSX.utils.book_append_sheet(wb, expectedScannedSheet, "Scanned Units Match Inventory");
+
+      const sizeMismatchRows = mismatchSheetRows();
+      const sizeMismatchSheet = XLSX.utils.aoa_to_sheet(sizeMismatchRows);
+      styleAoaRowsByCondition(sizeMismatchSheet, sizeMismatchRows, 3);
+      XLSX.utils.book_append_sheet(wb, sizeMismatchSheet, "Unit Size Not Matched");
 
       const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
 
