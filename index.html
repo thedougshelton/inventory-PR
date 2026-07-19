@@ -113,6 +113,13 @@
       font-weight: 700;
     }
 
+    .badge.info {
+      color: var(--info);
+      background: var(--blueSoft);
+      border-color: #bfdbfe;
+      font-weight: 700;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -229,6 +236,15 @@
     .setup-action button {
       width: 100%;
       min-height: 46px;
+    }
+
+    .cloud-save-indicator {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 34px;
+      text-align: center;
     }
 
     .setup-check {
@@ -407,6 +423,10 @@
     .entry-mode-cloud-action button {
       width: 100%;
       min-height: 52px;
+    }
+
+    .entry-mode-cloud-action .cloud-save-indicator {
+      margin-top: 8px;
     }
 
     .status {
@@ -1241,7 +1261,7 @@
       <div class="top-status">
         <span id="lockBadge" class="badge unlocked">Editing Unlocked</span>
         <span id="xlsxBadge" class="badge">XLSX loading…</span>
-        <span class="badge">App Updated July 12</span>
+        <span class="badge">App Updated July 19</span>
       </div>
     </header>
 
@@ -1261,6 +1281,7 @@
         </div>
         <div class="setup-action">
           <button id="saveCloudBtn" type="button">Save To Cloud</button>
+          <span id="cloudSaveBadge" class="badge warning cloud-save-indicator">Unsaved Changes</span>
         </div>
       </div>
     </section>
@@ -1286,6 +1307,7 @@
 
     <div class="entry-mode-cloud-action">
       <button id="saveCloudEntryModeBtn" type="button">Save To Cloud</button>
+      <span id="entryModeCloudSaveBadge" class="badge warning cloud-save-indicator">Unsaved Changes</span>
     </div>
 
     <section class="card secondary-section">
@@ -1615,6 +1637,8 @@
     const INITIALS_KEY_PREFIX = "warehouse_inventory_initials_v1_";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const LAST_SAVED_KEY_PREFIX = "warehouse_inventory_last_saved_v2_";
+    const LAST_CLOUD_SAVED_KEY_PREFIX = "warehouse_inventory_last_cloud_saved_v1_";
+    const CLOUD_SAVE_SIGNATURE_KEY_PREFIX = "warehouse_inventory_cloud_save_signature_v1_";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const FINAL_EXPORT_SIGNATURE_KEY_PREFIX = "warehouse_inventory_final_export_signature_v1_";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
@@ -1711,6 +1735,8 @@
     const saveFullAuditCloudBtn = saveCloudBtn;
     const loadFullAuditCloudBtn = loadCloudCombinedBtn;
     const cloudSyncStatus = document.getElementById("cloudSyncStatus");
+    const cloudSaveBadge = document.getElementById("cloudSaveBadge");
+    const entryModeCloudSaveBadge = document.getElementById("entryModeCloudSaveBadge");
 
     const editPanel = document.getElementById("editPanel");
     const editTitle = document.getElementById("editTitle");
@@ -1765,6 +1791,8 @@
     let duplicateBlocks = loadDuplicateBlocks();
     let nextSequence = loadNextSequence();
     let lastSavedAt = loadLastSavedAt();
+    let lastCloudSavedAt = loadLastCloudSavedAt();
+    let lastCloudSaveSignature = loadCloudSaveSignature();
     let finalExportSignature = loadFinalExportSignature();
     let editLocked = loadEditLocked();
     let editingSequence = null;
@@ -2032,6 +2060,14 @@
       ]) || "";
     }
 
+    function loadLastCloudSavedAt(presetKey = selectedCloudPresetKey()) {
+      return localStorage.getItem(auditStorageKey(LAST_CLOUD_SAVED_KEY_PREFIX, presetKey)) || "";
+    }
+
+    function loadCloudSaveSignature(presetKey = selectedCloudPresetKey()) {
+      return localStorage.getItem(auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey)) || "";
+    }
+
     function loadFinalExportSignature(presetKey = selectedCloudPresetKey()) {
       return firstLocalStorageValue([
         auditStorageKey(FINAL_EXPORT_SIGNATURE_KEY_PREFIX, presetKey),
@@ -2216,6 +2252,56 @@
       return Math.round(JSON.stringify(value).length / 1024);
     }
 
+    function cloudRowTime(row) {
+      if (!row) return "";
+      return row.updated_at || (row.payload && (row.payload.cloudSavedAt || row.payload.syncedAt)) || "";
+    }
+
+    function cloudRowUpdatedBy(row) {
+      if (!row) return "";
+      return row.updated_by || (row.payload && row.payload.employeeInitials) || "";
+    }
+
+    function cloudAuditEntryCount(row, key) {
+      if (!row || !row.payload || !Array.isArray(row.payload[key])) return 0;
+      return row.payload[key].length;
+    }
+
+    function cloudUploadedCount(row) {
+      const master = row && row.payload ? row.payload.occupiedMaster : null;
+      return master && Array.isArray(master.codes) ? master.codes.length : 0;
+    }
+
+    function cloudLoadPreviewText(settings, monthlyRow, fullRow) {
+      const hasCloudList = Boolean(monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster);
+      const hasCloudAudit = Boolean(fullRow && fullRow.payload);
+      const monthlyUpdated = cloudRowTime(monthlyRow);
+      const fullUpdated = cloudRowTime(fullRow);
+      return [
+        "LOAD FROM CLOUD?",
+        "",
+        "SELECTED AUDIT: " + settings.label,
+        "",
+        "CLOUD UPLOADED DOCUMENT:",
+        hasCloudList ? "EXPECTED CONTAINERS: " + cloudUploadedCount(monthlyRow) : "NO UPLOADED DOCUMENT FOUND",
+        hasCloudList && monthlyUpdated ? "LAST CLOUD UPDATE: " + formatLocalTime(monthlyUpdated) : "",
+        hasCloudList && cloudRowUpdatedBy(monthlyRow) ? "UPDATED BY: " + cloudRowUpdatedBy(monthlyRow) : "",
+        "",
+        "CLOUD SCANNED AUDIT:",
+        hasCloudAudit ? "ACTIVE ENTRIES: " + cloudAuditEntryCount(fullRow, "entries") : "NO SCANNED AUDIT FOUND",
+        hasCloudAudit ? "DELETED ENTRIES: " + cloudAuditEntryCount(fullRow, "deletedEntries") : "",
+        hasCloudAudit && fullUpdated ? "LAST CLOUD UPDATE: " + formatLocalTime(fullUpdated) : "",
+        hasCloudAudit && cloudRowUpdatedBy(fullRow) ? "UPDATED BY: " + cloudRowUpdatedBy(fullRow) : "",
+        "",
+        "CURRENT DEVICE:",
+        "ACTIVE ENTRIES: " + entries.length,
+        "DELETED ENTRIES: " + deletedEntries.length,
+        "UPLOADED DOCUMENT EXPECTED: " + occupiedMaster.codes.length,
+        "",
+        "CONTINUE LOADING FROM CLOUD?"
+      ].filter(line => line !== "").join("\n");
+    }
+
     function updateUnitPhotoControls() {
       const latest = latestEntry();
       takeUnitPhotoBtn.disabled = editLocked || !latest;
@@ -2359,6 +2445,62 @@
         active: entries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.timestamp, item.editedAt || ""]),
         deleted: deletedEntries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.deletedAt || "", item.deleteType || ""])
       });
+    }
+
+    function cloudSaveSignature() {
+      return JSON.stringify({
+        session: sessionNameInput.value.trim(),
+        initials: employeeInitialsInput.value.trim(),
+        occupied: {
+          fileName: occupiedMaster.fileName || "",
+          importedAt: occupiedMaster.importedAt || "",
+          items: occupiedExpectedItems().map(item => [item.code, item.type || ""]),
+          rawRows: Array.isArray(occupiedMaster.rawRows) ? occupiedMaster.rawRows : []
+        },
+        active: entries.map(item => [
+          item.sequence,
+          item.code,
+          item.size,
+          item.condition,
+          item.status,
+          item.initials || "",
+          item.notes || "",
+          item.timestamp || "",
+          item.editedAt || "",
+          item.restoredAt || "",
+          item.photoTakenAt || "",
+          item.photoDataUrl || "",
+          item.photoThumbDataUrl || ""
+        ]),
+        deleted: deletedEntries.map(item => [
+          item.sequence,
+          item.code,
+          item.size,
+          item.condition,
+          item.status,
+          item.initials || "",
+          item.notes || "",
+          item.timestamp || "",
+          item.deletedAt || "",
+          item.deleteType || "",
+          item.photoTakenAt || "",
+          item.photoDataUrl || "",
+          item.photoThumbDataUrl || ""
+        ])
+      });
+    }
+
+    function hasUnsavedCloudChanges() {
+      return cloudSaveSignature() !== lastCloudSaveSignature;
+    }
+
+    function markCloudSaved(presetKey = selectedCloudPresetKey()) {
+      lastCloudSavedAt = new Date().toISOString();
+      lastCloudSaveSignature = cloudSaveSignature();
+      return [
+        safeSetItem(auditStorageKey(LAST_CLOUD_SAVED_KEY_PREFIX, presetKey), lastCloudSavedAt),
+        safeSetItem(auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey), lastCloudSaveSignature)
+      ].every(Boolean);
     }
 
     function hasFreshFinalExport() {
@@ -3686,8 +3828,8 @@
     }
 
     function dataFromWorkbook(workbook) {
-      const activeSheet = workbook.Sheets["Active Entries"] || workbook.Sheets[workbook.SheetNames[0]];
-      const deletedSheet = workbook.Sheets["Deleted Entries"];
+      const activeSheet = workbook.Sheets["Scanned Units"] || workbook.Sheets["Active Entries"] || workbook.Sheets[workbook.SheetNames[0]];
+      const deletedSheet = workbook.Sheets["Deleted Entry"] || workbook.Sheets["Deleted Entries"];
       const activeObjects = activeSheet ? XLSX.utils.sheet_to_json(activeSheet, { defval: "" }) : [];
       const deletedObjects = deletedSheet ? XLSX.utils.sheet_to_json(deletedSheet, { defval: "" }) : [];
 
@@ -4143,6 +4285,8 @@
       duplicateBlocks = loadDuplicateBlocks(activeCloudPresetKey);
       nextSequence = loadNextSequence(activeCloudPresetKey, entries, deletedEntries);
       lastSavedAt = loadLastSavedAt(activeCloudPresetKey);
+      lastCloudSavedAt = loadLastCloudSavedAt(activeCloudPresetKey);
+      lastCloudSaveSignature = loadCloudSaveSignature(activeCloudPresetKey);
       finalExportSignature = loadFinalExportSignature(activeCloudPresetKey);
       editLocked = loadEditLocked(activeCloudPresetKey);
       editingSequence = null;
@@ -4437,6 +4581,8 @@
           setStatus("Cloud save incomplete. Check the cloud message before continuing.", "error");
           return;
         }
+        markCloudSaved();
+        render();
         setCloudStatus(
           "Cloud save complete. Uploaded document: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
           " expected. Active entries: " + entries.length + ".",
@@ -4485,12 +4631,7 @@
           return;
         }
 
-        const ok = confirm(
-          "LOAD FROM CLOUD?\n\n" +
-          (hasCloudList ? "THIS WILL LOAD THE UPLOADED DOCUMENT FROM CLOUD.\n" : "") +
-          (hasCloudAudit ? "THIS WILL REPLACE THIS DEVICE'S CURRENT SCANNED ENTRIES.\n\nCURRENT DEVICE: " + entries.length + " ACTIVE, " + deletedEntries.length + " DELETED.\n" : "") +
-          "\nCONTINUE?"
-        );
+        const ok = confirm(cloudLoadPreviewText(settings, monthlyRow, fullRow));
         if (!ok) {
           setCloudStatus("Cloud load canceled. This device was not changed.", "info");
           input.focus();
@@ -4508,6 +4649,11 @@
           const data = dataFromJsonBackup(fullRow.payload);
           fullAuditLoaded = applyImportedData(data);
         } else {
+          render();
+        }
+
+        if (monthlyLoaded || fullAuditLoaded) {
+          markCloudSaved();
           render();
         }
 
@@ -5157,6 +5303,21 @@
       });
     }
 
+    function renderCloudSaveState() {
+      const hasAnyData = occupiedMaster.codes.length || entries.length || deletedEntries.length;
+      const unsaved = hasUnsavedCloudChanges();
+      const text = !hasAnyData
+        ? "No Audit Data Yet"
+        : unsaved
+        ? "Unsaved Changes"
+        : "Cloud Saved" + (lastCloudSavedAt ? " " + formatShortTime(lastCloudSavedAt) : "");
+      const className = "badge cloud-save-indicator " + (!hasAnyData ? "info" : unsaved ? "warning" : "unlocked");
+      [cloudSaveBadge, entryModeCloudSaveBadge].forEach(badge => {
+        badge.textContent = text;
+        badge.className = className;
+      });
+    }
+
     function renderLockState() {
       lockBadge.textContent = editLocked ? "Editing Locked" : "Editing Unlocked";
       lockBadge.className = "badge " + (editLocked ? "locked" : "unlocked");
@@ -5205,6 +5366,7 @@
       renderDeletedEntries();
       renderReport();
       renderOccupiedAudit();
+      renderCloudSaveState();
       renderLockState();
       updateUnitPhotoControls();
 
@@ -5237,6 +5399,7 @@
     employeeInitialsInput.addEventListener("input", () => {
       employeeInitialsInput.value = normalizeInitials(employeeInitialsInput.value);
       saveEmployeeInitials();
+      renderCloudSaveState();
     });
 
     editInitials.addEventListener("input", () => {
