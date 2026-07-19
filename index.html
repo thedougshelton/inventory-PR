@@ -4292,8 +4292,10 @@
     }
 
     async function saveFullAuditToCloud(options = {}) {
-      if (!entries.length && !deletedEntries.length) {
-        setCloudStatus("No scanned entries yet. Scan containers before saving a full audit to cloud.", "warning");
+      const hasUploadedList = occupiedMaster.codes.length > 0;
+      const hasAuditEntries = entries.length > 0 || deletedEntries.length > 0;
+      if (!hasUploadedList && !hasAuditEntries) {
+        setCloudStatus("Nothing to save to cloud yet. Upload an Excel document or scan containers first.", "warning");
         input.focus();
         return false;
       }
@@ -4338,8 +4340,8 @@
           headers: { Prefer: "resolution=merge-duplicates,return=representation" },
           body: JSON.stringify(record)
         });
-        setCloudStatus("Full audit saved to cloud: " + syncName + ". Active entries: " + entries.length + ". Save size: " + payloadKb + " KB.", "success");
-        setStatus("Full audit saved to cloud. Active entries: " + entries.length + ".", "success");
+        setCloudStatus("Full audit saved to cloud: " + syncName + ". Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ". Save size: " + payloadKb + " KB.", "success");
+        setStatus("Full audit saved to cloud. Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ".", "success");
         return true;
       } catch (error) {
         setCloudStatus("Full audit cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
@@ -4405,8 +4407,9 @@
     async function saveAllToCloud() {
       const hasMonthlyList = occupiedMaster.codes.length > 0;
       const hasAuditEntries = entries.length > 0 || deletedEntries.length > 0;
+      const hasFullAuditData = hasMonthlyList || hasAuditEntries;
 
-      if (!hasMonthlyList && !hasAuditEntries) {
+      if (!hasFullAuditData) {
         setCloudStatus("Nothing to save to cloud yet. Upload an Excel document or scan containers first.", "warning");
         input.focus();
         return;
@@ -4418,11 +4421,11 @@
       saveCloudEntryModeBtn.disabled = true;
       try {
         let listSaved = !hasMonthlyList;
-        let auditSaved = !hasAuditEntries;
+        let auditSaved = !hasFullAuditData;
         if (hasMonthlyList) {
           listSaved = await uploadOccupiedListToCloud({ skipPin: true });
         }
-        if (hasAuditEntries) {
+        if (hasFullAuditData) {
           auditSaved = await saveFullAuditToCloud({ skipPin: true });
         }
         if (!listSaved || !auditSaved) {
@@ -4508,9 +4511,15 @@
           render();
         }
 
+        const fullAuditText = fullAuditLoaded
+          ? entries.length + " active entries"
+          : hasCloudAudit && occupiedMaster.codes.length
+          ? "uploaded list loaded, no entries yet"
+          : "not loaded";
+
         setCloudStatus(
           "Cloud load complete. Uploaded document: " + (monthlyLoaded ? occupiedMaster.codes.length + " expected" : "not loaded") +
-          ". Full audit: " + (fullAuditLoaded ? entries.length + " active entries" : "not loaded") + ".",
+          ". Full audit: " + fullAuditText + ".",
           monthlyLoaded || fullAuditLoaded ? "success" : "warning"
         );
         setStatus("Cloud load complete.", monthlyLoaded || fullAuditLoaded ? "success" : "warning");
