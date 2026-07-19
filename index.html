@@ -1318,8 +1318,8 @@
       <div class="preview-metrics audit-metrics">
         <div class="preview-metric"><div class="label">EXPECTED CONTAINERS</div><strong id="occupiedExpectedCount">0</strong></div>
         <div class="preview-metric"><div class="label">FOUND IN WAREHOUSE</div><strong id="occupiedFoundCount">0</strong></div>
-        <div class="preview-metric"><div class="label">EXPECTED NOT FOUND</div><strong id="occupiedMissingCount">0</strong></div>
-        <div class="preview-metric"><div class="label">NO MATCH TO INVENTORY</div><strong id="occupiedExtraCount">0</strong></div>
+        <div class="preview-metric"><div class="label">ON INVENTORY NOT SCANNED</div><strong id="occupiedMissingCount">0</strong></div>
+        <div class="preview-metric"><div class="label">SCANNED BUT NOT ON INVENTORY</div><strong id="occupiedExtraCount">0</strong></div>
       </div>
       <div id="occupiedComparisonList" class="audit-comparison-list"></div>
     </section>
@@ -2336,7 +2336,7 @@
       if (sizeMismatch) {
         setStatus("Saved #" + sequence + " " + code + ", but size is incorrect. Expected " + expectedSize + " from uploaded document, entered " + size + ".", "warning");
       } else if (hasUploadedInventory && !hasInventoryMatch) {
-        setStatus("Saved #" + sequence + " " + code + " - No Match To Inventory. This container was not found on the uploaded inventory list.", "warning");
+        setStatus("Saved #" + sequence + " " + code + " - Scanned But Not On Inventory. This container was not found on the uploaded inventory list.", "warning");
       } else {
         setStatus("Saved #" + sequence + " " + code + " - " + size + ", " + condition + ", " + containerStatus + ". Ready for next container.", "success");
       }
@@ -2709,17 +2709,17 @@
 
     function monthlyMatchText(code) {
       if (!occupiedMaster.codes.length) return "";
-      return isMonthlyPhysicalMatch(code) ? "YES - PHYSICALLY FOUND" : "NO MATCH TO INVENTORY";
+      return isMonthlyPhysicalMatch(code) ? "YES - PHYSICALLY FOUND" : "SCANNED BUT NOT ON INVENTORY";
     }
 
     function inventoryMatchTagText(code) {
       if (!occupiedMaster.codes.length) return "";
-      return isMonthlyPhysicalMatch(code) ? "Matched Unit on List" : "No Match To Inventory";
+      return isMonthlyPhysicalMatch(code) ? "Matched Unit on List" : "Scanned But Not On Inventory";
     }
 
     function inventoryMatchTagClass(value) {
       if (value === "Matched Unit on List") return " monthly-match-tag";
-      if (value === "No Match To Inventory") return " inventory-no-match-tag";
+      if (value === "Scanned But Not On Inventory") return " inventory-no-match-tag";
       return "";
     }
 
@@ -2992,11 +2992,11 @@
           ? "MATCH"
           : "";
         const status = expectedItem.code && activeItem
-          ? "EXPECTED AND SCANNED"
+          ? "SCANNED UNIT MATCH INVENTORY"
           : expectedItem.code
-          ? "EXPECTED NOT SCANNED"
+          ? "ON INVENTORY NOT SCANNED"
           : activeItem
-          ? "NO MATCH TO INVENTORY"
+          ? "SCANNED BUT NOT ON INVENTORY"
           : "DELETED ENTRY";
 
         rows.push([
@@ -3187,8 +3187,8 @@
         "INVENTORY AUDIT",
         "EXPECTED CONTAINERS: " + occupiedComparison().expected.length,
         "FOUND IN WAREHOUSE: " + occupiedComparison().foundExpected.length,
-        "EXPECTED NOT FOUND: " + occupiedComparison().missingExpected.length,
-        "Found but not on uploaded inventory list: " + occupiedComparison().extraFound.length,
+        "ON INVENTORY NOT SCANNED: " + occupiedComparison().missingExpected.length,
+        "SCANNED BUT NOT ON INVENTORY: " + occupiedComparison().extraFound.length,
         "",
         "CONDITION",
         "Good: " + goodCount,
@@ -3219,8 +3219,8 @@
         ["INVENTORY AUDIT", "COUNT"],
         ["EXPECTED CONTAINERS", occupiedComparison().expected.length],
         ["FOUND IN WAREHOUSE", occupiedComparison().foundExpected.length],
-        ["EXPECTED NOT FOUND", occupiedComparison().missingExpected.length],
-        ["Found but not on uploaded inventory list", occupiedComparison().extraFound.length],
+        ["ON INVENTORY NOT SCANNED", occupiedComparison().missingExpected.length],
+        ["SCANNED BUT NOT ON INVENTORY", occupiedComparison().extraFound.length],
         ["SIZE MISMATCHES", occupiedComparison().sizeMismatches.length],
         [],
         ["BY SIZE", "TOTAL COUNT", "GOOD", "BAD", "BUILT", "FLAT"],
@@ -3760,19 +3760,19 @@
         ["EXPORT DATE/TIME", formatLocalTime(new Date().toISOString())],
         ["EXPECTED CONTAINERS", comparison.expected.length],
         ["FOUND IN WAREHOUSE", comparison.foundExpected.length],
-        ["EXPECTED NOT FOUND", comparison.missingExpected.length],
-        ["NO MATCH TO INVENTORY", comparison.extraFound.length],
+        ["ON INVENTORY NOT SCANNED", comparison.missingExpected.length],
+        ["SCANNED BUT NOT ON INVENTORY", comparison.extraFound.length],
         ["SIZE MISMATCHES", comparison.sizeMismatches.length],
         [],
-        ["EXPECTED AND FOUND"],
+        ["SCANNED UNIT MATCH INVENTORY"],
         ["UNIT NUMBER", "UNIT SIZE"],
         ...auditRowsForCodes(comparison.foundExpected, comparison),
         [],
-        ["EXPECTED NOT FOUND"],
+        ["ON INVENTORY NOT SCANNED"],
         ["UNIT NUMBER", "UNIT SIZE"],
         ...auditRowsForCodes(comparison.missingExpected, comparison),
         [],
-        ["NO MATCH TO INVENTORY"],
+        ["SCANNED BUT NOT ON INVENTORY"],
         ["UNIT NUMBER", "UNIT SIZE"],
         ...comparison.extraFound.map(code => [code, ""]),
         [],
@@ -3797,9 +3797,9 @@
       const wb = XLSX.utils.book_new();
       const auditRows = auditComparisonRows();
       const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
-      styleAuditSectionRowsByCondition(auditSheet, auditRows, "EXPECTED AND FOUND");
+      styleAuditSectionRowsByCondition(auditSheet, auditRows, "SCANNED UNIT MATCH INVENTORY");
       XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "EXPECTED NOT FOUND");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.missingExpected, comparison)]), "ON INVENTORY NOT SCANNED");
       const foundRows = [["UNIT NUMBER", "UNIT SIZE"], ...auditRowsForCodes(comparison.foundExpected, comparison)];
       const foundSheet = XLSX.utils.aoa_to_sheet(foundRows);
       const activeMap = activeEntryByCode();
@@ -3807,8 +3807,8 @@
         const activeItem = activeMap.get(normalizeCode(row[0] || ""));
         styleWorksheetRow(foundSheet, index + 2, row.length, conditionCellStyle(activeItem && activeItem.condition));
       });
-      XLSX.utils.book_append_sheet(wb, foundSheet, "EXPECTED AND FOUND");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "NO MATCH TO INVENTORY");
+      XLSX.utils.book_append_sheet(wb, foundSheet, "SCANNED UNIT MATCH INVENTORY");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["UNIT NUMBER", "UNIT SIZE"], ...comparison.extraFound.map(code => [code, ""])]), "SCANNED BUT NOT ON INVENTORY");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(mismatchSheetRows()), "SIZE MISMATCHES");
       appendOccupiedUploadSheets(wb);
       const filename = safeFilePart(sessionNameInput.value) + "_occupied_audit_" + dateStamp() + ".xlsx";
@@ -4369,10 +4369,10 @@
         return;
       }
       occupiedAuditText.textContent = occupiedMaster.fileName + " - " + comparison.expected.length + " EXPECTED";
-      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED CONTAINERS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. NO MATCH TO INVENTORY: " + comparison.extraFound.length + ". SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
+      occupiedStatus.textContent = "LOADED " + comparison.expected.length + " EXPECTED CONTAINERS. FOUND " + comparison.foundExpected.length + " IN THE WAREHOUSE. SCANNED BUT NOT ON INVENTORY: " + comparison.extraFound.length + ". SIZE MISMATCHES: " + comparison.sizeMismatches.length + ".";
       occupiedStatus.className = comparison.missingExpected.length || comparison.extraFound.length || comparison.sizeMismatches.length ? "status warning" : "status success";
       occupiedComparisonList.innerHTML = "";
-      [["EXPECTED AND FOUND", comparison.foundExpected], ["EXPECTED NOT FOUND", comparison.missingExpected], ["NO MATCH TO INVENTORY", comparison.extraFound]].forEach(([title, codes]) => {
+      [["SCANNED UNIT MATCH INVENTORY", comparison.foundExpected], ["ON INVENTORY NOT SCANNED", comparison.missingExpected], ["SCANNED BUT NOT ON INVENTORY", comparison.extraFound]].forEach(([title, codes]) => {
         const group = document.createElement("div");
         group.className = "audit-group";
         const heading = document.createElement("h3");
