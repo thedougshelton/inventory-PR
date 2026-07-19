@@ -1608,6 +1608,7 @@
     const SESSION_KEY = "warehouse_inventory_session_name_v2";
     const SESSION_KEY_PREFIX = "warehouse_inventory_session_name_v2_";
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
+    const INITIALS_KEY_PREFIX = "warehouse_inventory_initials_v1_";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
@@ -1766,7 +1767,7 @@
     let deletedEntriesDirty = true;
 
     sessionNameInput.value = loadSessionName();
-    employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
+    employeeInitialsInput.value = loadEmployeeInitials();
     updateCloudActionLabels();
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
@@ -1792,6 +1793,23 @@
       const value = normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName());
       const ok = safeSetItem(sessionNameStorageKey(presetKey), value);
       if (ok && presetKey === "tampa") safeSetItem(SESSION_KEY, value);
+      return ok;
+    }
+
+    function employeeInitialsStorageKey(presetKey = selectedCloudPresetKey()) {
+      return INITIALS_KEY_PREFIX + presetKey;
+    }
+
+    function loadEmployeeInitials(presetKey = selectedCloudPresetKey()) {
+      const saved = localStorage.getItem(employeeInitialsStorageKey(presetKey));
+      const legacySaved = presetKey === "tampa" ? localStorage.getItem(INITIALS_KEY) : null;
+      return normalizeInitials(saved || legacySaved || "");
+    }
+
+    function saveEmployeeInitials(presetKey = selectedCloudPresetKey()) {
+      const value = normalizeInitials(employeeInitialsInput.value.trim());
+      const ok = safeSetItem(employeeInitialsStorageKey(presetKey), value);
+      if (ok && presetKey === "tampa") safeSetItem(INITIALS_KEY, value);
       return ok;
     }
 
@@ -1970,7 +1988,7 @@
         safeSetItem(DUPE_KEY, String(duplicateBlocks)),
         safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence)),
         saveSessionName(),
-        safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase()),
+        saveEmployeeInitials(),
         safeSetItem(LAST_SAVED_KEY, lastSavedAt),
         safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false")
       ].every(Boolean);
@@ -4024,14 +4042,16 @@
 
     function switchCloudPreset() {
       saveSessionName(activeCloudPresetKey);
+      saveEmployeeInitials(activeCloudPresetKey);
       activeCloudPresetKey = selectedCloudPresetKey();
       const settings = cloudSettings();
       saveCloudSettings();
       occupiedMaster = loadOccupiedMaster();
       sessionNameInput.value = loadSessionName(activeCloudPresetKey);
+      employeeInitialsInput.value = loadEmployeeInitials(activeCloudPresetKey);
       occupiedFileInput.value = "";
       render();
-      setStatus(settings.label + " selected. Session name and uploaded document list switched.", "info");
+      setStatus(settings.label + " selected. Session name, employee initials, and uploaded document list switched.", "info");
       input.focus();
     }
 
@@ -4486,7 +4506,7 @@
       const saveOk = [
         saveOccupiedMaster(),
         saveSessionName(),
-        safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase())
+        saveEmployeeInitials()
       ].every(Boolean);
       render();
       return saveOk;
@@ -5110,7 +5130,7 @@
 
     employeeInitialsInput.addEventListener("input", () => {
       employeeInitialsInput.value = normalizeInitials(employeeInitialsInput.value);
-      safeSetItem(INITIALS_KEY, employeeInitialsInput.value);
+      saveEmployeeInitials();
     });
 
     editInitials.addEventListener("input", () => {
