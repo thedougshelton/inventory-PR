@@ -1606,6 +1606,7 @@
     const NEXT_SEQUENCE_KEY = "warehouse_inventory_next_sequence_v4";
     const OLD_NEXT_KEYS = ["warehouse_inventory_next_sequence_v2", "warehouse_inventory_next_sequence_v1"];
     const SESSION_KEY = "warehouse_inventory_session_name_v2";
+    const SESSION_KEY_PREFIX = "warehouse_inventory_session_name_v2_";
     const INITIALS_KEY = "warehouse_inventory_initials_v1";
     const LAST_SAVED_KEY = "warehouse_inventory_last_saved_v2";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
@@ -1747,6 +1748,7 @@
     const deletedEntriesDetails = document.getElementById("deletedEntriesDetails");
 
     cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
+    let activeCloudPresetKey = selectedCloudPresetKey();
 
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
@@ -1763,7 +1765,7 @@
     let activeEntriesDirty = true;
     let deletedEntriesDirty = true;
 
-    sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
+    sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
     updateCloudActionLabels();
 
@@ -1774,6 +1776,23 @@
     function defaultSessionName() {
       const now = new Date();
       return "Tampa Inventory " + (now.getMonth() + 1) + "/" + now.getDate() + "/" + now.getFullYear();
+    }
+
+    function sessionNameStorageKey(presetKey = selectedCloudPresetKey()) {
+      return SESSION_KEY_PREFIX + presetKey;
+    }
+
+    function loadSessionName(presetKey = selectedCloudPresetKey()) {
+      const saved = localStorage.getItem(sessionNameStorageKey(presetKey));
+      const legacySaved = presetKey === "tampa" ? localStorage.getItem(SESSION_KEY) : null;
+      return normalizeUpperText(saved || legacySaved || defaultSessionName());
+    }
+
+    function saveSessionName(presetKey = selectedCloudPresetKey()) {
+      const value = normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName());
+      const ok = safeSetItem(sessionNameStorageKey(presetKey), value);
+      if (ok && presetKey === "tampa") safeSetItem(SESSION_KEY, value);
+      return ok;
     }
 
     function firstLocalStorageValue(keys) {
@@ -1950,7 +1969,7 @@
         safeSetItem(DELETED_KEY, JSON.stringify(deletedEntries)),
         safeSetItem(DUPE_KEY, String(duplicateBlocks)),
         safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence)),
-        safeSetItem(SESSION_KEY, sessionNameInput.value.trim()),
+        saveSessionName(),
         safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase()),
         safeSetItem(LAST_SAVED_KEY, lastSavedAt),
         safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false")
@@ -4004,12 +4023,15 @@
     }
 
     function switchCloudPreset() {
+      saveSessionName(activeCloudPresetKey);
+      activeCloudPresetKey = selectedCloudPresetKey();
       const settings = cloudSettings();
       saveCloudSettings();
       occupiedMaster = loadOccupiedMaster();
+      sessionNameInput.value = loadSessionName(activeCloudPresetKey);
       occupiedFileInput.value = "";
       render();
-      setStatus(settings.label + " selected. Uploaded document list switched.", "info");
+      setStatus(settings.label + " selected. Session name and uploaded document list switched.", "info");
       input.focus();
     }
 
@@ -4463,7 +4485,7 @@
       employeeInitialsInput.value = normalizeInitials(data.employeeInitials || employeeInitialsInput.value || "");
       const saveOk = [
         saveOccupiedMaster(),
-        safeSetItem(SESSION_KEY, sessionNameInput.value.trim()),
+        saveSessionName(),
         safeSetItem(INITIALS_KEY, employeeInitialsInput.value.trim().toUpperCase())
       ].every(Boolean);
       render();
@@ -5126,7 +5148,7 @@
 
     sessionNameInput.addEventListener("input", () => {
       sessionNameInput.value = normalizeUpperText(sessionNameInput.value);
-      safeSetItem(SESSION_KEY, sessionNameInput.value.trim());
+      saveSessionName();
       render();
     });
 
