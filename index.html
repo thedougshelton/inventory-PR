@@ -1296,7 +1296,7 @@
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
       <div class="actions two">
         <button id="chooseOccupiedFileBtn" type="button">UPLOAD EXCEL DOCUMENT TO APPLICATION</button>
-        <button id="clearOccupiedListBtn" type="button">REMOVE ALL UPLOADED DOCUMENTS ON APPLICATION</button>
+        <button id="clearOccupiedListBtn" type="button">REMOVE UPLOADED DOCUMENT FROM SELECTED AUDIT</button>
       </div>
       <div class="cloud-sync-panel">
         <div class="session-row cloud-preset-row">
@@ -1612,6 +1612,7 @@
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
     const ENTRY_MODE_KEY = "warehouse_inventory_entry_mode_v1";
     const MONTHLY_OCCUPIED_KEY = "warehouse_inventory_monthly_occupied_v1";
+    const MONTHLY_OCCUPIED_KEY_PREFIX = "warehouse_inventory_monthly_occupied_v1_";
     const CLOUD_URL_KEY = "warehouse_inventory_cloud_url_v1";
     const CLOUD_ANON_KEY = "warehouse_inventory_cloud_anon_key_v1";
     const CLOUD_SYNC_NAME_KEY = "warehouse_inventory_cloud_sync_name_v1";
@@ -1745,6 +1746,8 @@
     const activeEntriesDetails = document.getElementById("activeEntriesDetails");
     const deletedEntriesDetails = document.getElementById("deletedEntriesDetails");
 
+    cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
+
     let entries = loadEntries();
     let deletedEntries = loadDeletedEntries();
     let occupiedMaster = loadOccupiedMaster();
@@ -1762,7 +1765,6 @@
 
     sessionNameInput.value = normalizeUpperText(localStorage.getItem(SESSION_KEY) || defaultSessionName());
     employeeInitialsInput.value = normalizeInitials(localStorage.getItem(INITIALS_KEY) || "");
-    cloudPresetSelect.value = CLOUD_PRESETS[localStorage.getItem(CLOUD_PRESET_KEY)] ? localStorage.getItem(CLOUD_PRESET_KEY) : "tampa";
     updateCloudActionLabels();
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
@@ -1858,36 +1860,51 @@
       }
     }
 
+    function emptyOccupiedMaster() {
+      return { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
+    }
+
+    function occupiedMasterStorageKey(presetKey = selectedCloudPresetKey()) {
+      return MONTHLY_OCCUPIED_KEY_PREFIX + presetKey;
+    }
+
+    function cleanOccupiedMaster(parsed) {
+      const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
+      let items = rawItems.map(item => ({
+        code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
+        type: normalizeOccupiedTypeSize(item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
+        rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
+      })).filter(item => isUploadedInventoryCode(item.code));
+
+      if (!items.length && Array.isArray(parsed.codes)) {
+        items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isUploadedInventoryCode(item.code));
+      }
+
+      const itemMap = new Map();
+      items.forEach(item => {
+        if (!itemMap.has(item.code)) itemMap.set(item.code, item);
+        if (!itemMap.get(item.code).type && item.type) itemMap.set(item.code, item);
+      });
+
+      const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
+      return {
+        fileName: normalizeUpperText(parsed.fileName || ""),
+        importedAt: parsed.importedAt || "",
+        codes: cleanItems.map(item => item.code),
+        items: cleanItems,
+        rawRows: Array.isArray(parsed.rawRows) ? parsed.rawRows : []
+      };
+    }
+
     function loadOccupiedMaster() {
       try {
-        const parsed = JSON.parse(localStorage.getItem(MONTHLY_OCCUPIED_KEY) || "{}");
-        const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-        let items = rawItems.map(item => ({
-          code: normalizeCode(item.code || item.unitName || item["UnitName"] || ""),
-          type: normalizeOccupiedTypeSize(item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "", item.code || item.unitName || item["UnitName"] || ""),
-          rawType: normalizeUpperText(item.rawType || item["Raw Type"] || item.type || item["Type"] || item["Container Size"] || item["Unit Size"] || item["Size"] || "")
-        })).filter(item => isUploadedInventoryCode(item.code));
-
-        if (!items.length && Array.isArray(parsed.codes)) {
-          items = parsed.codes.map(code => ({ code: normalizeCode(code), type: "", rawType: "" })).filter(item => isUploadedInventoryCode(item.code));
-        }
-
-        const itemMap = new Map();
-        items.forEach(item => {
-          if (!itemMap.has(item.code)) itemMap.set(item.code, item);
-          if (!itemMap.get(item.code).type && item.type) itemMap.set(item.code, item);
-        });
-
-        const cleanItems = [...itemMap.values()].sort((a, b) => a.code.localeCompare(b.code));
-        return {
-          fileName: normalizeUpperText(parsed.fileName || ""),
-          importedAt: parsed.importedAt || "",
-          codes: cleanItems.map(item => item.code),
-          items: cleanItems,
-          rawRows: Array.isArray(parsed.rawRows) ? parsed.rawRows : []
-        };
+        const presetKey = selectedCloudPresetKey();
+        const saved = localStorage.getItem(occupiedMasterStorageKey(presetKey));
+        const legacySaved = presetKey === "tampa" ? localStorage.getItem(MONTHLY_OCCUPIED_KEY) : null;
+        const parsed = JSON.parse(saved || legacySaved || "{}");
+        return cleanOccupiedMaster(parsed);
       } catch {
-        return { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
+        return emptyOccupiedMaster();
       }
     }
 
@@ -1943,7 +1960,10 @@
     }
 
     function saveOccupiedMaster() {
-      return safeSetItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
+      const presetKey = selectedCloudPresetKey();
+      const ok = safeSetItem(occupiedMasterStorageKey(presetKey), JSON.stringify(occupiedMaster));
+      if (ok && presetKey === "tampa") safeSetItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
+      return ok;
     }
 
     function normalizeCode(value) {
@@ -3877,13 +3897,14 @@
         input.focus();
         return;
       }
-      const ok = confirm("This will remove the uploaded document from this device. Your scanned entries will stay saved. Continue?");
+      const settings = cloudSettings();
+      const ok = confirm("This will remove the uploaded document for " + settings.label + " from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
-      occupiedMaster = { fileName: "", importedAt: "", codes: [], items: [], rawRows: [] };
+      occupiedMaster = emptyOccupiedMaster();
       saveOccupiedMaster();
       occupiedFileInput.value = "";
       render();
-      setStatus("Uploaded document removed. Scanned entries were not changed.", "success");
+      setStatus("Uploaded document removed from " + settings.label + ". Scanned entries were not changed.", "success");
       input.focus();
     }
 
@@ -3980,6 +4001,16 @@
       );
       input.focus();
       return ok;
+    }
+
+    function switchCloudPreset() {
+      const settings = cloudSettings();
+      saveCloudSettings();
+      occupiedMaster = loadOccupiedMaster();
+      occupiedFileInput.value = "";
+      render();
+      setStatus(settings.label + " selected. Uploaded document list switched.", "info");
+      input.focus();
     }
 
     function clearCloudSettings() {
@@ -5099,7 +5130,7 @@
       render();
     });
 
-    cloudPresetSelect.addEventListener("change", saveCloudSettings);
+    cloudPresetSelect.addEventListener("change", switchCloudPreset);
 
 
     reportDetails.addEventListener("toggle", () => {
