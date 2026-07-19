@@ -3247,6 +3247,81 @@
       ];
     }
 
+    function expectedUnitsNotScannedRows() {
+      const comparison = occupiedComparison();
+      const rows = [
+        ["Unit Number", "Uploaded Unit Size"]
+      ];
+      rows.push(...auditRowsForCodes(comparison.missingExpected, comparison));
+      if (rows.length === 1) rows.push(["NO EXPECTED UNITS NOT SCANNED"]);
+      return rows;
+    }
+
+    function scannedButNotOnInventoryRows() {
+      const comparison = occupiedComparison();
+      const activeMap = activeEntryByCode();
+      const rows = [
+        ["Entry Number", "Container Number", "Container Size", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"]
+      ];
+      comparison.extraFound.forEach(code => {
+        const item = activeMap.get(code) || {};
+        rows.push([
+          item.sequence || "",
+          code,
+          item.size || "",
+          item.condition || "",
+          item.status || "",
+          item.initials || "",
+          item.notes || "",
+          item.photoDataUrl ? "YES" : "",
+          formatLocalTime(item.photoTakenAt),
+          formatLocalTime(item.timestamp),
+          formatLocalTime(item.editedAt),
+          formatLocalTime(item.restoredAt)
+        ]);
+      });
+      if (rows.length === 1) rows.push(["NO SCANNED UNITS MISSING FROM UPLOADED INVENTORY"]);
+      return rows;
+    }
+
+    function expectedAndScannedRows() {
+      const comparison = occupiedComparison();
+      const activeMap = activeEntryByCode();
+      const rows = [
+        ["Unit Number", "Uploaded Unit Size", "Scanned Entry Number", "Scanned Unit Size", "Size Check", "Container Condition", "Container Status", "Employee/User Initials", "Notes", "Photo Attached", "Photo Date/Time", "Date/Time Entered", "Edited Date/Time", "Restored Date/Time"]
+      ];
+      comparison.foundExpected.forEach(code => {
+        const expectedItem = comparison.itemByCode.get(code) || {};
+        const activeItem = activeMap.get(code) || {};
+        const expectedSize = expectedItem.type || "";
+        const scannedSize = activeItem.size || "";
+        rows.push([
+          code,
+          expectedSize,
+          activeItem.sequence || "",
+          scannedSize,
+          expectedSize && scannedSize && !sizesMatch(scannedSize, expectedSize) ? "SIZE MISMATCH" : expectedSize ? "MATCH" : "",
+          activeItem.condition || "",
+          activeItem.status || "",
+          activeItem.initials || "",
+          activeItem.notes || "",
+          activeItem.photoDataUrl ? "YES" : "",
+          formatLocalTime(activeItem.photoTakenAt),
+          formatLocalTime(activeItem.timestamp),
+          formatLocalTime(activeItem.editedAt),
+          formatLocalTime(activeItem.restoredAt)
+        ]);
+      });
+      if (rows.length === 1) rows.push(["NO EXPECTED UNITS SCANNED"]);
+      return rows;
+    }
+
+    function styleAoaRowsByCondition(ws, rows, conditionColumnIndex, startRowIndex = 1) {
+      rows.slice(startRowIndex).forEach((row, index) => {
+        styleWorksheetRow(ws, index + startRowIndex + 1, row.length, conditionCellStyle(row[conditionColumnIndex] || ""));
+      });
+    }
+
     function exportXlsx(finalLock) {
       if (!entries.length && !deletedEntries.length) {
         setStatus("No entries to export yet.", "warning");
@@ -3261,15 +3336,26 @@
 
       const wb = XLSX.utils.book_new();
 
+      const auditRows = auditComparisonCombinedRows();
+      const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
+      styleAuditComparisonCombinedSheet(auditSheet, auditRows);
+      XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
+
+      const reportSheet = XLSX.utils.aoa_to_sheet(finalReportSummaryRows());
+      XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
+
       const activeRows = activeArray();
       const activeSheet = XLSX.utils.json_to_sheet(activeRows);
       styleActiveRowsByCondition(activeSheet, activeRows);
       XLSX.utils.book_append_sheet(wb, activeSheet, "Scanned Units");
 
-      const auditRows = auditComparisonCombinedRows();
-      const auditSheet = XLSX.utils.aoa_to_sheet(auditRows);
-      styleAuditComparisonCombinedSheet(auditSheet, auditRows);
-      XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
+      const expectedNotScannedRows = expectedUnitsNotScannedRows();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expectedNotScannedRows), "Expected Units Not Scanned");
+
+      const extraRows = scannedButNotOnInventoryRows();
+      const extraSheet = XLSX.utils.aoa_to_sheet(extraRows);
+      styleAoaRowsByCondition(extraSheet, extraRows, 3);
+      XLSX.utils.book_append_sheet(wb, extraSheet, "Scanned But Not On Inventory");
 
       const picturesSheet = XLSX.utils.aoa_to_sheet(pictureRows());
       stylePicturesSheet(picturesSheet);
@@ -3277,8 +3363,15 @@
 
       appendFullUploadedDocumentSheet(wb);
 
-      const reportSheet = XLSX.utils.aoa_to_sheet(finalReportSummaryRows());
-      XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
+      const deletedRows = deletedArray();
+      const deletedSheet = XLSX.utils.json_to_sheet(deletedRows.length ? deletedRows : [{ "Deleted Entry": "NO DELETED ENTRIES" }]);
+      styleActiveRowsByCondition(deletedSheet, deletedRows);
+      XLSX.utils.book_append_sheet(wb, deletedSheet, "Deleted Entry");
+
+      const expectedScannedRows = expectedAndScannedRows();
+      const expectedScannedSheet = XLSX.utils.aoa_to_sheet(expectedScannedRows);
+      styleAoaRowsByCondition(expectedScannedSheet, expectedScannedRows, 5);
+      XLSX.utils.book_append_sheet(wb, expectedScannedSheet, "Expected And Scanned");
 
       const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
 
