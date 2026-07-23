@@ -2186,7 +2186,10 @@
     }
 
     function isOcrContainerCode(code) {
-      return /^\d{6}$/.test(code) || /^[A-Z]\d{5}$/.test(code);
+      const normalized = normalizeCode(code || "");
+      const letterCount = (normalized.match(/[A-Z]/g) || []).length;
+      if (letterCount > 1) return false;
+      return /^\d{6}$/.test(normalized) || /^[A-Z]\d{5}$/.test(normalized);
     }
 
     function ocrCandidateCodes(text) {
