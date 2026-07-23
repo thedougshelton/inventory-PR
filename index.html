@@ -2188,7 +2188,8 @@
     function isOcrContainerCode(code) {
       const normalized = normalizeCode(code || "");
       const letterCount = (normalized.match(/[A-Z]/g) || []).length;
-      if (letterCount > 1) return false;
+      if (letterCount > 2) return false;
+      if (letterCount === 2) return /^(ZM|TR|PS)\d{4}$/.test(normalized);
       return /^\d{6}$/.test(normalized) || /^[A-Z]\d{5}$/.test(normalized);
     }
 
@@ -2420,7 +2421,7 @@
         const bestCandidate = candidates.find(isOcrContainerCode);
         if (!bestCandidate) {
           setOcrStatus("OCR found text, but not a valid container number.", "warning");
-          setStatus("OCR ignored the camera read because it was not 6 numbers or 1 letter plus 5 numbers.", "warning");
+          setStatus("OCR ignored the camera read because it was not an allowed 6-character container number.", "warning");
           input.focus();
           return;
         }
