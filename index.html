@@ -2186,18 +2186,23 @@
     }
 
     function ocrCandidateCodes(text) {
-      const normalized = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, " ");
-      const compact = normalized.replace(/\s+/g, "");
+      const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
       const candidates = new Map();
-      [normalized, compact].forEach(source => {
-        (source.match(/[A-Z0-9]{6}/g) || []).forEach(code => {
-          if (isUploadedInventoryCode(code)) {
-            candidates.set(code, 0);
-          } else if (isValid(code) && !IGNORED_UPLOADED_UNIT_CODES.has(code) && !candidates.has(code)) {
-            candidates.set(code, 1);
-          }
-        });
-      });
+
+      function addCandidate(code, fallbackRank) {
+        if (!isValid(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
+        const rank = isUploadedInventoryCode(code) ? 0 : fallbackRank;
+        if (!candidates.has(code) || rank < candidates.get(code)) {
+          candidates.set(code, rank);
+        }
+      }
+
+      for (let index = 0; index <= compact.length - 6; index += 1) {
+        const code = compact.slice(index, index + 6);
+        if (/^\d{6}$/.test(code)) addCandidate(code, 1);
+        if (/^[A-Z]\d{5}$/.test(code)) addCandidate(code, 2);
+      }
+
       return [...candidates.entries()]
         .sort((first, second) => first[1] - second[1])
         .map(([code]) => code);
