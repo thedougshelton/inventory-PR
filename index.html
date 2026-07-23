@@ -2335,11 +2335,11 @@
       return digits;
     }
 
-    function ocrThreeEightCandidates(code) {
+    function ocrThreeToEightCandidates(code) {
       const normalized = normalizeCode(code || "");
       const positions = [];
       normalized.split("").forEach((character, index) => {
-        if (character === "3" || character === "8") positions.push(index);
+        if (character === "3") positions.push(index);
       });
       if (!positions.length || positions.length > 4) return [{ code: normalized, penalty: 0 }];
 
@@ -2347,13 +2347,19 @@
       positions.forEach(position => {
         [...alternates].forEach(candidate => {
           const characters = candidate.split("");
-          characters[position] = characters[position] === "3" ? "8" : "3";
+          characters[position] = "8";
           alternates.add(characters.join(""));
         });
       });
       return [...alternates]
         .filter(isOcrContainerCode)
-        .map(code => ({ code, penalty: code === normalized ? 0 : 20 }));
+        .map(code => {
+          const changedCount = code.split("").filter((character, index) => character !== normalized.charAt(index)).length;
+          return {
+            code,
+            penalty: code === normalized ? 0 : (/^\d{6}$/.test(code) ? -changedCount : 10)
+          };
+        });
     }
 
     function ocrRawDigitCount(text) {
@@ -2369,7 +2375,7 @@
           candidates.add({ code: sixDigits, penalty: 10 });
           candidates.add({ code: "8" + sixDigits.slice(1), penalty: 0 });
         } else {
-          ocrThreeEightCandidates(sixDigits).forEach(candidate => candidates.add(candidate));
+          ocrThreeToEightCandidates(sixDigits).forEach(candidate => candidates.add(candidate));
         }
       }
 
@@ -2377,14 +2383,14 @@
       const oneLetterSuffix = window.slice(1);
       const suffixFive = ocrDigitsFromText(oneLetterSuffix);
       if (OCR_SINGLE_LETTER_PREFIXES.has(first) && /^\d{5}$/.test(suffixFive) && ocrRawDigitCount(oneLetterSuffix) >= 4) {
-        ocrThreeEightCandidates(first + suffixFive).forEach(candidate => candidates.add(candidate));
+        ocrThreeToEightCandidates(first + suffixFive).forEach(candidate => candidates.add(candidate));
       }
 
       const prefix = window.slice(0, 2);
       const twoLetterSuffix = window.slice(2);
       const suffixFour = ocrDigitsFromText(twoLetterSuffix);
       if (/^(ZM|TR|PS)$/.test(prefix) && /^\d{4}$/.test(suffixFour) && ocrRawDigitCount(twoLetterSuffix) >= 3) {
-        ocrThreeEightCandidates(prefix + suffixFour).forEach(candidate => candidates.add(candidate));
+        ocrThreeToEightCandidates(prefix + suffixFour).forEach(candidate => candidates.add(candidate));
       }
 
       return [...candidates].filter(candidate => isOcrContainerCode(candidate.code));
