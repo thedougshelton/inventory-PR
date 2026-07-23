@@ -2185,12 +2185,16 @@
       return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
+    function isOcrContainerCode(code) {
+      return /^\d{6}$/.test(code) || /^[A-Z]\d{5}$/.test(code);
+    }
+
     function ocrCandidateCodes(text) {
       const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
       const candidates = new Map();
 
       function addCandidate(code, fallbackRank) {
-        if (!isValid(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
+        if (!isOcrContainerCode(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
         const rank = isUploadedInventoryCode(code) ? 0 : fallbackRank;
         if (!candidates.has(code) || rank < candidates.get(code)) {
           candidates.set(code, rank);
@@ -2199,8 +2203,7 @@
 
       for (let index = 0; index <= compact.length - 6; index += 1) {
         const code = compact.slice(index, index + 6);
-        if (/^\d{6}$/.test(code)) addCandidate(code, 1);
-        if (/^[A-Z]\d{5}$/.test(code)) addCandidate(code, 2);
+        if (isOcrContainerCode(code)) addCandidate(code, /^\d{6}$/.test(code) ? 1 : 2);
       }
 
       return [...candidates.entries()]
@@ -2392,6 +2395,7 @@
       try {
         const imageData = await readImageFileAsDataUrl(file);
         const result = await Tesseract.recognize(imageData, "eng", {
+          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
           logger: progress => {
             if (progress && progress.status) {
               const percent = Number.isFinite(progress.progress)
@@ -2410,16 +2414,24 @@
           return;
         }
 
-        setContainerInputValue(candidates[0]);
+        const bestCandidate = candidates.find(isOcrContainerCode);
+        if (!bestCandidate) {
+          setOcrStatus("OCR found text, but not a valid container number.", "warning");
+          setStatus("OCR ignored the camera read because it was not 6 numbers or 1 letter plus 5 numbers.", "warning");
+          input.focus();
+          return;
+        }
+
+        setContainerInputValue(bestCandidate);
         input.focus();
         input.select();
         setOcrStatus(
           candidates.length > 1
-            ? "Found " + candidates[0] + ". Other possible reads: " + candidates.slice(1, 4).join(", ") + "."
-            : "Found " + candidates[0] + ". Review before pressing Enter.",
+            ? "Found " + bestCandidate + ". Other possible reads: " + candidates.filter(code => code !== bestCandidate).slice(0, 3).join(", ") + "."
+            : "Found " + bestCandidate + ". Review before pressing Enter.",
           "success"
         );
-        setStatus("OCR filled " + candidates[0] + ". Review it, then press Enter to save.", "success");
+        setStatus("OCR filled " + bestCandidate + ". Review it, then press Enter to save.", "success");
       } catch (error) {
         setOcrStatus("OCR failed: " + error.message, "error");
         setStatus("OCR failed. Type the container number manually or try another photo.", "error");
