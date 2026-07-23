@@ -9,6 +9,7 @@
   <meta name="theme-color" content="#0f172a" />
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -577,6 +578,11 @@
       color: var(--muted);
       text-align: center;
     }
+
+    .unit-photo-status.success { color: var(--success); }
+    .unit-photo-status.warning { color: var(--warning); }
+    .unit-photo-status.error { color: var(--danger); }
+    .unit-photo-status.info { color: var(--info); }
 
     .unit-photo-thumb {
       display: block;
@@ -1407,6 +1413,11 @@
         />
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
+      <div class="unit-photo-panel">
+        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
+        <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
+        <div id="ocrStatus" class="unit-photo-status">OCR fills the container number box only. Review before pressing Enter.</div>
+      </div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
       <button id="toggleContainerKeyboardBtn" class="keyboard-toggle" type="button" aria-expanded="false" aria-controls="containerKeyboard">Show Keyboard</button>
       <div id="containerKeyboard" class="container-keyboard" aria-label="Container number keyboard" hidden></div>
@@ -1763,6 +1774,9 @@
     const statusBox = document.getElementById("status");
     const toggleContainerKeyboardBtn = document.getElementById("toggleContainerKeyboardBtn");
     const containerKeyboard = document.getElementById("containerKeyboard");
+    const scanContainerOcrBtn = document.getElementById("scanContainerOcrBtn");
+    const ocrPhotoInput = document.getElementById("ocrPhotoInput");
+    const ocrStatus = document.getElementById("ocrStatus");
     const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
     const unitPhotoInput = document.getElementById("unitPhotoInput");
     const unitPhotoStatus = document.getElementById("unitPhotoStatus");
@@ -2171,6 +2185,29 @@
       return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
+    function ocrCandidateCodes(text) {
+      const normalized = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, " ");
+      const compact = normalized.replace(/\s+/g, "");
+      const candidates = new Map();
+      [normalized, compact].forEach(source => {
+        (source.match(/[A-Z0-9]{6}/g) || []).forEach(code => {
+          if (isUploadedInventoryCode(code)) {
+            candidates.set(code, 0);
+          } else if (isValid(code) && !IGNORED_UPLOADED_UNIT_CODES.has(code) && !candidates.has(code)) {
+            candidates.set(code, 1);
+          }
+        });
+      });
+      return [...candidates.entries()]
+        .sort((first, second) => first[1] - second[1])
+        .map(([code]) => code);
+    }
+
+    function setOcrStatus(message, type) {
+      ocrStatus.textContent = normalizeUpperText(message);
+      ocrStatus.className = "unit-photo-status" + (type ? " " + type : "");
+    }
+
     function setStatus(message, type) {
       statusBox.textContent = normalizeUpperText(message);
       statusBox.className = "status" + (type ? " " + type : "");
@@ -2331,6 +2368,61 @@
         image.onerror = () => reject(new Error("Photo could not be loaded."));
         image.src = dataUrl;
       });
+    }
+
+    async function scanContainerNumberFromPhoto(file) {
+      if (!file) return;
+      if (requireUnlocked("scan a container number")) return;
+      if (typeof Tesseract === "undefined" || !Tesseract.recognize) {
+        setOcrStatus("OCR did not load. Check internet connection, then reopen the app.", "error");
+        setStatus("OCR did not load. Type the container number manually.", "error");
+        input.focus();
+        return;
+      }
+
+      scanContainerOcrBtn.disabled = true;
+      setOcrStatus("Reading container number from camera photo...", "info");
+      setStatus("OCR is reading the camera photo. This may take a few seconds.", "info");
+
+      try {
+        const imageData = await readImageFileAsDataUrl(file);
+        const result = await Tesseract.recognize(imageData, "eng", {
+          logger: progress => {
+            if (progress && progress.status) {
+              const percent = Number.isFinite(progress.progress)
+                ? " " + Math.round(progress.progress * 100) + "%"
+                : "";
+              setOcrStatus("OCR " + progress.status + percent, "info");
+            }
+          }
+        });
+        const text = result && result.data ? result.data.text || "" : "";
+        const candidates = ocrCandidateCodes(text);
+        if (!candidates.length) {
+          setOcrStatus("No 6-character container number found. Try a closer, clearer photo.", "warning");
+          setStatus("OCR did not find a valid container number. Type it manually or try again.", "warning");
+          input.focus();
+          return;
+        }
+
+        setContainerInputValue(candidates[0]);
+        input.focus();
+        input.select();
+        setOcrStatus(
+          candidates.length > 1
+            ? "Found " + candidates[0] + ". Other possible reads: " + candidates.slice(1, 4).join(", ") + "."
+            : "Found " + candidates[0] + ". Review before pressing Enter.",
+          "success"
+        );
+        setStatus("OCR filled " + candidates[0] + ". Review it, then press Enter to save.", "success");
+      } catch (error) {
+        setOcrStatus("OCR failed: " + error.message, "error");
+        setStatus("OCR failed. Type the container number manually or try another photo.", "error");
+      } finally {
+        ocrPhotoInput.value = "";
+        scanContainerOcrBtn.disabled = editLocked;
+        input.focus();
+      }
     }
 
     function imageToJpegDataUrl(image, maxSide, quality) {
@@ -5331,6 +5423,7 @@
       containerKeyboard.querySelectorAll("button").forEach(button => {
         button.disabled = editLocked;
       });
+      scanContainerOcrBtn.disabled = editLocked;
       takeUnitPhotoBtn.disabled = editLocked || !latestEntry();
       importBackupBtn.disabled = editLocked;
       applyImportBtn.disabled = editLocked || !pendingImport || !pendingImport.canApply;
@@ -5463,6 +5556,11 @@
 
     addBtn.addEventListener("click", addEntry);
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
+    scanContainerOcrBtn.addEventListener("click", () => {
+      if (requireUnlocked("scan a container number")) return;
+      ocrPhotoInput.click();
+    });
+    ocrPhotoInput.addEventListener("change", () => scanContainerNumberFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     takeUnitPhotoBtn.addEventListener("click", () => {
       if (requireUnlocked("add a photo")) return;
       if (!latestEntry()) {
