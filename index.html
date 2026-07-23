@@ -2335,13 +2335,13 @@
       return digits;
     }
 
-    function ocrThreeEightAlternates(code) {
+    function ocrThreeEightCandidates(code) {
       const normalized = normalizeCode(code || "");
       const positions = [];
       normalized.split("").forEach((character, index) => {
         if (character === "3" || character === "8") positions.push(index);
       });
-      if (!positions.length || positions.length > 4) return [normalized];
+      if (!positions.length || positions.length > 4) return [{ code: normalized, penalty: 0 }];
 
       const alternates = new Set([normalized]);
       positions.forEach(position => {
@@ -2351,7 +2351,9 @@
           alternates.add(characters.join(""));
         });
       });
-      return [...alternates].filter(isOcrContainerCode);
+      return [...alternates]
+        .filter(isOcrContainerCode)
+        .map(code => ({ code, penalty: code === normalized ? 0 : 20 }));
     }
 
     function ocrRawDigitCount(text) {
@@ -2363,24 +2365,29 @@
       const candidates = new Set();
       const sixDigits = ocrDigitsFromText(window);
       if (/^\d{6}$/.test(sixDigits) && /^\d/.test(window) && ocrRawDigitCount(window) >= 5) {
-        ocrThreeEightAlternates(sixDigits).forEach(code => candidates.add(code));
+        if (sixDigits.charAt(0) === "0") {
+          candidates.add({ code: sixDigits, penalty: 10 });
+          candidates.add({ code: "8" + sixDigits.slice(1), penalty: 0 });
+        } else {
+          ocrThreeEightCandidates(sixDigits).forEach(candidate => candidates.add(candidate));
+        }
       }
 
       const first = window.charAt(0);
       const oneLetterSuffix = window.slice(1);
       const suffixFive = ocrDigitsFromText(oneLetterSuffix);
       if (OCR_SINGLE_LETTER_PREFIXES.has(first) && /^\d{5}$/.test(suffixFive) && ocrRawDigitCount(oneLetterSuffix) >= 4) {
-        ocrThreeEightAlternates(first + suffixFive).forEach(code => candidates.add(code));
+        ocrThreeEightCandidates(first + suffixFive).forEach(candidate => candidates.add(candidate));
       }
 
       const prefix = window.slice(0, 2);
       const twoLetterSuffix = window.slice(2);
       const suffixFour = ocrDigitsFromText(twoLetterSuffix);
       if (/^(ZM|TR|PS)$/.test(prefix) && /^\d{4}$/.test(suffixFour) && ocrRawDigitCount(twoLetterSuffix) >= 3) {
-        ocrThreeEightAlternates(prefix + suffixFour).forEach(code => candidates.add(code));
+        ocrThreeEightCandidates(prefix + suffixFour).forEach(candidate => candidates.add(candidate));
       }
 
-      return [...candidates].filter(isOcrContainerCode);
+      return [...candidates].filter(candidate => isOcrContainerCode(candidate.code));
     }
 
     function ocrCandidateRank(code) {
@@ -2398,9 +2405,11 @@
       const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
       const candidates = new Map();
 
-      function addCandidate(code) {
+      function addCandidate(candidate) {
+        const code = typeof candidate === "string" ? candidate : candidate.code;
+        const penalty = typeof candidate === "string" ? 0 : candidate.penalty || 0;
         if (!isOcrContainerCode(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
-        const rank = ocrCandidateRank(code);
+        const rank = isUploadedInventoryCode(code) ? 0 : ocrCandidateRank(code) + penalty;
         if (!candidates.has(code) || rank < candidates.get(code)) {
           candidates.set(code, rank);
         }
