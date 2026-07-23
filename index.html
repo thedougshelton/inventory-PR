@@ -8,8 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="./vendor/xlsx.bundle.js"></script>
+  <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -1810,6 +1810,7 @@
     const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
     const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
     const CLOUD_SAVE_PIN = "6159";
+    const PHOTO_STORAGE_SOFT_LIMIT_CHARS = 3000000;
     const CLOUD_PRESET_KEY = "warehouse_inventory_cloud_preset_v1";
     const CLOUD_PRESETS = {
       tampa: {
@@ -1971,6 +1972,7 @@
     let deletedEntriesDirty = true;
     let ocrCropState = null;
     let ocrCropOrientation = "horizontal";
+    let ocrWorkerPromise = null;
 
     sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = loadEmployeeInitials();
@@ -1999,7 +2001,7 @@
     function saveSessionName(presetKey = selectedCloudPresetKey()) {
       const value = normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName());
       const ok = safeSetItem(sessionNameStorageKey(presetKey), value);
-      if (ok && presetKey === "tampa") safeSetItem(SESSION_KEY, value);
+      if (ok && presetKey === "tampa") removeLocalStorageKeysQuietly([SESSION_KEY]);
       return ok;
     }
 
@@ -2016,7 +2018,7 @@
     function saveEmployeeInitials(presetKey = selectedCloudPresetKey()) {
       const value = normalizeInitials(employeeInitialsInput.value.trim());
       const ok = safeSetItem(employeeInitialsStorageKey(presetKey), value);
-      if (ok && presetKey === "tampa") safeSetItem(INITIALS_KEY, value);
+      if (ok && presetKey === "tampa") removeLocalStorageKeysQuietly([INITIALS_KEY]);
       return ok;
     }
 
@@ -2253,14 +2255,7 @@
     }
 
     function safeSetItem(key, value) {
-      try {
-        localStorage.setItem(key, value);
-        return true;
-      } catch (error) {
-        savedText.textContent = "Save failed on this device";
-        setStatus("Save failed because this device's browser storage is full or blocked. Save to cloud now, then clear old browser storage before continuing.", "error");
-        return false;
-      }
+      return writeLocalStorageBatch([[key, value]]);
     }
 
     function safeRemoveItem(key) {
@@ -2274,36 +2269,140 @@
       }
     }
 
-    function saveEntries(presetKey = selectedCloudPresetKey(), options = {}) {
-      if (options.updateLastSaved !== false) lastSavedAt = new Date().toISOString();
-      const ok = [
-        safeSetItem(auditStorageKey(STORAGE_KEY_PREFIX, presetKey), JSON.stringify(entries)),
-        safeSetItem(auditStorageKey(DELETED_KEY_PREFIX, presetKey), JSON.stringify(deletedEntries)),
-        safeSetItem(auditStorageKey(DUPE_KEY_PREFIX, presetKey), String(duplicateBlocks)),
-        safeSetItem(auditStorageKey(NEXT_SEQUENCE_KEY_PREFIX, presetKey), String(nextSequence)),
-        saveSessionName(presetKey),
-        saveEmployeeInitials(presetKey),
-        safeSetItem(auditStorageKey(LAST_SAVED_KEY_PREFIX, presetKey), lastSavedAt),
-        safeSetItem(auditStorageKey(EDIT_LOCKED_KEY_PREFIX, presetKey), editLocked ? "true" : "false"),
-        safeSetItem(auditStorageKey(FINAL_EXPORT_SIGNATURE_KEY_PREFIX, presetKey), finalExportSignature)
-      ].every(Boolean);
-      if (ok && presetKey === "tampa") {
-        safeSetItem(STORAGE_KEY, JSON.stringify(entries));
-        safeSetItem(DELETED_KEY, JSON.stringify(deletedEntries));
-        safeSetItem(DUPE_KEY, String(duplicateBlocks));
-        safeSetItem(NEXT_SEQUENCE_KEY, String(nextSequence));
-        safeSetItem(LAST_SAVED_KEY, lastSavedAt);
-        safeSetItem(EDIT_LOCKED_KEY, editLocked ? "true" : "false");
-        safeSetItem(FINAL_EXPORT_SIGNATURE_KEY, finalExportSignature);
+    function reportStorageFailure() {
+      savedText.textContent = "Save failed on this device";
+      setStatus("Save failed because this device's browser storage is full or blocked. The last change was canceled. Save to cloud before continuing.", "error");
+    }
+
+    function removeLocalStorageKeysQuietly(keys) {
+      keys.forEach(key => {
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          // Cleanup is optional after the replacement data is safely stored.
+        }
+      });
+    }
+
+    function writeLocalStorageBatch(pairs) {
+      const previous = new Map();
+      try {
+        pairs.forEach(([key]) => {
+          if (!previous.has(key)) previous.set(key, localStorage.getItem(key));
+        });
+        pairs.forEach(([key, value]) => localStorage.setItem(key, value));
+        return true;
+      } catch (error) {
+        previous.forEach((value, key) => {
+          try {
+            if (value === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, value);
+          } catch {
+            // The original save error is the actionable failure.
+          }
+        });
+        reportStorageFailure();
+        return false;
       }
-      if (ok) savedText.textContent = "Saved on this device";
+    }
+
+    function auditStoragePairs(presetKey, savedAt) {
+      const sessionValue = normalizeUpperText(sessionNameInput.value.trim() || defaultSessionName());
+      const initialsValue = normalizeInitials(employeeInitialsInput.value.trim());
+      return [
+        [auditStorageKey(STORAGE_KEY_PREFIX, presetKey), JSON.stringify(entries)],
+        [auditStorageKey(DELETED_KEY_PREFIX, presetKey), JSON.stringify(deletedEntries)],
+        [auditStorageKey(DUPE_KEY_PREFIX, presetKey), String(duplicateBlocks)],
+        [auditStorageKey(NEXT_SEQUENCE_KEY_PREFIX, presetKey), String(nextSequence)],
+        [sessionNameStorageKey(presetKey), sessionValue],
+        [employeeInitialsStorageKey(presetKey), initialsValue],
+        [auditStorageKey(LAST_SAVED_KEY_PREFIX, presetKey), savedAt],
+        [auditStorageKey(EDIT_LOCKED_KEY_PREFIX, presetKey), editLocked ? "true" : "false"],
+        [auditStorageKey(FINAL_EXPORT_SIGNATURE_KEY_PREFIX, presetKey), finalExportSignature]
+      ];
+    }
+
+    function projectedLocalStorageChars(pairs) {
+      const replacements = new Map(pairs);
+      let total = 0;
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (key === null) continue;
+        const value = replacements.has(key) ? replacements.get(key) : localStorage.getItem(key) || "";
+        total += key.length + String(value).length;
+        replacements.delete(key);
+      }
+      replacements.forEach((value, key) => {
+        total += key.length + String(value).length;
+      });
+      return total;
+    }
+
+    function captureAuditState() {
+      return {
+        entries: entries.map(item => ({ ...item })),
+        deletedEntries: deletedEntries.map(item => ({ ...item })),
+        occupiedMaster,
+        duplicateBlocks,
+        nextSequence,
+        lastSavedAt,
+        finalExportSignature,
+        editLocked,
+        inputValue: input.value,
+        notesValue: notesInput.value,
+        sessionName: sessionNameInput.value,
+        employeeInitials: employeeInitialsInput.value
+      };
+    }
+
+    function restoreAuditState(snapshot) {
+      entries = snapshot.entries;
+      deletedEntries = snapshot.deletedEntries;
+      occupiedMaster = snapshot.occupiedMaster;
+      duplicateBlocks = snapshot.duplicateBlocks;
+      nextSequence = snapshot.nextSequence;
+      lastSavedAt = snapshot.lastSavedAt;
+      finalExportSignature = snapshot.finalExportSignature;
+      editLocked = snapshot.editLocked;
+      input.value = snapshot.inputValue;
+      notesInput.value = snapshot.notesValue;
+      sessionNameInput.value = snapshot.sessionName;
+      employeeInitialsInput.value = snapshot.employeeInitials;
+    }
+
+    function saveEntries(presetKey = selectedCloudPresetKey(), options = {}) {
+      const nextLastSavedAt = options.updateLastSaved === false ? lastSavedAt : new Date().toISOString();
+      const pairs = auditStoragePairs(presetKey, nextLastSavedAt);
+      if (options.includeOccupiedMaster) {
+        pairs.push([occupiedMasterStorageKey(presetKey), JSON.stringify(occupiedMaster)]);
+      }
+      const ok = writeLocalStorageBatch(pairs);
+      if (ok) lastSavedAt = nextLastSavedAt;
+      if (ok) {
+        savedText.textContent = "Saved on this device";
+        if (presetKey === "tampa") {
+          removeLocalStorageKeysQuietly([
+            STORAGE_KEY,
+            DELETED_KEY,
+            DUPE_KEY,
+            NEXT_SEQUENCE_KEY,
+            LAST_SAVED_KEY,
+            EDIT_LOCKED_KEY,
+            FINAL_EXPORT_SIGNATURE_KEY,
+            ...OLD_KEYS,
+            ...OLD_DELETED_KEYS,
+            ...OLD_DUPE_KEYS,
+            ...OLD_NEXT_KEYS
+          ]);
+        }
+      }
       return ok;
     }
 
     function saveOccupiedMaster() {
       const presetKey = selectedCloudPresetKey();
       const ok = safeSetItem(occupiedMasterStorageKey(presetKey), JSON.stringify(occupiedMaster));
-      if (ok && presetKey === "tampa") safeSetItem(MONTHLY_OCCUPIED_KEY, JSON.stringify(occupiedMaster));
+      if (ok && presetKey === "tampa") removeLocalStorageKeysQuietly([MONTHLY_OCCUPIED_KEY]);
       return ok;
     }
 
@@ -2504,9 +2603,10 @@
     }
 
     function cloudLoadPreviewText(settings, monthlyRow, fullRow) {
-      const hasCloudList = Boolean(monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster);
+      const listRow = monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster ? monthlyRow : fullRow;
+      const hasCloudList = Boolean(listRow && listRow.payload && listRow.payload.occupiedMaster);
       const hasCloudAudit = Boolean(fullRow && fullRow.payload);
-      const monthlyUpdated = cloudRowTime(monthlyRow);
+      const monthlyUpdated = cloudRowTime(listRow);
       const fullUpdated = cloudRowTime(fullRow);
       return [
         "LOAD FROM CLOUD?",
@@ -2514,9 +2614,9 @@
         "SELECTED AUDIT: " + settings.label,
         "",
         "CLOUD UPLOADED DOCUMENT:",
-        hasCloudList ? "EXPECTED CONTAINERS: " + cloudUploadedCount(monthlyRow) : "NO UPLOADED DOCUMENT FOUND",
+        hasCloudList ? "EXPECTED CONTAINERS: " + cloudUploadedCount(listRow) : "NO UPLOADED DOCUMENT FOUND",
         hasCloudList && monthlyUpdated ? "LAST CLOUD UPDATE: " + formatLocalTime(monthlyUpdated) : "",
-        hasCloudList && cloudRowUpdatedBy(monthlyRow) ? "UPDATED BY: " + cloudRowUpdatedBy(monthlyRow) : "",
+        hasCloudList && cloudRowUpdatedBy(listRow) ? "UPDATED BY: " + cloudRowUpdatedBy(listRow) : "",
         "",
         "CLOUD SCANNED AUDIT:",
         hasCloudAudit ? "ACTIVE ENTRIES: " + cloudAuditEntryCount(fullRow, "entries") : "NO SCANNED AUDIT FOUND",
@@ -2799,11 +2899,52 @@
       }
     }
 
+    async function getOcrWorker() {
+      if (!ocrWorkerPromise) {
+        ocrWorkerPromise = Tesseract.createWorker("eng", 1, {
+          workerPath: "./vendor/tesseract-worker.min.js",
+          corePath: "./vendor",
+          langPath: "./vendor",
+          logger: progress => {
+            if (!progress || !progress.status) return;
+            const percent = Number.isFinite(progress.progress)
+              ? " " + Math.round(progress.progress * 100) + "%"
+              : "";
+            setOcrStatus("OCR " + progress.status + percent, "info");
+          }
+        }).then(async worker => {
+          await worker.setParameters({
+            tessedit_char_whitelist: "BCDMPRSTZ0123456789",
+            tessedit_pageseg_mode: "7",
+            preserve_interword_spaces: "0",
+            user_defined_dpi: "300"
+          });
+          return worker;
+        }).catch(error => {
+          ocrWorkerPromise = null;
+          throw error;
+        });
+      }
+      return ocrWorkerPromise;
+    }
+
+    async function resetOcrWorker() {
+      const workerPromise = ocrWorkerPromise;
+      ocrWorkerPromise = null;
+      if (!workerPromise) return;
+      try {
+        const worker = await workerPromise;
+        await worker.terminate();
+      } catch {
+        // A failed worker is discarded so the next scan can initialize a new one.
+      }
+    }
+
     async function scanContainerNumberFromImageData(originalImageData) {
       if (!originalImageData) return;
       if (requireUnlocked("scan a container number")) return;
-      if (typeof Tesseract === "undefined" || !Tesseract.recognize) {
-        setOcrStatus("OCR did not load. Check internet connection, then reopen the app.", "error");
+      if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
+        setOcrStatus("OCR did not load. Reopen the app after one successful online visit.", "error");
         setStatus("OCR did not load. Type the container number manually.", "error");
         input.focus();
         return;
@@ -2815,13 +2956,16 @@
       setStatus("OCR is checking the cropped photo. This may take a few seconds.", "info");
 
       try {
-        let imageAttempts = await prepareOcrImageDataUrls(originalImageData);
+        let imageAttempts;
         if (ocrCropOrientation === "vertical") {
           const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
           const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
-          imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedRight));
+          imageAttempts = await prepareOcrImageDataUrls(rotatedRight);
           imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedLeft));
+        } else {
+          imageAttempts = await prepareOcrImageDataUrls(originalImageData);
         }
+        const worker = await getOcrWorker();
         const votes = new Map();
         const confidenceByCode = new Map();
         const observedReads = new Set();
@@ -2831,20 +2975,7 @@
           if (attemptIndex > 0) {
             setOcrStatus("Checking the number again with another image detail pass...", "info");
           }
-          const result = await Tesseract.recognize(imageData, "eng", {
-            tessedit_char_whitelist: "BCDMPRSTZ0123456789",
-            tessedit_pageseg_mode: "7",
-            preserve_interword_spaces: "0",
-            user_defined_dpi: "300",
-            logger: progress => {
-              if (progress && progress.status) {
-                const percent = Number.isFinite(progress.progress)
-                  ? " " + Math.round(progress.progress * 100) + "%"
-                  : "";
-                setOcrStatus("OCR " + progress.status + percent, "info");
-              }
-            }
-          });
+          const result = await worker.recognize(imageData);
           lastText = result && result.data ? result.data.text || "" : "";
           const candidates = ocrLiteralCandidateCodes(lastText);
           candidates.forEach(code => observedReads.add(code));
@@ -2899,6 +3030,7 @@
         );
         setStatus("OCR result is waiting for photo verification. Nothing has been entered yet.", "warning");
       } catch (error) {
+        resetOcrWorker();
         setOcrStatus("OCR failed: " + error.message, "error");
         setStatus("OCR failed. Type the container number manually or try another photo.", "error");
       } finally {
@@ -2926,27 +3058,28 @@
       const original = await readImageFileAsDataUrl(file);
       const image = await loadImageFromDataUrl(original);
       const attempts = [
-        { maxSide: 640, quality: 0.42 },
-        { maxSide: 520, quality: 0.36 },
-        { maxSide: 420, quality: 0.30 },
-        { maxSide: 340, quality: 0.26 }
+        { maxSide: 480, quality: 0.30 },
+        { maxSide: 400, quality: 0.26 },
+        { maxSide: 320, quality: 0.22 },
+        { maxSide: 260, quality: 0.18 },
+        { maxSide: 220, quality: 0.16 }
       ];
       const thumbAttempts = [
-        { maxSide: 110, quality: 0.24 },
-        { maxSide: 92, quality: 0.20 },
-        { maxSide: 76, quality: 0.18 }
+        { maxSide: 92, quality: 0.18 },
+        { maxSide: 76, quality: 0.16 },
+        { maxSide: 64, quality: 0.14 }
       ];
       let photoDataUrl = "";
       let photoThumbDataUrl = "";
 
       for (const attempt of attempts) {
         photoDataUrl = imageToJpegDataUrl(image, attempt.maxSide, attempt.quality);
-        if (photoSizeKb(photoDataUrl) <= 120) break;
+        if (photoSizeKb(photoDataUrl) <= 30) break;
       }
 
       for (const attempt of thumbAttempts) {
         photoThumbDataUrl = imageToJpegDataUrl(image, attempt.maxSide, attempt.quality);
-        if (photoSizeKb(photoThumbDataUrl) <= 8) break;
+        if (photoSizeKb(photoThumbDataUrl) <= 4) break;
       }
 
       return { photoDataUrl, photoThumbDataUrl };
@@ -2967,11 +3100,23 @@
       takeUnitPhotoBtn.disabled = true;
 
       try {
+        const previousPhoto = {
+          photoDataUrl: latest.photoDataUrl || "",
+          photoThumbDataUrl: latest.photoThumbDataUrl || "",
+          photoTakenAt: latest.photoTakenAt || ""
+        };
         const { photoDataUrl, photoThumbDataUrl } = await compressUnitPhotoVersions(file);
         latest.photoDataUrl = photoDataUrl;
         latest.photoThumbDataUrl = photoThumbDataUrl;
         latest.photoTakenAt = new Date().toISOString();
+        const projectedPairs = auditStoragePairs(selectedCloudPresetKey(), new Date().toISOString());
+        if (projectedLocalStorageChars(projectedPairs) > PHOTO_STORAGE_SOFT_LIMIT_CHARS) {
+          Object.assign(latest, previousPhoto);
+          setStatus("Photo was not attached because this device is near its safe storage limit. Save the audit to cloud before adding more photos.", "warning");
+          return;
+        }
         const saveOk = saveEntries();
+        if (!saveOk) Object.assign(latest, previousPhoto);
         setStatus(
           saveOk
             ? "Compressed photo saved for #" + latest.sequence + " " + latest.code + " (" + photoSizeKb(photoDataUrl) + " KB)."
@@ -3029,7 +3174,7 @@
           fileName: occupiedMaster.fileName || "",
           importedAt: occupiedMaster.importedAt || "",
           items: occupiedExpectedItems().map(item => [item.code, item.type || ""]),
-          rawRows: Array.isArray(occupiedMaster.rawRows) ? occupiedMaster.rawRows : []
+          rawRowCount: Array.isArray(occupiedMaster.rawRows) ? occupiedMaster.rawRows.length : 0
         },
         active: entries.map(item => [
           item.sequence,
@@ -3043,8 +3188,8 @@
           item.editedAt || "",
           item.restoredAt || "",
           item.photoTakenAt || "",
-          item.photoDataUrl || "",
-          item.photoThumbDataUrl || ""
+          (item.photoDataUrl || "").length,
+          (item.photoThumbDataUrl || "").length
         ]),
         deleted: deletedEntries.map(item => [
           item.sequence,
@@ -3058,8 +3203,8 @@
           item.deletedAt || "",
           item.deleteType || "",
           item.photoTakenAt || "",
-          item.photoDataUrl || "",
-          item.photoThumbDataUrl || ""
+          (item.photoDataUrl || "").length,
+          (item.photoThumbDataUrl || "").length
         ])
       });
     }
@@ -3069,12 +3214,17 @@
     }
 
     function markCloudSaved(presetKey = selectedCloudPresetKey()) {
-      lastCloudSavedAt = new Date().toISOString();
-      lastCloudSaveSignature = cloudSaveSignature();
-      return [
-        safeSetItem(auditStorageKey(LAST_CLOUD_SAVED_KEY_PREFIX, presetKey), lastCloudSavedAt),
-        safeSetItem(auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey), lastCloudSaveSignature)
-      ].every(Boolean);
+      const savedAt = new Date().toISOString();
+      const signature = cloudSaveSignature();
+      const ok = writeLocalStorageBatch([
+        [auditStorageKey(LAST_CLOUD_SAVED_KEY_PREFIX, presetKey), savedAt],
+        [auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey), signature]
+      ]);
+      if (ok) {
+        lastCloudSavedAt = savedAt;
+        lastCloudSaveSignature = signature;
+      }
+      return ok;
     }
 
     function hasFreshFinalExport() {
@@ -3082,9 +3232,12 @@
     }
 
     function markFinalExportedAndLocked() {
+      const snapshot = captureAuditState();
       finalExportSignature = currentSignature();
       editLocked = true;
-      return saveEntries();
+      const ok = saveEntries();
+      if (!ok) restoreAuditState(snapshot);
+      return ok;
     }
 
     function requireUnlocked(actionText) {
@@ -3133,9 +3286,11 @@
 
       const existing = entries.find(item => item.code === code);
       if (existing) {
+        const snapshot = captureAuditState();
         duplicateBlocks += 1;
         const saveOk = saveEntries();
         if (!saveOk) {
+          restoreAuditState(snapshot);
           input.select();
           render();
           return;
@@ -3152,9 +3307,11 @@
 
       const deletedMatch = deletedEntries.find(item => item.code === code);
       if (deletedMatch) {
+        const snapshot = captureAuditState();
         duplicateBlocks += 1;
         const saveOk = saveEntries();
         if (!saveOk) {
+          restoreAuditState(snapshot);
           input.select();
           render();
           return;
@@ -3173,6 +3330,7 @@
       const hasUploadedInventory = occupiedMaster.codes.length > 0;
       const hasInventoryMatch = isMonthlyPhysicalMatch(code);
       const sizeMismatch = expectedSize && !sizesMatch(size, expectedSize);
+      const snapshot = captureAuditState();
       const sequence = nextSequence;
       nextSequence += 1;
 
@@ -3196,6 +3354,7 @@
       notesInput.value = "";
       const saveOk = saveEntries();
       if (!saveOk) {
+        restoreAuditState(snapshot);
         render();
         input.focus();
         return;
@@ -3293,9 +3452,15 @@
         return;
       }
 
+      const snapshot = captureAuditState();
       const removed = entries.splice(index, 1)[0];
       logDeletedEntry(removed, "Deleted Individually");
-      saveEntries();
+      if (!saveEntries()) {
+        restoreAuditState(snapshot);
+        render();
+        input.focus();
+        return;
+      }
       setStatus("Deleted #" + removed.sequence + " " + removed.code + ". It was added to Deleted Entries.", "warning");
       render();
       input.focus();
@@ -3317,6 +3482,7 @@
         return;
       }
 
+      const snapshot = captureAuditState();
       deletedEntries.splice(index, 1);
       entries.push({
         sequence: Number(item.sequence),
@@ -3336,7 +3502,12 @@
 
       entries.sort((a, b) => Number(a.sequence) - Number(b.sequence));
       nextSequence = Math.max(nextSequence, ...entries.map(e => Number(e.sequence) || 0), ...deletedEntries.map(e => Number(e.sequence) || 0)) + 1;
-      saveEntries();
+      if (!saveEntries()) {
+        restoreAuditState(snapshot);
+        render();
+        input.focus();
+        return;
+      }
       setStatus("Restored #" + item.sequence + " " + item.code + " back to Active Entries.", "success");
       render();
       input.focus();
@@ -3407,6 +3578,7 @@
         return;
       }
 
+      const snapshot = captureAuditState();
       item.code = code;
       item.size = editSize.value;
       item.condition = editCondition.value;
@@ -3415,7 +3587,11 @@
       item.notes = normalizeUpperText(editNotes.value.trim());
       item.editedAt = new Date().toISOString();
 
-      saveEntries();
+      if (!saveEntries()) {
+        restoreAuditState(snapshot);
+        render();
+        return;
+      }
       setStatus("Saved edit for #" + item.sequence + " " + item.code + ".", "success");
       cancelEdit();
       render();
@@ -3434,8 +3610,10 @@
         return;
       }
 
+      const snapshot = captureAuditState();
       editLocked = false;
       const saveOk = saveEntries();
+      if (!saveOk) restoreAuditState(snapshot);
       setStatus(
         saveOk
           ? "Editing unlocked. Make another Final Export + Lock when finished."
@@ -3469,6 +3647,7 @@
       const ok = confirm("This will permanently clear all active and deleted entries from this device. Make sure you saved the final XLSX first.");
       if (!ok) return;
 
+      const snapshot = captureAuditState();
       entries = [];
       deletedEntries = [];
       duplicateBlocks = 0;
@@ -3477,11 +3656,12 @@
       finalExportSignature = "";
       editLocked = false;
       const saveOk = saveEntries();
+      if (!saveOk) restoreAuditState(snapshot);
       render();
       setStatus(
         saveOk
           ? "Finished list cleared. Ready for a new inventory."
-          : "Finished list cleared for this app session, but the browser save did not fully complete. Save to cloud now.",
+          : "The finished list was not cleared because the browser could not save the change.",
         saveOk ? "success" : "warning"
       );
       input.focus();
@@ -4716,6 +4896,7 @@
         }
         const items = extractOccupiedItemsFromRows(rows);
         if (!items.length) throw new Error("No 6-character unit numbers were found in that file.");
+        const previousMaster = occupiedMaster;
         occupiedMaster = {
           fileName: normalizeUpperText(file.name),
           importedAt: new Date().toISOString(),
@@ -4723,7 +4904,10 @@
           items,
           rawRows
         };
-        saveOccupiedMaster();
+        if (!saveOccupiedMaster()) {
+          occupiedMaster = previousMaster;
+          throw new Error("The document was read, but this device could not safely save it.");
+        }
         occupiedFileInput.value = "";
         render();
         setStatus("Uploaded document loaded: " + items.length + " expected containers.", "success");
@@ -4744,8 +4928,14 @@
       const settings = cloudSettings();
       const ok = confirm("This will remove the uploaded document for " + settings.label + " from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
+      const previousMaster = occupiedMaster;
       occupiedMaster = emptyOccupiedMaster();
-      saveOccupiedMaster();
+      if (!saveOccupiedMaster()) {
+        occupiedMaster = previousMaster;
+        render();
+        input.focus();
+        return;
+      }
       occupiedFileInput.value = "";
       render();
       setStatus("Uploaded document removed from " + settings.label + ". Scanned entries were not changed.", "success");
@@ -4830,12 +5020,7 @@
 
     function saveCloudSettings() {
       const settings = cloudSettings();
-      const ok = [
-        safeSetItem(CLOUD_PRESET_KEY, settings.key),
-        safeRemoveItem(CLOUD_URL_KEY),
-        safeRemoveItem(CLOUD_ANON_KEY),
-        safeRemoveItem(CLOUD_SYNC_NAME_KEY)
-      ].every(Boolean);
+      const ok = safeSetItem(CLOUD_PRESET_KEY, settings.key);
       updateCloudActionLabels();
       setCloudStatus(
         ok
@@ -4848,11 +5033,22 @@
     }
 
     function switchCloudPreset() {
+      if (!saveEntries(activeCloudPresetKey, { updateLastSaved: false })) {
+        cloudPresetSelect.value = activeCloudPresetKey;
+        render();
+        input.focus();
+        return;
+      }
       saveEntryFormState(activeCloudPresetKey);
-      saveEntries(activeCloudPresetKey, { updateLastSaved: false });
-      activeCloudPresetKey = selectedCloudPresetKey();
+      const nextPresetKey = selectedCloudPresetKey();
       const settings = cloudSettings();
-      saveCloudSettings();
+      if (!saveCloudSettings()) {
+        cloudPresetSelect.value = activeCloudPresetKey;
+        render();
+        input.focus();
+        return;
+      }
+      activeCloudPresetKey = nextPresetKey;
       entries = loadEntries(activeCloudPresetKey);
       deletedEntries = loadDeletedEntries(activeCloudPresetKey);
       occupiedMaster = loadOccupiedMaster();
@@ -5036,18 +5232,11 @@
         updated_by: employeeInitialsInput.value.trim().toUpperCase()
       };
       const payloadKb = jsonSizeKb(record);
-      const photoCount = auditPhotoCount();
-      if (photoCount && payloadKb > 4500) {
-        const ok = confirm(
-          "THIS AUDIT HAS " + photoCount + " PHOTO(S) AND THE CLOUD SAVE IS ABOUT " + payloadKb + " KB.\n\n" +
-          "LARGE PHOTO SAVES CAN TAKE LONGER AND MAY FAIL ON SOME CONNECTIONS.\n\n" +
-          "CONTINUE SAVING TO CLOUD?"
-        );
-        if (!ok) {
-          setCloudStatus("Cloud save canceled. Nothing was changed in the cloud.", "info");
-          input.focus();
-          return false;
-        }
+      if (payloadKb > 4500) {
+        setCloudStatus("Cloud save stopped before upload because this audit is " + payloadKb + " KB. Remove some photos, then save again. No cloud data was changed.", "error");
+        setStatus("Cloud save stopped safely because the audit is too large. Remove some photos before retrying.", "error");
+        input.focus();
+        return false;
       }
 
       saveFullAuditCloudBtn.disabled = true;
@@ -5138,24 +5327,9 @@
       saveCloudBtn.disabled = true;
       saveCloudEntryModeBtn.disabled = true;
       try {
-        let listSaved = !hasMonthlyList;
-        let auditSaved = !hasFullAuditData;
-        if (hasMonthlyList) {
-          listSaved = await uploadOccupiedListToCloud({ skipPin: true });
-        }
-        if (hasFullAuditData) {
-          auditSaved = await saveFullAuditToCloud({ skipPin: true });
-        }
-        if (!listSaved || !auditSaved) {
-          setCloudStatus(
-            "Cloud save incomplete. Uploaded document: " + (listSaved ? "saved" : "not saved") +
-            ". Full audit: " + (auditSaved ? "saved" : "not saved") + ".",
-            "error"
-          );
-          setStatus("Cloud save incomplete. Check the cloud message before continuing.", "error");
-          return;
-        }
-        markCloudSaved();
+        const auditSaved = await saveFullAuditToCloud({ skipPin: true });
+        if (!auditSaved) return;
+        if (!markCloudSaved()) return;
         render();
         setCloudStatus(
           "Cloud save complete. Uploaded document: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
@@ -5178,17 +5352,7 @@
       loadCloudCombinedBtn.disabled = true;
       setCloudStatus("Loading from cloud...", "info");
 
-      let monthlyLoaded = false;
-      let fullAuditLoaded = false;
-
       try {
-        const monthlyRows = await supabaseRequest(
-          settings,
-          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
-          { method: "GET" }
-        );
-        const monthlyRow = Array.isArray(monthlyRows) && monthlyRows.length ? monthlyRows[0] : null;
-
         const fullSyncName = fullAuditCloudSyncName(settings);
         const fullRows = await supabaseRequest(
           settings,
@@ -5196,53 +5360,55 @@
           { method: "GET" }
         );
         const fullRow = Array.isArray(fullRows) && fullRows.length ? fullRows[0] : null;
-        const hasCloudList = Boolean(monthlyRow && monthlyRow.payload && monthlyRow.payload.occupiedMaster);
-        const hasCloudAudit = Boolean(fullRow && fullRow.payload);
+        if (fullRow && fullRow.payload) {
+          const ok = confirm(cloudLoadPreviewText(settings, null, fullRow));
+          if (!ok) {
+            setCloudStatus("Cloud load canceled. This device was not changed.", "info");
+            input.focus();
+            return;
+          }
+          const data = dataFromJsonBackup(fullRow.payload);
+          if (!data.occupiedMaster) data.occupiedMaster = emptyOccupiedMaster();
+          if (!applyImportedData(data)) {
+            setCloudStatus("Cloud audit was downloaded, but this device could not safely save it. The current device audit was kept.", "error");
+            return;
+          }
+          occupiedFileInput.value = "";
+          markCloudSaved();
+          render();
+          setCloudStatus("Cloud load complete. Uploaded document: " + occupiedMaster.codes.length + " expected. Active entries: " + entries.length + ".", "success");
+          setStatus("Cloud load complete.", "success");
+          return;
+        }
 
-        if (!hasCloudList && !hasCloudAudit) {
+        const monthlyRows = await supabaseRequest(
+          settings,
+          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
+          { method: "GET" }
+        );
+        const monthlyRow = Array.isArray(monthlyRows) && monthlyRows.length ? monthlyRows[0] : null;
+        if (!monthlyRow || !monthlyRow.payload || !monthlyRow.payload.occupiedMaster) {
           setCloudStatus("No cloud data found for this audit.", "warning");
           setStatus("No cloud data found.", "warning");
           return;
         }
 
-        const ok = confirm(cloudLoadPreviewText(settings, monthlyRow, fullRow));
+        const ok = confirm(cloudLoadPreviewText(settings, monthlyRow, null));
         if (!ok) {
           setCloudStatus("Cloud load canceled. This device was not changed.", "info");
-          input.focus();
           return;
         }
-
-        if (hasCloudList) {
-          occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
-          const saveOk = saveOccupiedMaster();
-          occupiedFileInput.value = "";
-          monthlyLoaded = saveOk;
+        const previousMaster = occupiedMaster;
+        occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
+        if (!saveOccupiedMaster()) {
+          occupiedMaster = previousMaster;
+          setCloudStatus("Legacy uploaded document was downloaded, but this device could not safely save it.", "error");
+          return;
         }
-
-        if (fullRow && fullRow.payload) {
-          const data = dataFromJsonBackup(fullRow.payload);
-          fullAuditLoaded = applyImportedData(data);
-        } else {
-          render();
-        }
-
-        if (monthlyLoaded || fullAuditLoaded) {
-          markCloudSaved();
-          render();
-        }
-
-        const fullAuditText = fullAuditLoaded
-          ? entries.length + " active entries"
-          : hasCloudAudit && occupiedMaster.codes.length
-          ? "uploaded list loaded, no entries yet"
-          : "not loaded";
-
-        setCloudStatus(
-          "Cloud load complete. Uploaded document: " + (monthlyLoaded ? occupiedMaster.codes.length + " expected" : "not loaded") +
-          ". Full audit: " + fullAuditText + ".",
-          monthlyLoaded || fullAuditLoaded ? "success" : "warning"
-        );
-        setStatus("Cloud load complete.", monthlyLoaded || fullAuditLoaded ? "success" : "warning");
+        occupiedFileInput.value = "";
+        render();
+        setCloudStatus("Older cloud document loaded. Save to cloud once to upgrade it to the safer combined format.", "success");
+        setStatus("Cloud document loaded. Save to cloud once to upgrade its format.", "success");
       } catch (error) {
         setCloudStatus("Cloud load failed: " + error.message + ". Check Supabase setup/table rules.", "error");
       } finally {
@@ -5332,19 +5498,18 @@
     }
 
     function applyPhoneTransfer(data) {
+      const snapshot = captureAuditState();
       occupiedMaster = loadTransferOccupiedMaster(data.occupiedMaster || {});
       sessionNameInput.value = normalizeUpperText(data.sessionName || sessionNameInput.value || defaultSessionName());
       employeeInitialsInput.value = normalizeInitials(data.employeeInitials || employeeInitialsInput.value || "");
-      const saveOk = [
-        saveOccupiedMaster(),
-        saveSessionName(),
-        saveEmployeeInitials()
-      ].every(Boolean);
+      const saveOk = saveEntries(selectedCloudPresetKey(), { includeOccupiedMaster: true });
+      if (!saveOk) restoreAuditState(snapshot);
       render();
       return saveOk;
     }
 
     function applyImportedData(data) {
+      const snapshot = captureAuditState();
       entries = data.entries || [];
       deletedEntries = data.deletedEntries || [];
 
@@ -5364,10 +5529,10 @@
 
       if (data.occupiedMaster) {
         occupiedMaster = data.occupiedMaster;
-        saveOccupiedMaster();
       }
 
-      const saveOk = saveEntries();
+      const saveOk = saveEntries(selectedCloudPresetKey(), { includeOccupiedMaster: Boolean(data.occupiedMaster) });
+      if (!saveOk) restoreAuditState(snapshot);
       render();
       return saveOk;
     }
@@ -5977,7 +6142,7 @@
 
     employeeInitialsInput.addEventListener("input", () => {
       employeeInitialsInput.value = normalizeInitials(employeeInitialsInput.value);
-      saveEmployeeInitials();
+      if (!saveEmployeeInitials()) employeeInitialsInput.value = loadEmployeeInitials();
       renderCloudSaveState();
     });
 
@@ -6021,7 +6186,7 @@
 
     sessionNameInput.addEventListener("input", () => {
       sessionNameInput.value = normalizeUpperText(sessionNameInput.value);
-      saveSessionName();
+      if (!saveSessionName()) sessionNameInput.value = loadSessionName();
       render();
     });
 
@@ -6145,6 +6310,9 @@
 
     renderContainerKeyboard();
     updateContainerKeyboardToggle();
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    }
     setTimeout(render, 500);
     render();
     input.focus();
