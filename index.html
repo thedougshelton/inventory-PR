@@ -618,6 +618,10 @@
       pointer-events: none;
     }
 
+    .ocr-crop-canvas-wrap.vertical::after {
+      inset: 8% 35%;
+    }
+
     #ocrCropCanvas {
       display: block;
       width: 100%;
@@ -625,6 +629,7 @@
     }
 
     .ocr-crop-controls,
+    .ocr-orientation-controls,
     .ocr-lighting-controls,
     .ocr-pan-controls {
       display: grid;
@@ -649,7 +654,8 @@
       min-height: 42px;
     }
 
-    .ocr-lighting-controls button.active {
+    .ocr-lighting-controls button.active,
+    .ocr-orientation-controls button.active {
       border-color: var(--ink);
       background: var(--ink);
       color: #ffffff;
@@ -1502,6 +1508,11 @@
             <button type="button" data-ocr-lighting="sun">Bright Sun</button>
             <button type="button" data-ocr-lighting="dark">Dark / Shadow</button>
           </div>
+          <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
+            <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
+            <button type="button" data-ocr-orientation="vertical">Vertical Box</button>
+            <button type="button" data-ocr-orientation="horizontal">Reset Box</button>
+          </div>
           <div class="ocr-pan-controls" aria-label="Move photo crop">
             <button type="button" data-pan="up">Up</button>
             <button type="button" data-pan="left">Left</button>
@@ -1878,6 +1889,7 @@
     const ocrScanCropBtn = document.getElementById("ocrScanCropBtn");
     const ocrCancelCropBtn = document.getElementById("ocrCancelCropBtn");
     const ocrLightingButtons = [...document.querySelectorAll("[data-ocr-lighting]")];
+    const ocrOrientationButtons = [...document.querySelectorAll("[data-ocr-orientation]")];
     const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
     const unitPhotoInput = document.getElementById("unitPhotoInput");
     const unitPhotoStatus = document.getElementById("unitPhotoStatus");
@@ -1918,6 +1930,7 @@
     let deletedEntriesDirty = true;
     let ocrCropState = null;
     let ocrLightingMode = "normal";
+    let ocrCropOrientation = "horizontal";
 
     sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = loadEmployeeInitials();
@@ -2577,6 +2590,38 @@
       }
     }
 
+    function setOcrCropOrientation(orientation) {
+      ocrCropOrientation = orientation === "vertical" ? "vertical" : "horizontal";
+      const wrap = ocrCropCanvas.closest(".ocr-crop-canvas-wrap");
+      if (wrap) wrap.classList.toggle("vertical", ocrCropOrientation === "vertical");
+      ocrOrientationButtons.forEach(button => {
+        const isActive = button.dataset.ocrOrientation === ocrCropOrientation;
+        button.classList.toggle("active", isActive);
+        button.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+      if (ocrCropState) {
+        setOcrStatus("OCR box set to " + ocrCropOrientation + ". Fit the number inside the green box, then scan.", "info");
+        renderOcrCropPreview();
+      }
+    }
+
+    function ocrCropBox(canvas) {
+      if (ocrCropOrientation === "vertical") {
+        return {
+          x: canvas.width * 0.35,
+          y: canvas.height * 0.08,
+          width: canvas.width * 0.30,
+          height: canvas.height * 0.84
+        };
+      }
+      return {
+        x: canvas.width * 0.08,
+        y: canvas.height * 0.35,
+        width: canvas.width * 0.84,
+        height: canvas.height * 0.30
+      };
+    }
+
     async function prepareOcrImageDataUrls(dataUrl, mode) {
       const image = await loadImageFromDataUrl(dataUrl);
       const maxSide = 1800;
@@ -2606,6 +2651,22 @@
       context.putImageData(imageData, 0, 0);
 
       return [canvas.toDataURL("image/jpeg", 0.92), dataUrl];
+    }
+
+    async function rotateImageDataUrl(dataUrl, degrees) {
+      const image = await loadImageFromDataUrl(dataUrl);
+      const quarterTurn = Math.abs(degrees) % 180 === 90;
+      const canvas = document.createElement("canvas");
+      canvas.width = quarterTurn ? image.height : image.width;
+      canvas.height = quarterTurn ? image.width : image.height;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) return dataUrl;
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(degrees * Math.PI / 180);
+      context.drawImage(image, -image.width / 2, -image.height / 2);
+      return canvas.toDataURL("image/jpeg", 0.94);
     }
 
     function resetOcrCrop() {
@@ -2679,12 +2740,7 @@
       const previewCanvas = ocrCropCanvas;
       if (!previewCanvas.width || !previewCanvas.height) renderOcrCropPreview();
       const bounds = ocrCropDrawBounds(ocrCropState, previewCanvas);
-      const crop = {
-        x: previewCanvas.width * 0.08,
-        y: previewCanvas.height * 0.35,
-        width: previewCanvas.width * 0.84,
-        height: previewCanvas.height * 0.30
-      };
+      const crop = ocrCropBox(previewCanvas);
       const source = {
         x: Math.max(0, (crop.x - bounds.drawX) / bounds.scale),
         y: Math.max(0, (crop.y - bounds.drawY) / bounds.scale),
@@ -2722,6 +2778,7 @@
         };
         ocrCropPanel.hidden = false;
         setOcrLightingMode(ocrLightingMode);
+        setOcrCropOrientation(ocrCropOrientation);
         setOcrStatus("Zoom and move the photo so the container number is inside the green box, then scan cropped photo.", "info");
         setStatus("OCR photo ready. Crop around the container number, then scan cropped photo.", "info");
         requestAnimationFrame(renderOcrCropPreview);
@@ -2750,7 +2807,13 @@
 
       let closeCropAfterScan = false;
       try {
-        const imageAttempts = await prepareOcrImageDataUrls(originalImageData, ocrLightingMode);
+        let imageAttempts = await prepareOcrImageDataUrls(originalImageData, ocrLightingMode);
+        if (ocrCropOrientation === "vertical") {
+          const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
+          const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
+          imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedRight, ocrLightingMode));
+          imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedLeft, ocrLightingMode));
+        }
         let text = "";
         let candidates = [];
 
@@ -5959,6 +6022,9 @@
     ocrLightingButtons.forEach(button => {
       button.addEventListener("click", () => setOcrLightingMode(button.dataset.ocrLighting || "normal"));
     });
+    ocrOrientationButtons.forEach(button => {
+      button.addEventListener("click", () => setOcrCropOrientation(button.dataset.ocrOrientation || "horizontal"));
+    });
     ocrCancelCropBtn.addEventListener("click", () => {
       resetOcrCrop();
       setOcrStatus("OCR photo cancelled. Take another photo or type manually.", "warning");
@@ -5988,6 +6054,7 @@
     });
     window.addEventListener("resize", renderOcrCropPreview);
     setOcrLightingMode("normal");
+    setOcrCropOrientation("horizontal");
     takeUnitPhotoBtn.addEventListener("click", () => {
       if (requireUnlocked("add a photo")) return;
       if (!latestEntry()) {
