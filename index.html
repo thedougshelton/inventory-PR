@@ -2197,6 +2197,7 @@
       Z: "2"
     };
     const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D", "M", "P", "R", "T", "Z"]);
+    const OCR_COMMON_NUMERIC_STARTS = new Set(["3", "7", "8"]);
 
     function isOcrContainerCode(code) {
       const normalized = normalizeCode(code || "");
@@ -2247,10 +2248,13 @@
 
     function ocrCandidateRank(code) {
       if (isUploadedInventoryCode(code)) return 0;
-      if (/^\d{6}$/.test(code)) return 1;
-      if (/^(ZM|TR|PS)\d{4}$/.test(code)) return 2;
-      if (OCR_SINGLE_LETTER_PREFIXES.has(code.charAt(0)) && /^\d{5}$/.test(code.slice(1))) return 3;
-      return 4;
+      if (/^D\d{5}$/.test(code)) return 1;
+      if (/^[BC]\d{5}$/.test(code)) return 2;
+      if (/^\d{6}$/.test(code) && OCR_COMMON_NUMERIC_STARTS.has(code.charAt(0))) return 3;
+      if (/^(ZM|TR|PS)\d{4}$/.test(code)) return 4;
+      if (/^\d{6}$/.test(code)) return 5;
+      if (OCR_SINGLE_LETTER_PREFIXES.has(code.charAt(0)) && /^\d{5}$/.test(code.slice(1))) return 6;
+      return 7;
     }
 
     function ocrCandidateCodes(text) {
