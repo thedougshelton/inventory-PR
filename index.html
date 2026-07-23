@@ -654,6 +654,60 @@
       min-height: 42px;
     }
 
+    .ocr-review-panel {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 2px solid var(--warning);
+      border-radius: 10px;
+      background: #fffbea;
+    }
+
+    .ocr-review-panel[hidden] {
+      display: none;
+    }
+
+    .ocr-review-label {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--ink);
+      text-align: center;
+    }
+
+    #ocrReviewInput {
+      width: 100%;
+      min-height: 64px;
+      padding: 8px 12px;
+      font-size: 34px;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-align: center;
+      border: 2px solid var(--ink);
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .ocr-review-check {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #ffffff;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .ocr-review-check input {
+      width: 24px;
+      height: 24px;
+      margin: 0;
+    }
+
     .ocr-lighting-controls button.active,
     .ocr-orientation-controls button.active {
       border-color: var(--ink);
@@ -1493,7 +1547,7 @@
       <div class="unit-photo-panel">
         <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
-        <div id="ocrStatus" class="unit-photo-status">OCR fills the container number box only. Review before pressing Enter.</div>
+        <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
           <div class="ocr-crop-canvas-wrap">
             <canvas id="ocrCropCanvas"></canvas>
@@ -1519,6 +1573,24 @@
             <button type="button" data-pan="center">Center</button>
             <button type="button" data-pan="right">Right</button>
             <button type="button" data-pan="down">Down</button>
+          </div>
+          <div id="ocrReviewPanel" class="ocr-review-panel" hidden>
+            <div class="ocr-review-label">COMPARE ALL 6 CHARACTERS TO THE PHOTO ABOVE</div>
+            <input
+              id="ocrReviewInput"
+              type="text"
+              inputmode="text"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              maxlength="6"
+              aria-label="Verified container number from photo"
+            />
+            <label class="ocr-review-check" for="ocrReviewConfirmed">
+              <input id="ocrReviewConfirmed" type="checkbox" />
+              <span>I VERIFIED THAT ALL 6 CHARACTERS EXACTLY MATCH THE PHOTO.</span>
+            </label>
+            <button id="ocrUseVerifiedBtn" class="primary" type="button" disabled>Use Verified Number</button>
           </div>
           <button id="ocrCancelCropBtn" type="button">Cancel OCR Photo</button>
         </div>
@@ -1888,6 +1960,10 @@
     const ocrZoomInBtn = document.getElementById("ocrZoomInBtn");
     const ocrScanCropBtn = document.getElementById("ocrScanCropBtn");
     const ocrCancelCropBtn = document.getElementById("ocrCancelCropBtn");
+    const ocrReviewPanel = document.getElementById("ocrReviewPanel");
+    const ocrReviewInput = document.getElementById("ocrReviewInput");
+    const ocrReviewConfirmed = document.getElementById("ocrReviewConfirmed");
+    const ocrUseVerifiedBtn = document.getElementById("ocrUseVerifiedBtn");
     const ocrLightingButtons = [...document.querySelectorAll("[data-ocr-lighting]")];
     const ocrOrientationButtons = [...document.querySelectorAll("[data-ocr-orientation]")];
     const takeUnitPhotoBtn = document.getElementById("takeUnitPhotoBtn");
@@ -2301,19 +2377,7 @@
       return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
-    const OCR_DIGIT_LOOKALIKE_MAP = {
-      B: "8",
-      G: "6",
-      I: "1",
-      L: "1",
-      O: "0",
-      Q: "0",
-      S: "5",
-      T: "7",
-      Z: "2"
-    };
     const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D", "M", "P", "R", "T", "Z"]);
-    const OCR_COMMON_NUMERIC_STARTS = new Set(["3", "7", "8"]);
 
     function isOcrContainerCode(code) {
       const normalized = normalizeCode(code || "");
@@ -2323,116 +2387,54 @@
       return /^\d{6}$/.test(normalized) || (OCR_SINGLE_LETTER_PREFIXES.has(normalized.charAt(0)) && /^\d{5}$/.test(normalized.slice(1)));
     }
 
-    function ocrDigitFromChar(character) {
-      return /\d/.test(character) ? character : OCR_DIGIT_LOOKALIKE_MAP[character] || "";
-    }
-
-    function ocrDigitsFromText(text) {
-      let digits = "";
-      normalizeUpperText(text).split("").forEach(character => {
-        digits += ocrDigitFromChar(character);
-      });
-      return digits;
-    }
-
-    function ocrThreeToEightCandidates(code) {
-      const normalized = normalizeCode(code || "");
-      const positions = [];
-      normalized.split("").forEach((character, index) => {
-        if (character === "3") positions.push(index);
-      });
-      if (!positions.length || positions.length > 4) return [{ code: normalized, penalty: 0 }];
-
-      const alternates = new Set([normalized]);
-      positions.forEach(position => {
-        [...alternates].forEach(candidate => {
-          const characters = candidate.split("");
-          characters[position] = "8";
-          alternates.add(characters.join(""));
-        });
-      });
-      return [...alternates]
-        .filter(isOcrContainerCode)
-        .map(code => {
-          const changedCount = code.split("").filter((character, index) => character !== normalized.charAt(index)).length;
-          return {
-            code,
-            penalty: code === normalized ? 0 : (/^\d{6}$/.test(code) ? -changedCount : 10)
-          };
-        });
-    }
-
-    function ocrRawDigitCount(text) {
-      return (String(text || "").match(/\d/g) || []).length;
-    }
-
-    function ocrWindowCandidates(windowText) {
-      const window = normalizeUpperText(windowText);
+    function ocrLiteralCandidateCodes(text) {
       const candidates = new Set();
-      const sixDigits = ocrDigitsFromText(window);
-      if (/^\d{6}$/.test(sixDigits) && /^\d/.test(window) && ocrRawDigitCount(window) >= 5) {
-        if (sixDigits.charAt(0) === "0") {
-          candidates.add({ code: sixDigits, penalty: 10 });
-          candidates.add({ code: "8" + sixDigits.slice(1), penalty: 0 });
-        } else {
-          ocrThreeToEightCandidates(sixDigits).forEach(candidate => candidates.add(candidate));
+      const normalized = normalizeUpperText(text);
+      const groups = normalized
+        .split(/[^A-Z0-9]+/)
+        .map(group => group.trim())
+        .filter(Boolean);
+      const compact = normalized.replace(/[^A-Z0-9]+/g, "");
+      if (compact && !groups.includes(compact)) groups.push(compact);
+
+      groups.forEach(group => {
+        for (let index = 0; index <= group.length - 6; index += 1) {
+          const code = group.slice(index, index + 6);
+          if (isOcrContainerCode(code) && !IGNORED_UPLOADED_UNIT_CODES.has(code)) {
+            candidates.add(code);
+          }
         }
-      }
+      });
 
-      const first = window.charAt(0);
-      const oneLetterSuffix = window.slice(1);
-      const suffixFive = ocrDigitsFromText(oneLetterSuffix);
-      if (OCR_SINGLE_LETTER_PREFIXES.has(first) && /^\d{5}$/.test(suffixFive) && ocrRawDigitCount(oneLetterSuffix) >= 4) {
-        ocrThreeToEightCandidates(first + suffixFive).forEach(candidate => candidates.add(candidate));
-      }
-
-      const prefix = window.slice(0, 2);
-      const twoLetterSuffix = window.slice(2);
-      const suffixFour = ocrDigitsFromText(twoLetterSuffix);
-      if (/^(ZM|TR|PS)$/.test(prefix) && /^\d{4}$/.test(suffixFour) && ocrRawDigitCount(twoLetterSuffix) >= 3) {
-        ocrThreeToEightCandidates(prefix + suffixFour).forEach(candidate => candidates.add(candidate));
-      }
-
-      return [...candidates].filter(candidate => isOcrContainerCode(candidate.code));
-    }
-
-    function ocrCandidateRank(code) {
-      if (isUploadedInventoryCode(code)) return 0;
-      if (/^D\d{5}$/.test(code)) return 1;
-      if (/^[BC]\d{5}$/.test(code)) return 2;
-      if (/^\d{6}$/.test(code) && OCR_COMMON_NUMERIC_STARTS.has(code.charAt(0))) return 3;
-      if (/^(ZM|TR|PS)\d{4}$/.test(code)) return 4;
-      if (/^\d{6}$/.test(code)) return 5;
-      if (OCR_SINGLE_LETTER_PREFIXES.has(code.charAt(0)) && /^\d{5}$/.test(code.slice(1))) return 6;
-      return 7;
-    }
-
-    function ocrCandidateCodes(text) {
-      const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
-      const candidates = new Map();
-
-      function addCandidate(candidate) {
-        const code = typeof candidate === "string" ? candidate : candidate.code;
-        const penalty = typeof candidate === "string" ? 0 : candidate.penalty || 0;
-        if (!isOcrContainerCode(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
-        const rank = isUploadedInventoryCode(code) ? 0 : ocrCandidateRank(code) + penalty;
-        if (!candidates.has(code) || rank < candidates.get(code)) {
-          candidates.set(code, rank);
-        }
-      }
-
-      for (let index = 0; index <= compact.length - 6; index += 1) {
-        ocrWindowCandidates(compact.slice(index, index + 6)).forEach(addCandidate);
-      }
-
-      return [...candidates.entries()]
-        .sort((first, second) => first[1] - second[1])
-        .map(([code]) => code);
+      return [...candidates];
     }
 
     function setOcrStatus(message, type) {
       ocrStatus.textContent = normalizeUpperText(message);
       ocrStatus.className = "unit-photo-status" + (type ? " " + type : "");
+    }
+
+    function resetOcrReview() {
+      ocrReviewPanel.hidden = true;
+      ocrReviewInput.value = "";
+      ocrReviewConfirmed.checked = false;
+      ocrUseVerifiedBtn.disabled = true;
+    }
+
+    function updateOcrReviewButton() {
+      const code = normalizeCode(ocrReviewInput.value || "");
+      if (ocrReviewInput.value !== code) ocrReviewInput.value = code.slice(0, 6);
+      ocrUseVerifiedBtn.disabled = editLocked || !ocrReviewConfirmed.checked || !isOcrContainerCode(code);
+    }
+
+    function showOcrReview(code, message, type) {
+      ocrReviewPanel.hidden = false;
+      ocrReviewInput.value = isOcrContainerCode(code || "") ? normalizeCode(code) : "";
+      ocrReviewConfirmed.checked = false;
+      updateOcrReviewButton();
+      setOcrStatus(message, type);
+      ocrReviewInput.focus();
+      if (ocrReviewInput.value) ocrReviewInput.select();
     }
 
     function setStatus(message, type) {
@@ -2608,6 +2610,39 @@
       return gray < 150 ? Math.max(0, gray - 45) : Math.min(255, gray + 35);
     }
 
+    function ocrAutomaticThreshold(pixelData) {
+      const histogram = new Array(256).fill(0);
+      let total = 0;
+      let weightedTotal = 0;
+      for (let index = 0; index < pixelData.length; index += 4) {
+        const value = pixelData[index];
+        histogram[value] += 1;
+        total += 1;
+        weightedTotal += value;
+      }
+
+      let backgroundWeight = 0;
+      let backgroundSum = 0;
+      let bestVariance = -1;
+      let threshold = 128;
+      for (let value = 0; value < 256; value += 1) {
+        backgroundWeight += histogram[value];
+        if (!backgroundWeight) continue;
+        const foregroundWeight = total - backgroundWeight;
+        if (!foregroundWeight) break;
+        backgroundSum += value * histogram[value];
+        const backgroundMean = backgroundSum / backgroundWeight;
+        const foregroundMean = (weightedTotal - backgroundSum) / foregroundWeight;
+        const difference = backgroundMean - foregroundMean;
+        const variance = backgroundWeight * foregroundWeight * difference * difference;
+        if (variance > bestVariance) {
+          bestVariance = variance;
+          threshold = value;
+        }
+      }
+      return threshold;
+    }
+
     function ocrModeLabel(mode) {
       if (mode === "sun") return "Bright Sun";
       if (mode === "dark") return "Dark / Shadow";
@@ -2685,8 +2720,18 @@
         data[index + 3] = 255;
       }
       context.putImageData(imageData, 0, 0);
+      const enhancedImage = canvas.toDataURL("image/png");
+      const threshold = ocrAutomaticThreshold(data);
+      for (let index = 0; index < data.length; index += 4) {
+        const value = data[index] <= threshold ? 0 : 255;
+        data[index] = value;
+        data[index + 1] = value;
+        data[index + 2] = value;
+      }
+      context.putImageData(imageData, 0, 0);
+      const thresholdImage = canvas.toDataURL("image/png");
 
-      return [canvas.toDataURL("image/jpeg", 0.92), dataUrl];
+      return [enhancedImage, thresholdImage, dataUrl];
     }
 
     async function rotateImageDataUrl(dataUrl, degrees) {
@@ -2709,6 +2754,7 @@
       ocrCropState = null;
       ocrCropPanel.hidden = true;
       ocrPhotoInput.value = "";
+      resetOcrReview();
     }
 
     function ocrCropDrawBounds(state, canvas) {
@@ -2813,6 +2859,8 @@
           offsetY: 0
         };
         ocrCropPanel.hidden = false;
+        setContainerInputValue("");
+        resetOcrReview();
         setOcrLightingMode(ocrLightingMode);
         setOcrCropOrientation(ocrCropOrientation);
         setOcrStatus("Zoom and move the photo so the container number is inside the green box, then scan cropped photo.", "info");
@@ -2841,7 +2889,6 @@
       setOcrStatus("Reading cropped container number with " + ocrModeLabel(ocrLightingMode) + " mode...", "info");
       setStatus("OCR is reading the cropped photo with " + ocrModeLabel(ocrLightingMode) + " mode. This may take a few seconds.", "info");
 
-      let closeCropAfterScan = false;
       try {
         let imageAttempts = await prepareOcrImageDataUrls(originalImageData, ocrLightingMode);
         if (ocrCropOrientation === "vertical") {
@@ -2850,16 +2897,20 @@
           imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedRight, ocrLightingMode));
           imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedLeft, ocrLightingMode));
         }
-        let text = "";
-        let candidates = [];
+        const votes = new Map();
+        const confidenceByCode = new Map();
+        const observedReads = new Set();
+        let lastText = "";
 
         for (const [attemptIndex, imageData] of imageAttempts.entries()) {
           if (attemptIndex > 0) {
-            setOcrStatus("Trying original photo after enhanced scan...", "info");
+            setOcrStatus("Checking the number again with another image detail pass...", "info");
           }
           const result = await Tesseract.recognize(imageData, "eng", {
-            tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-            tessedit_pageseg_mode: "6",
+            tessedit_char_whitelist: "BCDMPRSTZ0123456789",
+            tessedit_pageseg_mode: "7",
+            preserve_interword_spaces: "0",
+            user_defined_dpi: "300",
             logger: progress => {
               if (progress && progress.status) {
                 const percent = Number.isFinite(progress.progress)
@@ -2869,46 +2920,65 @@
               }
             }
           });
-          text = result && result.data ? result.data.text || "" : "";
-          candidates = ocrCandidateCodes(text);
-          if (candidates.length) break;
+          lastText = result && result.data ? result.data.text || "" : "";
+          const candidates = ocrLiteralCandidateCodes(lastText);
+          candidates.forEach(code => observedReads.add(code));
+          if (candidates.length === 1) {
+            const code = candidates[0];
+            votes.set(code, (votes.get(code) || 0) + 1);
+            const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
+            confidenceByCode.set(code, Math.max(confidenceByCode.get(code) || 0, confidence));
+            if (votes.get(code) >= 2) break;
+          }
         }
 
-        if (!candidates.length) {
-          const preview = normalizeUpperText(text).replace(/\s+/g, " ").trim().slice(0, 40);
-          setOcrStatus(preview ? "No valid number found. OCR saw: " + preview : "No valid number found. Try filling the frame with the container number.", "warning");
+        const rankedVotes = [...votes.entries()].sort((first, second) => second[1] - first[1]);
+        const bestRead = rankedVotes.length ? rankedVotes[0] : null;
+        const secondRead = rankedVotes.length > 1 ? rankedVotes[1] : null;
+        const hasAgreement = Boolean(bestRead && bestRead[1] >= 2 && (!secondRead || bestRead[1] > secondRead[1]));
+
+        if (!observedReads.size) {
+          const preview = normalizeUpperText(lastText).replace(/\s+/g, " ").trim().slice(0, 40);
+          showOcrReview(
+            "",
+            preview
+              ? "No exact valid number found. OCR saw: " + preview + ". Type all 6 characters from the photo below."
+              : "No exact valid number found. Type all 6 characters from the photo below.",
+            "warning"
+          );
           setStatus("OCR did not find a valid container number. Type it manually or try again.", "warning");
-          input.focus();
           return;
         }
 
-        const bestCandidate = candidates.find(isOcrContainerCode);
-        if (!bestCandidate) {
-          setOcrStatus("OCR found text, but not a valid container number.", "warning");
-          setStatus("OCR ignored the camera read because it was not an allowed 6-character container number.", "warning");
-          input.focus();
+        if (!hasAgreement) {
+          const reads = [...observedReads].slice(0, 4).join(", ");
+          showOcrReview(
+            "",
+            "Unsafe OCR: the detail passes did not agree. Nothing was filled. Possible reads: " + reads + ". Type all 6 characters from the photo below.",
+            "warning"
+          );
+          setStatus("OCR reads did not agree, so no number was entered. Verify it from the photo.", "warning");
           return;
         }
 
-        setContainerInputValue(bestCandidate);
-        closeCropAfterScan = true;
-        input.focus();
-        input.select();
-        setOcrStatus(
-          candidates.length > 1
-            ? "Found " + bestCandidate + ". Other possible reads: " + candidates.filter(code => code !== bestCandidate).slice(0, 3).join(", ") + "."
-            : "Found " + bestCandidate + ". Review before pressing Enter.",
-          "success"
+        const bestCandidate = bestRead[0];
+        const confidence = Math.round(confidenceByCode.get(bestCandidate) || 0);
+        const inventoryText = occupiedMaster.codes.length
+          ? (isMonthlyPhysicalMatch(bestCandidate) ? " It is on the uploaded inventory list." : " It is not on the uploaded inventory list.")
+          : "";
+        const characterWarning = /[38]/.test(bestCandidate) ? " Check every 3 and 8 especially carefully." : "";
+        showOcrReview(
+          bestCandidate,
+          "Independent OCR passes agreed on " + bestCandidate + " (confidence " + confidence + "%)." + characterWarning + inventoryText + " Verify all 6 characters before use.",
+          "warning"
         );
-        setStatus("OCR filled " + bestCandidate + ". Review it, then press Enter to save.", "success");
+        setStatus("OCR result is waiting for photo verification. Nothing has been entered yet.", "warning");
       } catch (error) {
         setOcrStatus("OCR failed: " + error.message, "error");
         setStatus("OCR failed. Type the container number manually or try another photo.", "error");
       } finally {
-        if (closeCropAfterScan) resetOcrCrop();
         scanContainerOcrBtn.disabled = editLocked;
         ocrScanCropBtn.disabled = editLocked;
-        input.focus();
       }
     }
 
@@ -6055,6 +6125,26 @@
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => scanContainerNumberFromImageData(ocrCropDataUrl()));
+    ocrReviewInput.addEventListener("input", () => {
+      ocrReviewConfirmed.checked = false;
+      updateOcrReviewButton();
+    });
+    ocrReviewConfirmed.addEventListener("change", updateOcrReviewButton);
+    ocrUseVerifiedBtn.addEventListener("click", () => {
+      if (requireUnlocked("use a camera-scanned container number")) return;
+      const code = normalizeCode(ocrReviewInput.value || "");
+      if (!ocrReviewConfirmed.checked || !isOcrContainerCode(code)) {
+        setOcrStatus("Enter a valid 6-character number and verify that it exactly matches the photo.", "warning");
+        updateOcrReviewButton();
+        return;
+      }
+      setContainerInputValue(code);
+      resetOcrCrop();
+      input.focus();
+      input.select();
+      setOcrStatus("Verified photo number " + code + " copied to the container number box.", "success");
+      setStatus("Verified camera number " + code + " is ready. Press Enter to save it.", "success");
+    });
     ocrLightingButtons.forEach(button => {
       button.addEventListener("click", () => setOcrLightingMode(button.dataset.ocrLighting || "normal"));
     });
