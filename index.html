@@ -2335,6 +2335,25 @@
       return digits;
     }
 
+    function ocrThreeEightAlternates(code) {
+      const normalized = normalizeCode(code || "");
+      const positions = [];
+      normalized.split("").forEach((character, index) => {
+        if (character === "3" || character === "8") positions.push(index);
+      });
+      if (!positions.length || positions.length > 4) return [normalized];
+
+      const alternates = new Set([normalized]);
+      positions.forEach(position => {
+        [...alternates].forEach(candidate => {
+          const characters = candidate.split("");
+          characters[position] = characters[position] === "3" ? "8" : "3";
+          alternates.add(characters.join(""));
+        });
+      });
+      return [...alternates].filter(isOcrContainerCode);
+    }
+
     function ocrRawDigitCount(text) {
       return (String(text || "").match(/\d/g) || []).length;
     }
@@ -2343,20 +2362,22 @@
       const window = normalizeUpperText(windowText);
       const candidates = new Set();
       const sixDigits = ocrDigitsFromText(window);
-      if (/^\d{6}$/.test(sixDigits) && /^\d/.test(window) && ocrRawDigitCount(window) >= 5) candidates.add(sixDigits);
+      if (/^\d{6}$/.test(sixDigits) && /^\d/.test(window) && ocrRawDigitCount(window) >= 5) {
+        ocrThreeEightAlternates(sixDigits).forEach(code => candidates.add(code));
+      }
 
       const first = window.charAt(0);
       const oneLetterSuffix = window.slice(1);
       const suffixFive = ocrDigitsFromText(oneLetterSuffix);
       if (OCR_SINGLE_LETTER_PREFIXES.has(first) && /^\d{5}$/.test(suffixFive) && ocrRawDigitCount(oneLetterSuffix) >= 4) {
-        candidates.add(first + suffixFive);
+        ocrThreeEightAlternates(first + suffixFive).forEach(code => candidates.add(code));
       }
 
       const prefix = window.slice(0, 2);
       const twoLetterSuffix = window.slice(2);
       const suffixFour = ocrDigitsFromText(twoLetterSuffix);
       if (/^(ZM|TR|PS)$/.test(prefix) && /^\d{4}$/.test(suffixFour) && ocrRawDigitCount(twoLetterSuffix) >= 3) {
-        candidates.add(prefix + suffixFour);
+        ocrThreeEightAlternates(prefix + suffixFour).forEach(code => candidates.add(code));
       }
 
       return [...candidates].filter(isOcrContainerCode);
