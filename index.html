@@ -2185,29 +2185,88 @@
       return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
+    const OCR_DIGIT_LOOKALIKE_MAP = {
+      B: "8",
+      G: "6",
+      I: "1",
+      L: "1",
+      O: "0",
+      Q: "0",
+      S: "5",
+      T: "7",
+      Z: "2"
+    };
+    const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D", "M", "P", "R", "S", "T", "Z"]);
+
     function isOcrContainerCode(code) {
       const normalized = normalizeCode(code || "");
       const letterCount = (normalized.match(/[A-Z]/g) || []).length;
       if (letterCount > 2) return false;
       if (letterCount === 2) return /^(ZM|TR|PS)\d{4}$/.test(normalized);
-      return /^\d{6}$/.test(normalized) || /^[A-Z]\d{5}$/.test(normalized);
+      return /^\d{6}$/.test(normalized) || (OCR_SINGLE_LETTER_PREFIXES.has(normalized.charAt(0)) && /^\d{5}$/.test(normalized.slice(1)));
+    }
+
+    function ocrDigitFromChar(character) {
+      return /\d/.test(character) ? character : OCR_DIGIT_LOOKALIKE_MAP[character] || "";
+    }
+
+    function ocrDigitsFromText(text) {
+      let digits = "";
+      normalizeUpperText(text).split("").forEach(character => {
+        digits += ocrDigitFromChar(character);
+      });
+      return digits;
+    }
+
+    function ocrRawDigitCount(text) {
+      return (String(text || "").match(/\d/g) || []).length;
+    }
+
+    function ocrWindowCandidates(windowText) {
+      const window = normalizeUpperText(windowText);
+      const candidates = new Set();
+      const sixDigits = ocrDigitsFromText(window);
+      if (/^\d{6}$/.test(sixDigits) && /^\d/.test(window) && ocrRawDigitCount(window) >= 5) candidates.add(sixDigits);
+
+      const first = window.charAt(0);
+      const oneLetterSuffix = window.slice(1);
+      const suffixFive = ocrDigitsFromText(oneLetterSuffix);
+      if (OCR_SINGLE_LETTER_PREFIXES.has(first) && /^\d{5}$/.test(suffixFive) && ocrRawDigitCount(oneLetterSuffix) >= 4) {
+        candidates.add(first + suffixFive);
+      }
+
+      const prefix = window.slice(0, 2);
+      const twoLetterSuffix = window.slice(2);
+      const suffixFour = ocrDigitsFromText(twoLetterSuffix);
+      if (/^(ZM|TR|PS)$/.test(prefix) && /^\d{4}$/.test(suffixFour) && ocrRawDigitCount(twoLetterSuffix) >= 3) {
+        candidates.add(prefix + suffixFour);
+      }
+
+      return [...candidates].filter(isOcrContainerCode);
+    }
+
+    function ocrCandidateRank(code) {
+      if (isUploadedInventoryCode(code)) return 0;
+      if (/^\d{6}$/.test(code)) return 1;
+      if (/^(ZM|TR|PS)\d{4}$/.test(code)) return 2;
+      if (OCR_SINGLE_LETTER_PREFIXES.has(code.charAt(0)) && /^\d{5}$/.test(code.slice(1))) return 3;
+      return 4;
     }
 
     function ocrCandidateCodes(text) {
       const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
       const candidates = new Map();
 
-      function addCandidate(code, fallbackRank) {
+      function addCandidate(code) {
         if (!isOcrContainerCode(code) || IGNORED_UPLOADED_UNIT_CODES.has(code)) return;
-        const rank = isUploadedInventoryCode(code) ? 0 : fallbackRank;
+        const rank = ocrCandidateRank(code);
         if (!candidates.has(code) || rank < candidates.get(code)) {
           candidates.set(code, rank);
         }
       }
 
       for (let index = 0; index <= compact.length - 6; index += 1) {
-        const code = compact.slice(index, index + 6);
-        if (isOcrContainerCode(code)) addCandidate(code, /^\d{6}$/.test(code) ? 1 : 2);
+        ocrWindowCandidates(compact.slice(index, index + 6)).forEach(addCandidate);
       }
 
       return [...candidates.entries()]
@@ -2382,6 +2441,37 @@
       });
     }
 
+    async function prepareOcrImageDataUrls(dataUrl) {
+      const image = await loadImageFromDataUrl(dataUrl);
+      const maxSide = 1800;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+      if (!context) return [dataUrl];
+
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      for (let index = 0; index < data.length; index += 4) {
+        const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+        const contrasted = gray < 150 ? Math.max(0, gray - 45) : Math.min(255, gray + 35);
+        data[index] = contrasted;
+        data[index + 1] = contrasted;
+        data[index + 2] = contrasted;
+        data[index + 3] = 255;
+      }
+      context.putImageData(imageData, 0, 0);
+
+      return [canvas.toDataURL("image/jpeg", 0.92), dataUrl];
+    }
+
     async function scanContainerNumberFromPhoto(file) {
       if (!file) return;
       if (requireUnlocked("scan a container number")) return;
@@ -2397,22 +2487,35 @@
       setStatus("OCR is reading the camera photo. This may take a few seconds.", "info");
 
       try {
-        const imageData = await readImageFileAsDataUrl(file);
-        const result = await Tesseract.recognize(imageData, "eng", {
-          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-          logger: progress => {
-            if (progress && progress.status) {
-              const percent = Number.isFinite(progress.progress)
-                ? " " + Math.round(progress.progress * 100) + "%"
-                : "";
-              setOcrStatus("OCR " + progress.status + percent, "info");
-            }
+        const originalImageData = await readImageFileAsDataUrl(file);
+        const imageAttempts = await prepareOcrImageDataUrls(originalImageData);
+        let text = "";
+        let candidates = [];
+
+        for (const [attemptIndex, imageData] of imageAttempts.entries()) {
+          if (attemptIndex > 0) {
+            setOcrStatus("Trying original photo after enhanced scan...", "info");
           }
-        });
-        const text = result && result.data ? result.data.text || "" : "";
-        const candidates = ocrCandidateCodes(text);
+          const result = await Tesseract.recognize(imageData, "eng", {
+            tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            tessedit_pageseg_mode: "6",
+            logger: progress => {
+              if (progress && progress.status) {
+                const percent = Number.isFinite(progress.progress)
+                  ? " " + Math.round(progress.progress * 100) + "%"
+                  : "";
+                setOcrStatus("OCR " + progress.status + percent, "info");
+              }
+            }
+          });
+          text = result && result.data ? result.data.text || "" : "";
+          candidates = ocrCandidateCodes(text);
+          if (candidates.length) break;
+        }
+
         if (!candidates.length) {
-          setOcrStatus("No 6-character container number found. Try a closer, clearer photo.", "warning");
+          const preview = normalizeUpperText(text).replace(/\s+/g, " ").trim().slice(0, 40);
+          setOcrStatus(preview ? "No valid number found. OCR saw: " + preview : "No valid number found. Try filling the frame with the container number.", "warning");
           setStatus("OCR did not find a valid container number. Type it manually or try again.", "warning");
           input.focus();
           return;
