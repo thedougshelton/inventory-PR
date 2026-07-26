@@ -6210,7 +6210,14 @@
     render();
     input.focus();
   </script>
-  <script src="./ocr-priority-patch.js?v=34"></script>
-  <script src="./ocr-hard-rules.js?v=34"></script>
+<!--
+Legacy service-worker markers. Older cached workers look for these exact tags
+before injecting scanner scripts; keeping them here prevents duplicate scanners.
+<script src="./ocr-priority-patch.js"></script>
+<script src="./ocr-hard-rules.js"></script>
+<script src="./ocr-compact-variations.js"></script>
+-->
+<script src="./ocr-priority-patch.js?v=35"></script>
+<script src="./ocr-hard-rules.js?v=35"></script>
 </body>
 </html>
