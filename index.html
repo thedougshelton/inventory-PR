@@ -628,18 +628,6 @@
       height: 100%;
     }
 
-    #ocrLiveVideo {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #111827;
-    }
-
-    #ocrLiveVideo[hidden] {
-      display: none;
-    }
-
     .ocr-crop-controls {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -6117,11 +6105,7 @@
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
     scanContainerOcrBtn.addEventListener("click", () => {
       if (requireUnlocked("scan a container number")) return;
-      if (typeof window.startCombinedContainerOcr === "function") {
-        window.startCombinedContainerOcr();
-      } else {
-        ocrPhotoInput.click();
-      }
+      ocrPhotoInput.click();
     });
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
@@ -6239,7 +6223,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=42"></script>
-<script src="./ocr-hard-rules.js?v=42"></script>
+<script src="./ocr-priority-patch.js?v=41"></script>
+<script src="./ocr-hard-rules.js?v=41"></script>
 </body>
 </html>
