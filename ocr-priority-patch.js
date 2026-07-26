@@ -189,6 +189,11 @@
         if (group[0] === "3") {
           addCandidate(candidates, "D6" + group.slice(1), 58, "possible merged vertical D and 6");
         }
+        if (group[0] === "1") {
+          addCandidate(candidates, "70" + group.slice(1), 82, "possible merged vertical 7 and 0");
+          addCandidate(candidates, "80" + group.slice(1), 65, "possible merged vertical 8 and 0");
+          addCandidate(candidates, "30" + group.slice(1), 55, "possible merged vertical 3 and 0");
+        }
         addCandidate(candidates, "8" + group, 16, "possible missing numeric prefix");
         addCandidate(candidates, "7" + group, 10, "possible missing numeric prefix");
         addCandidate(candidates, "3" + group, 8, "possible missing numeric prefix");
