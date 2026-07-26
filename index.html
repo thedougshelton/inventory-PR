@@ -2472,6 +2472,17 @@
       return [...candidates];
     }
 
+    function ocrPreviewCandidateTexts(text) {
+      const normalized = normalizeUpperText(text);
+      const groups = normalized
+        .split(/[^A-Z0-9]+/)
+        .map(group => group.trim())
+        .filter(group => group.length >= 4 && group.length <= 8);
+      const compact = normalized.replace(/[^A-Z0-9]+/g, "");
+      if (compact.length >= 4 && compact.length <= 8) groups.push(compact);
+      return [...new Set(groups)].slice(0, 4);
+    }
+
     function setOcrStatus(message, type) {
       ocrStatus.textContent = normalizeUpperText(message);
       ocrStatus.className = "unit-photo-status" + (type ? " " + type : "");
@@ -2879,8 +2890,17 @@
       source.width = Math.max(1, Math.min(source.width, ocrCropState.image.width - source.x));
       source.height = Math.max(1, Math.min(source.height, ocrCropState.image.height - source.y));
 
+      const padX = source.width * (ocrCropOrientation === "vertical" ? 0.18 : 0.16);
+      const padY = source.height * (ocrCropOrientation === "vertical" ? 0.14 : 0.22);
+      const paddedRight = Math.min(ocrCropState.image.width, source.x + source.width + padX);
+      const paddedBottom = Math.min(ocrCropState.image.height, source.y + source.height + padY);
+      source.x = Math.max(0, source.x - padX);
+      source.y = Math.max(0, source.y - padY);
+      source.width = Math.max(1, paddedRight - source.x);
+      source.height = Math.max(1, paddedBottom - source.y);
+
       const output = document.createElement("canvas");
-      const scale = Math.min(4, Math.max(2, 1800 / Math.max(source.width, source.height)));
+      const scale = Math.min(5, Math.max(2.5, 2400 / Math.max(source.width, source.height)));
       output.width = Math.max(1, Math.round(source.width * scale));
       output.height = Math.max(1, Math.round(source.height * scale));
       const context = output.getContext("2d", { alpha: false });
@@ -2982,6 +3002,7 @@
         const votes = new Map();
         const confidenceByCode = new Map();
         const observedReads = new Set();
+        const partialReads = new Set();
         let activePageSegMode = "7";
         let lastText = "";
 
@@ -2998,6 +3019,7 @@
           const result = await worker.recognize(imageData);
           lastText = result && result.data ? result.data.text || "" : "";
           const candidates = ocrLiteralCandidateCodes(lastText);
+          ocrPreviewCandidateTexts(lastText).forEach(read => partialReads.add(read));
           candidates.forEach(code => observedReads.add(code));
           if (candidates.length === 1) {
             const code = candidates[0];
@@ -3014,10 +3036,13 @@
         const hasAgreement = Boolean(bestRead && bestRead[1] >= 2 && (!secondRead || bestRead[1] > secondRead[1]));
 
         if (!observedReads.size) {
+          const fiveCharacterRead = [...partialReads].find(read => read.length === 5);
           const preview = normalizeUpperText(lastText).replace(/\s+/g, " ").trim().slice(0, 40);
           showOcrReview(
             "",
-            preview
+            fiveCharacterRead
+              ? "OCR only saw 5 characters: " + fiveCharacterRead + ". Nothing was entered. Keep all 6 characters inside the green box, then try again or type all 6 below."
+              : preview
               ? "No exact valid number found. OCR saw: " + preview + ". Type all 6 characters from the photo below."
               : "No exact valid number found. Type all 6 characters from the photo below.",
             "warning"
