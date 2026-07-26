@@ -182,6 +182,15 @@
       partialInventoryMatches(group).forEach(match => {
         addCandidate(candidates, match.code, match.bonus, match.reason);
       });
+      if (ocrCropOrientation === "vertical" && /^\d{5}$/.test(group)) {
+        addCandidate(candidates, "D" + group, 28, "vertical scan may have missed the leading D");
+        if (group[0] === "3") {
+          addCandidate(candidates, "D6" + group.slice(1), 58, "possible merged vertical D and 6");
+        }
+        addCandidate(candidates, "8" + group, 16, "possible missing numeric prefix");
+        addCandidate(candidates, "7" + group, 10, "possible missing numeric prefix");
+        addCandidate(candidates, "3" + group, 8, "possible missing numeric prefix");
+      }
     });
 
     for (let index = 0; index <= compact.length - 6; index += 1) {
