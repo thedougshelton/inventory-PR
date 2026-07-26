@@ -571,6 +571,29 @@
     }, 650);
   };
 
+  const showLiveScanCaptureForReview = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    ocrCropState = {
+      dataUrl,
+      image,
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0
+    };
+    ocrCropPanel.hidden = false;
+    setContainerInputValue("");
+    resetOcrReview();
+    showSuggestions([]);
+    setOcrCropOrientation(ocrCropOrientation);
+    showOcrReview(
+      "",
+      "DETECTED AREA CAPTURED. LIVE OCR WAS NOT RUN SO THE APP DOES NOT FREEZE. COMPARE THE PHOTO, TYPE THE 6 CHARACTERS, THEN CONFIRM & SAVE.",
+      "warning"
+    );
+    setStatus("Live Scan captured a still image for review. Nothing was saved.", "warning");
+    requestAnimationFrame(renderOcrCropPreview);
+  };
+
   const ensureLiveScanUi = () => {
     if (document.getElementById("ocrLiveScanBtn")) return;
     if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
@@ -703,11 +726,11 @@
       liveScanCapturing = true;
       if (captureButton) captureButton.disabled = true;
       let bestFrame = { dataUrl: "", score: -1 };
-      for (let index = 1; index <= 5 && liveScanActive; index += 1) {
-        await new Promise(resolve => setTimeout(resolve, index === 1 ? 650 : 280));
+      for (let index = 1; index <= 2 && liveScanActive; index += 1) {
+        await new Promise(resolve => setTimeout(resolve, index === 1 ? 250 : 160));
         const frame = captureLiveFrame(video);
         if (frame.dataUrl && frame.score > bestFrame.score) bestFrame = frame;
-        setOcrStatus("LIVE SCAN CAPTURED FRAME " + index + " OF 5...", "info");
+        setOcrStatus("LIVE SCAN CAPTURED FRAME " + index + " OF 2...", "info");
       }
 
       const wasStopped = !liveScanActive;
@@ -721,11 +744,7 @@
         return;
       }
 
-      setOcrStatus("LIVE SCAN PICKED THE CLEAREST FRAME. QUICK OCR IS STARTING...", "info");
-      setStatus("Live scan captured. Quick OCR is starting. Nothing has been saved.", "info");
-      await new Promise(resolve => setTimeout(resolve, 80));
-      liveScanQuickMode = true;
-      await scanContainerNumberFromImageData(bestFrame.dataUrl);
+      await showLiveScanCaptureForReview(bestFrame.dataUrl);
     } catch (error) {
       stopLiveScan();
       setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
