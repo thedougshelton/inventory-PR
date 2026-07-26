@@ -337,6 +337,7 @@
   let liveScanStream = null;
   let liveScanActive = false;
   let liveScanCapturing = false;
+  let liveScanQuickMode = false;
 
   const stopLiveScan = () => {
     liveScanActive = false;
@@ -407,7 +408,7 @@
     const cropBottom = Math.min(sourceHeight, visibleY + (guide.y + guide.height) * visibleHeight + padY);
     const cropWidth = Math.max(1, cropRight - cropX);
     const cropHeight = Math.max(1, cropBottom - cropY);
-    const maxSide = 1400;
+    const maxSide = 900;
     const scale = Math.min(1, maxSide / Math.max(cropWidth, cropHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(cropWidth * scale));
@@ -567,13 +568,17 @@
         return;
       }
 
-      setOcrStatus("LIVE SCAN PICKED THE CLEAREST FRAME. CHECKING OCR NOW...", "info");
+      setOcrStatus("LIVE SCAN PICKED THE CLEAREST FRAME. QUICK OCR IS STARTING...", "info");
+      setStatus("Live scan captured. Quick OCR is starting. Nothing has been saved.", "info");
+      await new Promise(resolve => setTimeout(resolve, 80));
+      liveScanQuickMode = true;
       await scanContainerNumberFromImageData(bestFrame.dataUrl);
     } catch (error) {
       stopLiveScan();
       setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
       setStatus("Live scan failed. Use photo scan or type manually.", "error");
     } finally {
+      liveScanQuickMode = false;
       liveScanCapturing = false;
       if (captureButton && liveScanActive) captureButton.disabled = false;
     }
@@ -619,7 +624,8 @@
           imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
         }
       }
-      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 14);
+      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
+        .slice(0, liveScanQuickMode ? 4 : 14);
 
       const worker = await getOcrWorker();
       try {
@@ -639,6 +645,7 @@
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
+        await new Promise(resolve => setTimeout(resolve, 20));
         if (attempt.pageSegMode !== activePageSegMode) {
           try {
             await worker.setParameters({ tessedit_pageseg_mode: attempt.pageSegMode });
