@@ -1539,7 +1539,7 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Camera Assist Entry</button>
+        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
@@ -1549,7 +1549,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Try OCR Suggestion</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Scan Cropped Photo</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -2890,6 +2890,114 @@
       renderOcrCropPreview();
     }
 
+    function ocrEdgeWindowScore(integral, stride, x, y, width, height) {
+      const x2 = x + width;
+      const y2 = y + height;
+      const total = integral[y2 * stride + x2] - integral[y * stride + x2] - integral[y2 * stride + x] + integral[y * stride + x];
+      return total / Math.max(1, width * height);
+    }
+
+    function detectOcrTextRegion(image) {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) return null;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 360;
+      canvas.height = 270;
+      const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+      if (!context) return null;
+      context.fillStyle = "#111827";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const width = canvas.width;
+      const height = canvas.height;
+      const gray = new Uint8ClampedArray(width * height);
+      for (let index = 0; index < pixels.length; index += 4) {
+        gray[index / 4] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
+      }
+
+      const stride = width + 1;
+      const integral = new Float32Array((width + 1) * (height + 1));
+      for (let y = 1; y <= height; y += 1) {
+        let rowTotal = 0;
+        for (let x = 1; x <= width; x += 1) {
+          const center = gray[(y - 1) * width + (x - 1)];
+          const right = gray[(y - 1) * width + Math.min(width - 1, x)];
+          const down = gray[Math.min(height - 1, y) * width + (x - 1)];
+          rowTotal += Math.min(255, Math.abs(center - right) + Math.abs(center - down));
+          integral[y * stride + x] = integral[(y - 1) * stride + x] + rowTotal;
+        }
+      }
+
+      const candidates = [];
+      const addCandidates = (boxWidth, boxHeight, orientation) => {
+        const stepX = Math.max(10, Math.round(boxWidth / 5));
+        const stepY = Math.max(10, Math.round(boxHeight / 5));
+        for (let y = 0; y <= height - boxHeight; y += stepY) {
+          for (let x = 0; x <= width - boxWidth; x += stepX) {
+            const score = ocrEdgeWindowScore(integral, stride, x, y, boxWidth, boxHeight);
+            const centerX = x + boxWidth / 2;
+            const centerY = y + boxHeight / 2;
+            const centerPenalty = (Math.abs(centerX - width / 2) / width + Math.abs(centerY - height / 2) / height) * 7;
+            candidates.push({ x, y, width: boxWidth, height: boxHeight, orientation, score: score - centerPenalty });
+          }
+        }
+      };
+
+      addCandidates(Math.round(width * 0.58), Math.round(height * 0.18), "horizontal");
+      addCandidates(Math.round(width * 0.72), Math.round(height * 0.22), "horizontal");
+      addCandidates(Math.round(width * 0.24), Math.round(height * 0.58), "vertical");
+      addCandidates(Math.round(width * 0.20), Math.round(height * 0.72), "vertical");
+
+      const best = candidates.sort((a, b) => b.score - a.score)[0];
+      if (!best || best.score < 14) return null;
+      const padX = best.width * 0.12;
+      const padY = best.height * 0.18;
+      const x = Math.max(0, best.x - padX);
+      const y = Math.max(0, best.y - padY);
+      const right = Math.min(width, best.x + best.width + padX);
+      const bottom = Math.min(height, best.y + best.height + padY);
+      return {
+        x: x / width * sourceWidth,
+        y: y / height * sourceHeight,
+        width: Math.max(1, (right - x) / width * sourceWidth),
+        height: Math.max(1, (bottom - y) / height * sourceHeight),
+        orientation: best.orientation,
+        score: best.score
+      };
+    }
+
+    function applyAutoOcrCrop(region) {
+      if (!ocrCropState || !region) return false;
+      if (!ocrCropCanvas.width || !ocrCropCanvas.height) renderOcrCropPreview();
+      setOcrCropOrientation(region.orientation === "vertical" ? "vertical" : "horizontal");
+
+      const canvas = ocrCropCanvas;
+      const image = ocrCropState.image;
+      const imageWidth = image.naturalWidth || image.width;
+      const imageHeight = image.naturalHeight || image.height;
+      const crop = ocrCropBox(canvas);
+      const baseScale = Math.min(canvas.width / imageWidth, canvas.height / imageHeight);
+      const widthFit = crop.width / Math.max(1, region.width * 1.45);
+      const heightFit = crop.height / Math.max(1, region.height * 1.8);
+      const targetScale = Math.max(baseScale * 0.55, Math.min(baseScale * 8, Math.min(widthFit, heightFit)));
+      const drawWidth = imageWidth * targetScale;
+      const drawHeight = imageHeight * targetScale;
+      const cropCenterX = crop.x + crop.width / 2;
+      const cropCenterY = crop.y + crop.height / 2;
+      const regionCenterX = region.x + region.width / 2;
+      const regionCenterY = region.y + region.height / 2;
+
+      ocrCropState.zoom = targetScale / baseScale;
+      ocrCropState.offsetX = cropCenterX - regionCenterX * targetScale - (canvas.width - drawWidth) / 2;
+      ocrCropState.offsetY = cropCenterY - regionCenterY * targetScale - (canvas.height - drawHeight) / 2;
+      renderOcrCropPreview();
+      return true;
+    }
+
     function ocrCropDataUrl() {
       if (!ocrCropState) return "";
       const previewCanvas = ocrCropCanvas;
@@ -2964,19 +3072,25 @@
           offsetY: 0
         };
         ocrCropPanel.hidden = false;
-        ocrCropPanel.classList.add("camera-assist-mode");
+        ocrCropPanel.classList.remove("camera-assist-mode");
         setContainerInputValue("");
         resetOcrReview();
         ocrScanCropBtn.hidden = false;
         ocrScanCropBtn.disabled = editLocked;
-        ocrScanCropBtn.textContent = "Try OCR Suggestion";
-        showOcrReview(
-          "",
-          "PHOTO READY. TYPE THE 6-CHARACTER NUMBER BELOW, OR TAP TRY OCR SUGGESTION.",
-          "warning"
-        );
-        setStatus("Camera Assist Entry ready. Type the number or try OCR suggestion.", "warning");
-        requestAnimationFrame(renderOcrCropPreview);
+        ocrScanCropBtn.textContent = "Scan Cropped Photo";
+        requestAnimationFrame(() => {
+          renderOcrCropPreview();
+          const detectedRegion = detectOcrTextRegion(image);
+          const detected = applyAutoOcrCrop(detectedRegion);
+          setOcrCropOrientation(ocrCropOrientation);
+          setOcrStatus(
+            detected
+              ? "PHOTO READY. THE APP AUTO-POSITIONED THE GREEN BOX AROUND A LIKELY NUMBER AREA. ADJUST IF NEEDED, THEN SCAN CROPPED PHOTO."
+              : "PHOTO READY. ZOOM OR DRAG SO THE FULL CONTAINER NUMBER IS INSIDE THE GREEN BOX, THEN SCAN CROPPED PHOTO.",
+            "info"
+          );
+          setStatus(detected ? "OCR photo ready with auto-positioned crop box." : "OCR photo ready. Crop around the container number, then scan.", "info");
+        });
       } catch (error) {
         resetOcrCrop();
         setOcrStatus("Photo could not be loaded: " + error.message, "error");
@@ -6306,10 +6420,10 @@
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => {
       if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
-        window.scanContainerNumberFromPhotoQuick(ocrAssistPhotoDataUrl());
+        window.scanContainerNumberFromPhotoQuick(ocrCropDataUrl());
         return;
       }
-      scanContainerNumberFromImageData(ocrAssistPhotoDataUrl());
+      scanContainerNumberFromImageData(ocrCropDataUrl());
     });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {

@@ -598,7 +598,7 @@
   const ensureLiveScanUi = () => {
     if (document.getElementById("ocrLiveScanPanel")) return;
     if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
-    scanContainerOcrBtn.textContent = "Camera Assist Entry";
+    scanContainerOcrBtn.textContent = "Scan Container Number With Camera";
 
     const panel = document.createElement("div");
     panel.id = "ocrLiveScanPanel";
