@@ -2752,7 +2752,13 @@
     }
 
     function ocrCropDrawBounds(state, canvas) {
-      const baseScale = Math.max(canvas.width / state.image.width, canvas.height / state.image.height);
+      const widthScale = canvas.width / state.image.width;
+      const heightScale = canvas.height / state.image.height;
+      // Portrait photos must start fully visible so a vertical code is not
+      // clipped above or below the crop box before OCR rotates it.
+      const baseScale = ocrCropOrientation === "vertical"
+        ? Math.min(widthScale, heightScale)
+        : Math.max(widthScale, heightScale);
       const scale = baseScale * state.zoom;
       const drawWidth = state.image.width * scale;
       const drawHeight = state.image.height * scale;
@@ -6217,7 +6223,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=35"></script>
-<script src="./ocr-hard-rules.js?v=35"></script>
+<script src="./ocr-priority-patch.js?v=36"></script>
+<script src="./ocr-hard-rules.js?v=36"></script>
 </body>
 </html>
