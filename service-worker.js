@@ -1,9 +1,10 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-4";
+const CACHE_NAME = "packrat-inventory-v5-runtime-5";
 const APP_PATHS = [
   "./",
   "./index.html",
   "./ocr-priority-patch.js",
   "./ocr-hard-rules.js",
+  "./ocr-compact-variations.js",
   "./vendor/xlsx.bundle.js",
   "./vendor/tesseract.min.js",
   "./vendor/tesseract-worker.min.js",
@@ -18,7 +19,8 @@ const INDEX_URL = new URL("./index.html", self.location.href).href;
 const ROOT_URL = new URL("./", self.location.href).href;
 const OCR_PATCH_TAGS = [
   '<script src="./ocr-priority-patch.js"></script>',
-  '<script src="./ocr-hard-rules.js"></script>'
+  '<script src="./ocr-hard-rules.js"></script>',
+  '<script src="./ocr-compact-variations.js"></script>'
 ];
 
 async function injectOcrPriorityPatch(response) {
