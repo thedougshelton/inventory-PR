@@ -2845,10 +2845,12 @@
     }
 
     function ocrCropDrawBounds(state, canvas) {
-      const baseScale = Math.min(canvas.width / state.image.width, canvas.height / state.image.height);
+      const imageWidth = state.image.naturalWidth || state.image.width;
+      const imageHeight = state.image.naturalHeight || state.image.height;
+      const baseScale = Math.min(canvas.width / imageWidth, canvas.height / imageHeight);
       const scale = baseScale * state.zoom;
-      const drawWidth = state.image.width * scale;
-      const drawHeight = state.image.height * scale;
+      const drawWidth = imageWidth * scale;
+      const drawHeight = imageHeight * scale;
       const maxOffsetX = Math.max(0, (drawWidth - canvas.width) / 2);
       const maxOffsetY = Math.max(0, (drawHeight - canvas.height) / 2);
       state.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, state.offsetX));
@@ -2865,12 +2867,18 @@
     function renderOcrCropPreview() {
       if (!ocrCropState) return;
       const rect = ocrCropCanvas.getBoundingClientRect();
-      const width = Math.max(320, Math.round(rect.width || 640));
-      const height = Math.max(240, Math.round(rect.height || 480));
+      const cssWidth = Math.max(320, Math.round(rect.width || 640));
+      const cssHeight = Math.max(240, Math.round(rect.height || 480));
+      const pixelRatio = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+      const width = Math.max(320, Math.round(cssWidth * pixelRatio));
+      const height = Math.max(240, Math.round(cssHeight * pixelRatio));
       ocrCropCanvas.width = width;
       ocrCropCanvas.height = height;
+      ocrCropState.previewScale = width / cssWidth;
       const context = ocrCropCanvas.getContext("2d", { alpha: false });
       if (!context) return;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
       context.fillStyle = "#111827";
       context.fillRect(0, 0, width, height);
       const bounds = ocrCropDrawBounds(ocrCropState, ocrCropCanvas);
@@ -2885,8 +2893,9 @@
 
     function dragOcrCrop(deltaX, deltaY) {
       if (!ocrCropState) return;
-      ocrCropState.offsetX += deltaX;
-      ocrCropState.offsetY += deltaY;
+      const previewScale = ocrCropState.previewScale || 1;
+      ocrCropState.offsetX += deltaX * previewScale;
+      ocrCropState.offsetY += deltaY * previewScale;
       renderOcrCropPreview();
     }
 
@@ -3009,19 +3018,21 @@
       const visibleRight = Math.min(crop.x + crop.width, bounds.drawX + bounds.drawWidth);
       const visibleBottom = Math.min(crop.y + crop.height, bounds.drawY + bounds.drawHeight);
       if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return ocrCropState.dataUrl;
+      const imageWidth = ocrCropState.image.naturalWidth || ocrCropState.image.width;
+      const imageHeight = ocrCropState.image.naturalHeight || ocrCropState.image.height;
       const source = {
         x: Math.max(0, (visibleLeft - bounds.drawX) / bounds.scale),
         y: Math.max(0, (visibleTop - bounds.drawY) / bounds.scale),
-        width: Math.min(ocrCropState.image.width, (visibleRight - visibleLeft) / bounds.scale),
-        height: Math.min(ocrCropState.image.height, (visibleBottom - visibleTop) / bounds.scale)
+        width: Math.min(imageWidth, (visibleRight - visibleLeft) / bounds.scale),
+        height: Math.min(imageHeight, (visibleBottom - visibleTop) / bounds.scale)
       };
-      source.width = Math.max(1, Math.min(source.width, ocrCropState.image.width - source.x));
-      source.height = Math.max(1, Math.min(source.height, ocrCropState.image.height - source.y));
+      source.width = Math.max(1, Math.min(source.width, imageWidth - source.x));
+      source.height = Math.max(1, Math.min(source.height, imageHeight - source.y));
 
       const padX = source.width * (ocrCropOrientation === "vertical" ? 0.18 : 0.16);
       const padY = source.height * (ocrCropOrientation === "vertical" ? 0.14 : 0.22);
-      const paddedRight = Math.min(ocrCropState.image.width, source.x + source.width + padX);
-      const paddedBottom = Math.min(ocrCropState.image.height, source.y + source.height + padY);
+      const paddedRight = Math.min(imageWidth, source.x + source.width + padX);
+      const paddedBottom = Math.min(imageHeight, source.y + source.height + padY);
       source.x = Math.max(0, source.x - padX);
       source.y = Math.max(0, source.y - padY);
       source.width = Math.max(1, paddedRight - source.x);
@@ -3033,6 +3044,8 @@
       output.height = Math.max(1, Math.round(source.height * scale));
       const context = output.getContext("2d", { alpha: false });
       if (!context) return ocrCropState.dataUrl;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
       context.fillStyle = "#FFFFFF";
       context.fillRect(0, 0, output.width, output.height);
       context.drawImage(ocrCropState.image, source.x, source.y, source.width, source.height, 0, 0, output.width, output.height);
@@ -3051,6 +3064,8 @@
       output.height = Math.max(1, Math.round(sourceHeight * scale));
       const context = output.getContext("2d", { alpha: false });
       if (!context) return ocrCropState.dataUrl;
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
       context.fillStyle = "#FFFFFF";
       context.fillRect(0, 0, output.width, output.height);
       context.drawImage(image, 0, 0, sourceWidth, sourceHeight, 0, 0, output.width, output.height);
