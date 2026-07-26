@@ -1527,7 +1527,7 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Take Container Number Photo</button>
+        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
@@ -1537,7 +1537,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button" hidden>Scan Cropped Photo</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Scan Photo Number</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -2935,15 +2935,15 @@
         ocrCropPanel.hidden = false;
         setContainerInputValue("");
         resetOcrReview();
-        ocrScanCropBtn.hidden = true;
-        ocrScanCropBtn.disabled = true;
+        ocrScanCropBtn.hidden = false;
+        ocrScanCropBtn.disabled = editLocked;
         setOcrCropOrientation(ocrCropOrientation);
         showOcrReview(
           "",
-          "PHOTO READY. COMPARE THE PHOTO, TYPE THE 6-CHARACTER CONTAINER NUMBER BELOW, THEN CONFIRM & SAVE.",
+          "PHOTO READY. TAP SCAN PHOTO NUMBER TO POPULATE A SUGGESTION, OR TYPE THE 6-CHARACTER NUMBER BELOW.",
           "warning"
         );
-        setStatus("Camera photo ready. OCR scanning is turned off to prevent freezes.", "warning");
+        setStatus("Camera photo ready. Scan the still photo or type the number manually.", "warning");
         requestAnimationFrame(renderOcrCropPreview);
       } catch (error) {
         resetOcrCrop();
@@ -6273,12 +6273,11 @@
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => {
-      showOcrReview(
-        "",
-        "OCR SCANNING IS TURNED OFF TO PREVENT FREEZES. TYPE THE 6-CHARACTER NUMBER FROM THE PHOTO, THEN CONFIRM & SAVE.",
-        "warning"
-      );
-      setStatus("OCR scanning is turned off. Use the photo as a reference and type the number.", "warning");
+      if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
+        window.scanContainerNumberFromPhotoQuick(ocrCropDataUrl());
+        return;
+      }
+      scanContainerNumberFromImageData(ocrCropDataUrl());
     });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {

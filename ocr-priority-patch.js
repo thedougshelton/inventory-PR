@@ -347,6 +347,7 @@
   let liveScanActive = false;
   let liveScanCapturing = false;
   let liveScanQuickMode = false;
+  let photoQuickScanMode = false;
   let liveScanDetectedBox = null;
   let liveScanDetectionTimer = null;
 
@@ -597,7 +598,7 @@
   const ensureLiveScanUi = () => {
     if (document.getElementById("ocrLiveScanPanel")) return;
     if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
-    scanContainerOcrBtn.textContent = "Take Container Number Photo";
+    scanContainerOcrBtn.textContent = "Scan Container Number With Camera";
 
     const panel = document.createElement("div");
     panel.id = "ocrLiveScanPanel";
@@ -706,6 +707,14 @@
   }
 
   window.startDetectedLiveScan = null;
+  window.scanContainerNumberFromPhotoQuick = async dataUrl => {
+    photoQuickScanMode = true;
+    try {
+      await scanContainerNumberFromImageData(dataUrl);
+    } finally {
+      photoQuickScanMode = false;
+    }
+  };
 
   async function captureLiveScanBurst() {
     if (!liveScanActive || liveScanCapturing) return;
@@ -791,8 +800,9 @@
           imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
         }
       }
+      const quickScanMode = liveScanQuickMode || photoQuickScanMode;
       imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
-        .slice(0, liveScanQuickMode ? 2 : 14);
+        .slice(0, quickScanMode ? 2 : 14);
 
       let worker = await getOcrWorker();
       try {
@@ -823,14 +833,14 @@
         try {
           result = await withTimeout(
             worker.recognize(attempt.dataUrl),
-            liveScanQuickMode ? 6500 : 22000,
+            quickScanMode ? 8500 : 22000,
             "OCR pass timed out"
           );
         } catch (error) {
           resetOcrWorker().catch(() => {});
-          if (liveScanQuickMode) {
-            setOcrStatus("LIVE SCAN OCR TOOK TOO LONG AND WAS STOPPED. TRY PHOTO SCAN OR TYPE THE NUMBER MANUALLY.", "warning");
-            setStatus("Live scan was stopped before it could freeze. Nothing was saved.", "warning");
+          if (quickScanMode) {
+            setOcrStatus("PHOTO OCR TOOK TOO LONG AND WAS STOPPED. TYPE THE NUMBER MANUALLY OR TRY A CLOSER PHOTO.", "warning");
+            setStatus("Photo OCR was stopped before it could freeze. Nothing was saved.", "warning");
             break;
           }
           throw error;
