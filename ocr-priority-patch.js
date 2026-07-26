@@ -225,6 +225,15 @@
     image.src = dataUrl;
   });
 
+  const withTimeout = (promise, milliseconds, message) => {
+    let timer = null;
+    promise.catch(() => {});
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), milliseconds);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  };
+
   const canvasDataUrl = async (dataUrl, transform) => {
     const image = await loadImage(dataUrl);
     const canvas = document.createElement("canvas");
@@ -441,7 +450,7 @@
     const cropBottom = Math.min(sourceHeight, visibleY + (guide.y + guide.height) * visibleHeight + padY);
     const cropWidth = Math.max(1, cropRight - cropX);
     const cropHeight = Math.max(1, cropBottom - cropY);
-    const maxSide = 900;
+    const maxSide = 650;
     const scale = Math.min(1, maxSide / Math.max(cropWidth, cropHeight));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(cropWidth * scale));
@@ -769,9 +778,9 @@
         }
       }
       imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
-        .slice(0, liveScanQuickMode ? 4 : 14);
+        .slice(0, liveScanQuickMode ? 2 : 14);
 
-      const worker = await getOcrWorker();
+      let worker = await getOcrWorker();
       try {
         await worker.setParameters({
           tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -796,7 +805,22 @@
           } catch {}
           activePageSegMode = attempt.pageSegMode;
         }
-        const result = await worker.recognize(attempt.dataUrl);
+        let result = null;
+        try {
+          result = await withTimeout(
+            worker.recognize(attempt.dataUrl),
+            liveScanQuickMode ? 6500 : 22000,
+            "OCR pass timed out"
+          );
+        } catch (error) {
+          resetOcrWorker().catch(() => {});
+          if (liveScanQuickMode) {
+            setOcrStatus("LIVE SCAN OCR TOOK TOO LONG AND WAS STOPPED. TRY PHOTO SCAN OR TYPE THE NUMBER MANUALLY.", "warning");
+            setStatus("Live scan was stopped before it could freeze. Nothing was saved.", "warning");
+            break;
+          }
+          throw error;
+        }
         lastText = result && result.data ? result.data.text || "" : "";
         previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
