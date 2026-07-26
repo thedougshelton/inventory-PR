@@ -598,7 +598,7 @@
   const ensureLiveScanUi = () => {
     if (document.getElementById("ocrLiveScanPanel")) return;
     if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
-    scanContainerOcrBtn.textContent = "Scan Container Number With Camera";
+    scanContainerOcrBtn.textContent = "Camera Assist Entry";
 
     const panel = document.createElement("div");
     panel.id = "ocrLiveScanPanel";
@@ -777,8 +777,8 @@
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
     showSuggestions([]);
-    setOcrStatus("AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
-    setStatus("OCR is analyzing the photo. Nothing will save without confirmation.", "info");
+    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTION FROM THE PHOTO..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
+    setStatus(photoQuickScanMode ? "OCR is trying to suggest the number. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
       const orientations = [];

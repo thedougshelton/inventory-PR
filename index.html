@@ -622,6 +622,18 @@
       inset: 8% 35%;
     }
 
+    .ocr-crop-panel.camera-assist-mode .ocr-crop-canvas-wrap::after {
+      display: none;
+    }
+
+    .ocr-crop-panel.camera-assist-mode .ocr-orientation-controls {
+      display: none;
+    }
+
+    .ocr-crop-panel.camera-assist-mode .ocr-crop-controls {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     #ocrCropCanvas {
       display: block;
       width: 100%;
@@ -1527,7 +1539,7 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
+        <button id="scanContainerOcrBtn" type="button">Camera Assist Entry</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
@@ -1537,7 +1549,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Scan Photo Number</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Try OCR Suggestion</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -2825,6 +2837,7 @@
     function resetOcrCrop() {
       ocrCropState = null;
       ocrCropPanel.hidden = true;
+      ocrCropPanel.classList.remove("camera-assist-mode");
       ocrScanCropBtn.hidden = true;
       ocrScanCropBtn.disabled = true;
       ocrPhotoInput.value = "";
@@ -2918,6 +2931,24 @@
       return output.toDataURL("image/jpeg", 0.94);
     }
 
+    function ocrAssistPhotoDataUrl() {
+      if (!ocrCropState || !ocrCropState.image) return "";
+      const image = ocrCropState.image;
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      const maxSide = 1000;
+      const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const output = document.createElement("canvas");
+      output.width = Math.max(1, Math.round(sourceWidth * scale));
+      output.height = Math.max(1, Math.round(sourceHeight * scale));
+      const context = output.getContext("2d", { alpha: false });
+      if (!context) return ocrCropState.dataUrl;
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, output.width, output.height);
+      context.drawImage(image, 0, 0, sourceWidth, sourceHeight, 0, 0, output.width, output.height);
+      return output.toDataURL("image/jpeg", 0.9);
+    }
+
     async function openOcrCropFromPhoto(file) {
       if (!file) return;
       if (requireUnlocked("scan a container number")) return;
@@ -2933,17 +2964,18 @@
           offsetY: 0
         };
         ocrCropPanel.hidden = false;
+        ocrCropPanel.classList.add("camera-assist-mode");
         setContainerInputValue("");
         resetOcrReview();
         ocrScanCropBtn.hidden = false;
         ocrScanCropBtn.disabled = editLocked;
-        setOcrCropOrientation(ocrCropOrientation);
+        ocrScanCropBtn.textContent = "Try OCR Suggestion";
         showOcrReview(
           "",
-          "PHOTO READY. TAP SCAN PHOTO NUMBER TO POPULATE A SUGGESTION, OR TYPE THE 6-CHARACTER NUMBER BELOW.",
+          "PHOTO READY. TYPE THE 6-CHARACTER NUMBER BELOW, OR TAP TRY OCR SUGGESTION.",
           "warning"
         );
-        setStatus("Camera photo ready. Scan the still photo or type the number manually.", "warning");
+        setStatus("Camera Assist Entry ready. Type the number or try OCR suggestion.", "warning");
         requestAnimationFrame(renderOcrCropPreview);
       } catch (error) {
         resetOcrCrop();
@@ -6274,10 +6306,10 @@
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => {
       if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
-        window.scanContainerNumberFromPhotoQuick(ocrCropDataUrl());
+        window.scanContainerNumberFromPhotoQuick(ocrAssistPhotoDataUrl());
         return;
       }
-      scanContainerNumberFromImageData(ocrCropDataUrl());
+      scanContainerNumberFromImageData(ocrAssistPhotoDataUrl());
     });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {
@@ -6298,7 +6330,7 @@
     });
     ocrCancelCropBtn.addEventListener("click", () => {
       resetOcrCrop();
-      setOcrStatus("PHOTO CANCELLED. TAKE ANOTHER PHOTO OR TYPE MANUALLY.", "warning");
+      setOcrStatus("CAMERA ASSIST CANCELLED. TAKE ANOTHER PHOTO OR TYPE MANUALLY.", "warning");
       input.focus();
     });
     let ocrCropDragPoint = null;
