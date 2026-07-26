@@ -6254,6 +6254,10 @@
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
     scanContainerOcrBtn.addEventListener("click", () => {
       if (requireUnlocked("scan a container number")) return;
+      if (typeof window.startDetectedLiveScan === "function") {
+        window.startDetectedLiveScan();
+        return;
+      }
       ocrPhotoInput.click();
     });
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));

@@ -595,16 +595,9 @@
   };
 
   const ensureLiveScanUi = () => {
-    if (document.getElementById("ocrLiveScanBtn")) return;
+    if (document.getElementById("ocrLiveScanPanel")) return;
     if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
-
-    const button = document.createElement("button");
-    button.id = "ocrLiveScanBtn";
-    button.type = "button";
-    button.textContent = "Live Scan Camera";
-    button.style.minHeight = "46px";
-    button.addEventListener("click", startLiveScan);
-    scanContainerOcrBtn.insertAdjacentElement("afterend", button);
+    scanContainerOcrBtn.textContent = "Scan Container Number With Camera";
 
     const panel = document.createElement("div");
     panel.id = "ocrLiveScanPanel";
@@ -711,6 +704,8 @@
       setStatus("Live scan failed. Use photo scan or type manually.", "error");
     }
   }
+
+  window.startDetectedLiveScan = startLiveScan;
 
   async function captureLiveScanBurst() {
     if (!liveScanActive || liveScanCapturing) return;
