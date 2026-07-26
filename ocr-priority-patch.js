@@ -441,6 +441,210 @@
 
   let activeScanId = 0;
   let scanRunning = false;
+  let liveOcrSessionId = 0;
+  let liveOcrStream = null;
+  let liveOcrVideo = null;
+  let liveOcrPhotoFallback = false;
+  const liveOcrControls = () => ({
+    cropControls: ocrCropPanel.querySelector(".ocr-crop-controls"),
+    orientationControls: ocrCropPanel.querySelector(".ocr-orientation-controls")
+  });
+  const ensureLiveOcrVideo = () => {
+    if (liveOcrVideo) return liveOcrVideo;
+    liveOcrVideo = document.createElement("video");
+    liveOcrVideo.id = "ocrLiveVideo";
+    liveOcrVideo.autoplay = true;
+    liveOcrVideo.muted = true;
+    liveOcrVideo.playsInline = true;
+    liveOcrVideo.setAttribute("aria-label", "Live container number camera");
+    liveOcrVideo.hidden = true;
+    ocrCropCanvas.parentElement.appendChild(liveOcrVideo);
+    return liveOcrVideo;
+  };
+  const restoreLiveOcrControls = () => {
+    const { cropControls, orientationControls } = liveOcrControls();
+    if (cropControls) cropControls.hidden = false;
+    if (orientationControls) orientationControls.hidden = false;
+    ocrCropCanvas.hidden = false;
+    if (liveOcrVideo) liveOcrVideo.hidden = true;
+  };
+  const stopLiveOcrCamera = ({ keepPanel = false } = {}) => {
+    liveOcrSessionId += 1;
+    if (liveOcrStream) {
+      liveOcrStream.getTracks().forEach(track => track.stop());
+      liveOcrStream = null;
+    }
+    if (liveOcrVideo) {
+      liveOcrVideo.pause();
+      liveOcrVideo.srcObject = null;
+    }
+    restoreLiveOcrControls();
+    if (!keepPanel && !ocrCropState) ocrCropPanel.hidden = true;
+    scanContainerOcrBtn.disabled = editLocked;
+  };
+  const waitForLiveVideo = video => new Promise((resolve, reject) => {
+    if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("The camera did not become ready."));
+    }, 8000);
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("error", onError);
+    };
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("The camera video could not be opened."));
+    };
+    video.addEventListener("loadeddata", onReady, { once: true });
+    video.addEventListener("error", onError, { once: true });
+  });
+  const captureLiveOcrFrame = async (video, rotation = 0) => {
+    const sourceWidth = video.videoWidth || 1280;
+    const sourceHeight = video.videoHeight || 720;
+    const scale = Math.min(1, 720 / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext("2d", { alpha: false });
+    context.fillStyle = "#FFFFFF";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.86);
+    return rotation ? rotateImageDataUrl(dataUrl, rotation) : dataUrl;
+  };
+  const freezeLiveOcrFrame = async dataUrl => {
+    const image = await loadImageFromDataUrl(dataUrl);
+    ocrCropState = {
+      dataUrl,
+      image,
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0
+    };
+    stopLiveOcrCamera({ keepPanel: true });
+    scanContainerOcrBtn.disabled = true;
+    ocrCropPanel.hidden = false;
+    resetOcrReview();
+    requestAnimationFrame(renderOcrCropPreview);
+  };
+  const rankLiveVotes = votes => [...votes.values()]
+    .sort((left, right) => right.count - left.count || right.score - left.score)
+    .slice(0, 3);
+  const liveCandidateObjects = text => {
+    const candidates = new Map(
+      priorityCandidateObjects(text).map(candidate => [candidate.code, candidate])
+    );
+    rawTextGroups(text).forEach(group => {
+      if (!/^\d{5}$/.test(group)) return;
+      addCandidate(candidates, "D" + group, 28, "live scan may have missed the leading D");
+      if (group[0] === "3") {
+        addCandidate(candidates, "D6" + group.slice(1), 58, "possible merged live D and 6");
+      }
+      if (group[0] === "1") {
+        addCandidate(candidates, "70" + group.slice(1), 82, "possible merged live 7 and 0");
+        addCandidate(candidates, "80" + group.slice(1), 65, "possible merged live 8 and 0");
+        addCandidate(candidates, "30" + group.slice(1), 55, "possible merged live 3 and 0");
+      }
+      addCandidate(candidates, "8" + group, 16, "possible missing numeric prefix");
+      addCandidate(candidates, "7" + group, 10, "possible missing numeric prefix");
+      addCandidate(candidates, "3" + group, 8, "possible missing numeric prefix");
+    });
+    return [...candidates.values()].sort((left, right) => right.score - left.score);
+  };
+  const recordLiveCandidates = (votes, text, confidence) => {
+    liveCandidateObjects(text).slice(0, 3).forEach((candidate, rank) => {
+      const previous = votes.get(candidate.code) || {
+        code: candidate.code,
+        count: 0,
+        score: 0,
+        confidence: 0,
+        reason: candidate.reason || "real-time OCR"
+      };
+      previous.count += 1;
+      previous.score += candidate.score + Math.max(0, 30 - rank * 8) + confidence * 0.25;
+      previous.confidence = Math.max(previous.confidence, Math.round(confidence));
+      if (candidate.reason) previous.reason = candidate.reason;
+      votes.set(candidate.code, previous);
+    });
+  };
+  const runLiveOcrSession = async (sessionId, video) => {
+    const votes = new Map();
+    let lastUnrotatedFrame = "";
+    const rotations = [0, 90, -90, 0, 90, -90];
+    const whitelists = [
+      DIGIT_OCR_CHARACTERS,
+      ALLOWED_OCR_CHARACTERS,
+      DIGIT_OCR_CHARACTERS,
+      ALLOWED_OCR_CHARACTERS,
+      DIGIT_OCR_CHARACTERS,
+      ALLOWED_OCR_CHARACTERS
+    ];
+    const worker = await withOcrTimeout(
+      getOcrWorker(),
+      20000,
+      "REAL-TIME OCR COULD NOT START. USE THE PHOTO SCANNER."
+    );
+
+    for (let pass = 0; pass < rotations.length; pass += 1) {
+      if (sessionId !== liveOcrSessionId || !liveOcrStream) return;
+      setOcrStatus("REAL-TIME OCR PASS " + (pass + 1) + " OF " + rotations.length + ". HOLD THE NUMBER STEADY.", "info");
+      lastUnrotatedFrame = await captureLiveOcrFrame(video, 0);
+      const frame = rotations[pass]
+        ? await rotateImageDataUrl(lastUnrotatedFrame, rotations[pass])
+        : lastUnrotatedFrame;
+      const focused = await foregroundTightCrop(frame);
+      if (sessionId !== liveOcrSessionId || !liveOcrStream) return;
+      await worker.setParameters({
+        tessedit_pageseg_mode: whitelists[pass] === DIGIT_OCR_CHARACTERS ? "7" : "8",
+        tessedit_char_whitelist: whitelists[pass],
+        preserve_interword_spaces: "0"
+      });
+      const result = await withOcrTimeout(
+        worker.recognize(focused),
+        7000,
+        "A REAL-TIME OCR PASS TIMED OUT."
+      );
+      if (sessionId !== liveOcrSessionId || !liveOcrStream) return;
+      const text = result && result.data ? result.data.text || "" : "";
+      const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
+      recordLiveCandidates(votes, text, confidence);
+      const ranked = rankLiveVotes(votes);
+      if (ranked[0] && ranked[0].count >= 2) {
+        await freezeLiveOcrFrame(lastUnrotatedFrame);
+        showOcrReview(
+          ranked[0].code,
+          "REAL-TIME OCR REPEATEDLY DETECTED " + ranked[0].code + ". VERIFY ALL 6 CHARACTERS, THEN CONFIRM & SAVE.",
+          "warning"
+        );
+        showSuggestions(ranked);
+        setStatus("Real-time OCR found a repeated result. Nothing has been saved.", "warning");
+        return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 450));
+    }
+
+    if (sessionId !== liveOcrSessionId || !liveOcrStream) return;
+    await freezeLiveOcrFrame(lastUnrotatedFrame);
+    const ranked = rankLiveVotes(votes);
+    showSuggestions(ranked);
+    setOcrStatus(
+      ranked.length
+        ? "NO REPEATED RESULT. SELECT A POSSIBLE MATCH OR USE SCAN CROPPED PHOTO."
+        : "NO STABLE REAL-TIME RESULT. ADJUST THE FRAME, THEN USE SCAN CROPPED PHOTO.",
+      "warning"
+    );
+    setStatus("Real-time OCR stopped safely. Nothing has been saved.", "warning");
+  };
+
   const cancelledScanError = () => {
     const error = new Error("OCR scan canceled.");
     error.name = "AbortError";
@@ -451,8 +655,9 @@
   };
 
   window.cancelContainerOcrScan = async function cancelContainerOcrScan(options = {}) {
-    activeScanId += 1;
     const wasRunning = scanRunning;
+    stopLiveOcrCamera({ keepPanel: Boolean(options.keepPanel) });
+    activeScanId += 1;
     scanRunning = false;
     ocrProgressEnabled = false;
     if (wasRunning) await resetOcrWorker();
@@ -463,6 +668,75 @@
       setStatus("OCR scan canceled. Nothing was saved.", "warning");
     }
   };
+
+  window.startCombinedContainerOcr = async function startCombinedContainerOcr() {
+    if (requireUnlocked("scan a container number")) return;
+    if (liveOcrPhotoFallback) {
+      liveOcrPhotoFallback = false;
+      ocrPhotoInput.click();
+      return;
+    }
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+      ocrPhotoInput.click();
+      return;
+    }
+
+    await window.cancelContainerOcrScan({ quiet: true });
+    resetOcrCrop();
+    const video = ensureLiveOcrVideo();
+    const { cropControls, orientationControls } = liveOcrControls();
+    ocrCropPanel.hidden = false;
+    ocrCropCanvas.hidden = true;
+    video.hidden = false;
+    if (cropControls) cropControls.hidden = true;
+    if (orientationControls) orientationControls.hidden = true;
+    scanContainerOcrBtn.disabled = true;
+    setOcrStatus("OPENING THE CAMERA FOR REAL-TIME DIGIT AND CONTAINER OCR...", "info");
+    setStatus("Real-time OCR is starting. Nothing will save without confirmation.", "info");
+
+    const sessionId = ++liveOcrSessionId;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      });
+      if (sessionId !== liveOcrSessionId) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      liveOcrStream = stream;
+      video.srcObject = stream;
+      await video.play();
+      await waitForLiveVideo(video);
+      if (sessionId !== liveOcrSessionId || !liveOcrStream) return;
+      scanRunning = true;
+      ocrProgressEnabled = true;
+      await runLiveOcrSession(sessionId, video);
+    } catch (error) {
+      if (sessionId !== liveOcrSessionId) return;
+      stopLiveOcrCamera();
+      await resetOcrWorker();
+      liveOcrPhotoFallback = true;
+      setOcrStatus("REAL-TIME CAMERA WAS NOT AVAILABLE. TAP THE SAME SCAN BUTTON AGAIN TO USE THE PHOTO SCANNER.", "warning");
+      setStatus("Camera unavailable. Nothing was saved.", "warning");
+    } finally {
+      scanRunning = false;
+      ocrProgressEnabled = false;
+    }
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && liveOcrStream) {
+      window.cancelContainerOcrScan({ quiet: true });
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (liveOcrStream) window.cancelContainerOcrScan({ quiet: true });
+  });
 
   scanContainerNumberFromImageData = async function scanContainerNumberFromImageDataAdvanced(originalImageData) {
     if (!originalImageData) return;
