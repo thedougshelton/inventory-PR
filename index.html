@@ -2830,7 +2830,7 @@
     }
 
     function ocrCropDrawBounds(state, canvas) {
-      const baseScale = Math.max(canvas.width / state.image.width, canvas.height / state.image.height);
+      const baseScale = Math.min(canvas.width / state.image.width, canvas.height / state.image.height);
       const scale = baseScale * state.zoom;
       const drawWidth = state.image.width * scale;
       const drawHeight = state.image.height * scale;
@@ -2864,7 +2864,7 @@
 
     function zoomOcrCrop(multiplier) {
       if (!ocrCropState) return;
-      ocrCropState.zoom = Math.max(1, Math.min(6, ocrCropState.zoom * multiplier));
+      ocrCropState.zoom = Math.max(0.45, Math.min(8, ocrCropState.zoom * multiplier));
       renderOcrCropPreview();
     }
 
@@ -2881,11 +2881,16 @@
       if (!previewCanvas.width || !previewCanvas.height) renderOcrCropPreview();
       const bounds = ocrCropDrawBounds(ocrCropState, previewCanvas);
       const crop = ocrCropBox(previewCanvas);
+      const visibleLeft = Math.max(crop.x, bounds.drawX);
+      const visibleTop = Math.max(crop.y, bounds.drawY);
+      const visibleRight = Math.min(crop.x + crop.width, bounds.drawX + bounds.drawWidth);
+      const visibleBottom = Math.min(crop.y + crop.height, bounds.drawY + bounds.drawHeight);
+      if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return ocrCropState.dataUrl;
       const source = {
-        x: Math.max(0, (crop.x - bounds.drawX) / bounds.scale),
-        y: Math.max(0, (crop.y - bounds.drawY) / bounds.scale),
-        width: Math.min(ocrCropState.image.width, crop.width / bounds.scale),
-        height: Math.min(ocrCropState.image.height, crop.height / bounds.scale)
+        x: Math.max(0, (visibleLeft - bounds.drawX) / bounds.scale),
+        y: Math.max(0, (visibleTop - bounds.drawY) / bounds.scale),
+        width: Math.min(ocrCropState.image.width, (visibleRight - visibleLeft) / bounds.scale),
+        height: Math.min(ocrCropState.image.height, (visibleBottom - visibleTop) / bounds.scale)
       };
       source.width = Math.max(1, Math.min(source.width, ocrCropState.image.width - source.x));
       source.height = Math.max(1, Math.min(source.height, ocrCropState.image.height - source.y));
@@ -2921,7 +2926,7 @@
         ocrCropState = {
           dataUrl: originalImageData,
           image,
-          zoom: 1.7,
+          zoom: 1,
           offsetX: 0,
           offsetY: 0
         };
@@ -2929,8 +2934,8 @@
         setContainerInputValue("");
         resetOcrReview();
         setOcrCropOrientation(ocrCropOrientation);
-        setOcrStatus("Zoom or drag the photo so the container number is inside the green box, then scan cropped photo.", "info");
-        setStatus("OCR photo ready. Crop around the container number, then scan cropped photo.", "info");
+        setOcrStatus("PHOTO READY. ZOOM OR DRAG SO THE FULL CONTAINER NUMBER IS INSIDE THE GREEN BOX, THEN SCAN CROPPED PHOTO.", "info");
+        setStatus("OCR photo ready. The photo starts zoomed out so you can fit the full number.", "info");
         requestAnimationFrame(renderOcrCropPreview);
       } catch (error) {
         resetOcrCrop();
