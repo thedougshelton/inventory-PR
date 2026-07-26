@@ -609,47 +609,25 @@
     }
 
     .ocr-crop-canvas-wrap::after {
-      content: "";
-      position: absolute;
-      inset: 35% 8%;
-      border: 2px solid #22c55e;
-      border-radius: 8px;
-      box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.34);
-      pointer-events: none;
-    }
-
-    .ocr-crop-canvas-wrap.vertical::after {
-      inset: 8% 35%;
-    }
-
-    .ocr-crop-panel.camera-assist-mode .ocr-crop-canvas-wrap::after {
       display: none;
     }
 
-    .ocr-crop-panel.camera-assist-mode .ocr-orientation-controls {
+    .ocr-crop-controls #ocrZoomOutBtn,
+    .ocr-crop-controls #ocrZoomInBtn,
+    .ocr-orientation-controls {
       display: none;
     }
 
-    .ocr-crop-panel.camera-assist-mode .ocr-crop-controls {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    .ocr-crop-controls {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
     }
 
     #ocrCropCanvas {
       display: block;
       width: 100%;
       height: 100%;
-    }
-
-    .ocr-crop-controls {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
-    }
-
-    .ocr-orientation-controls {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
     }
 
     .ocr-crop-panel button {
@@ -1549,7 +1527,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Scan Cropped Photo</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Scan Photo</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -3072,6 +3050,43 @@
       return output.toDataURL("image/jpeg", 0.9);
     }
 
+    function ocrAutoPhotoScanDataUrl() {
+      if (!ocrCropState || !ocrCropState.image) return "";
+      const region = ocrCropState.detectedRegion;
+      if (!region) return ocrAssistPhotoDataUrl();
+
+      const image = ocrCropState.image;
+      const imageWidth = image.naturalWidth || image.width;
+      const imageHeight = image.naturalHeight || image.height;
+      const isVertical = region.orientation === "vertical";
+      const padX = region.width * (isVertical ? 0.22 : 0.18);
+      const padY = region.height * (isVertical ? 0.18 : 0.30);
+      const source = {
+        x: Math.max(0, region.x - padX),
+        y: Math.max(0, region.y - padY),
+        width: 0,
+        height: 0
+      };
+      const right = Math.min(imageWidth, region.x + region.width + padX);
+      const bottom = Math.min(imageHeight, region.y + region.height + padY);
+      source.width = Math.max(1, right - source.x);
+      source.height = Math.max(1, bottom - source.y);
+
+      ocrCropOrientation = isVertical ? "vertical" : "horizontal";
+      const output = document.createElement("canvas");
+      const scale = Math.min(3.4, Math.max(1.8, 1900 / Math.max(source.width, source.height)));
+      output.width = Math.max(1, Math.round(source.width * scale));
+      output.height = Math.max(1, Math.round(source.height * scale));
+      const context = output.getContext("2d", { alpha: false });
+      if (!context) return ocrAssistPhotoDataUrl();
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, output.width, output.height);
+      context.drawImage(image, source.x, source.y, source.width, source.height, 0, 0, output.width, output.height);
+      return output.toDataURL("image/jpeg", 0.94);
+    }
+
     async function openOcrCropFromPhoto(file) {
       if (!file) return;
       if (requireUnlocked("scan a container number")) return;
@@ -3084,27 +3099,30 @@
           image,
           zoom: 1,
           offsetX: 0,
-          offsetY: 0
+          offsetY: 0,
+          detectedRegion: null,
+          previewScale: 1
         };
         ocrCropPanel.hidden = false;
-        ocrCropPanel.classList.remove("camera-assist-mode");
+        ocrCropPanel.classList.add("camera-assist-mode");
         setContainerInputValue("");
         resetOcrReview();
         ocrScanCropBtn.hidden = false;
         ocrScanCropBtn.disabled = editLocked;
-        ocrScanCropBtn.textContent = "Scan Cropped Photo";
+        ocrScanCropBtn.textContent = "Scan Photo";
         requestAnimationFrame(() => {
           renderOcrCropPreview();
           const detectedRegion = detectOcrTextRegion(image);
-          const detected = applyAutoOcrCrop(detectedRegion);
+          ocrCropState.detectedRegion = detectedRegion;
+          ocrCropOrientation = detectedRegion && detectedRegion.orientation === "vertical" ? "vertical" : "horizontal";
           setOcrCropOrientation(ocrCropOrientation);
           setOcrStatus(
-            detected
-              ? "PHOTO READY. THE APP AUTO-POSITIONED THE GREEN BOX AROUND A LIKELY NUMBER AREA. ADJUST IF NEEDED, THEN SCAN CROPPED PHOTO."
-              : "PHOTO READY. ZOOM OR DRAG SO THE FULL CONTAINER NUMBER IS INSIDE THE GREEN BOX, THEN SCAN CROPPED PHOTO.",
+            detectedRegion
+              ? "PHOTO READY. TAP SCAN PHOTO. THE APP WILL CHECK THE LIKELY NUMBER AREA, THEN YOU VERIFY BEFORE SAVING."
+              : "PHOTO READY. TAP SCAN PHOTO. IF THE APP CANNOT FIND THE NUMBER, TYPE IT FROM THE PHOTO BELOW.",
             "info"
           );
-          setStatus(detected ? "OCR photo ready with auto-positioned crop box." : "OCR photo ready. Crop around the container number, then scan.", "info");
+          setStatus("OCR photo ready. Tap Scan Photo when ready.", "info");
         });
       } catch (error) {
         resetOcrCrop();
@@ -6435,10 +6453,10 @@
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => {
       if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
-        window.scanContainerNumberFromPhotoQuick(ocrCropDataUrl());
+        window.scanContainerNumberFromPhotoQuick(ocrAutoPhotoScanDataUrl());
         return;
       }
-      scanContainerNumberFromImageData(ocrCropDataUrl());
+      scanContainerNumberFromImageData(ocrAutoPhotoScanDataUrl());
     });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {
