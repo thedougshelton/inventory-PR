@@ -96,6 +96,17 @@
 
   const matchesAny = (character, choices) => choices.includes(character) || shapeAlternatives(character).some(value => choices.includes(value));
 
+  const rawTextGroups = text => {
+    const normalized = normalizeUpperText(text);
+    const groups = normalized
+      .split(/[^A-Z0-9?]+/)
+      .map(group => group.trim())
+      .filter(group => group.length >= 4 && group.length <= 8);
+    const compact = normalized.replace(/[^A-Z0-9?]+/g, "");
+    if (compact.length >= 4 && compact.length <= 8) groups.push(compact);
+    return [...new Set(groups)];
+  };
+
   const expandNumericTail = tail => {
     let results = [""];
     for (const character of tail) {
@@ -106,9 +117,72 @@
     return results;
   };
 
+  const characterMatch = (seen, expected) => {
+    if (!seen || seen === "?") return { score: 0, visible: false };
+    if (seen === expected) return { score: 2.5, visible: true, exact: true };
+    if (digitPossibilities(seen).includes(expected)) return { score: 1.8, visible: true };
+    if (shapeAlternatives(seen).includes(expected)) return { score: 1.5, visible: true };
+    if (confusionCost(seen, expected) <= 0.25) return { score: 1.2, visible: true };
+    return { score: -2.5, visible: true };
+  };
+
+  const partialInventoryMatches = rawValue => {
+    const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
+    if (raw.length < 4 || raw.length > 6) return [];
+
+    const patterns = new Set();
+    if (raw.length === 6) {
+      patterns.add(raw);
+    } else {
+      for (let index = 0; index <= 6 - raw.length; index += 1) {
+        patterns.add("?".repeat(index) + raw + "?".repeat(6 - raw.length - index));
+      }
+    }
+
+    const matches = new Map();
+    for (const pattern of patterns) {
+      uploadedCodes().forEach(code => {
+        let score = 0;
+        let visible = 0;
+        let strong = 0;
+        let bad = 0;
+
+        for (let index = 0; index < 6; index += 1) {
+          const match = characterMatch(pattern[index], code[index]);
+          score += match.score;
+          if (match.visible) visible += 1;
+          if (match.exact || match.score >= 1.5) strong += 1;
+          if (match.score < 0) bad += 1;
+        }
+
+        if (visible < 4 || strong < 4 || bad > 0) return;
+        const finalScore = 1000 + score * 80 + visible * 35 + strong * 45 + formatWeight(code);
+        const previous = matches.get(code);
+        if (!previous || finalScore > previous.bonus) {
+          matches.set(code, {
+            code,
+            bonus: finalScore,
+            reason: visible < 6
+              ? "partial uploaded inventory match: " + pattern
+              : "damaged-character uploaded inventory match"
+          });
+        }
+      });
+    }
+
+    return [...matches.values()]
+      .sort((a, b) => b.bonus - a.bonus)
+      .slice(0, 5);
+  };
+
   const priorityCandidateObjects = text => {
     const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
     const candidates = new Map();
+    rawTextGroups(text).forEach(group => {
+      partialInventoryMatches(group).forEach(match => {
+        addCandidate(candidates, match.code, match.bonus, match.reason);
+      });
+    });
 
     for (let index = 0; index <= compact.length - 6; index += 1) {
       const raw = compact.slice(index, index + 6);
@@ -141,14 +215,7 @@
   };
 
   const previewCandidateTexts = text => {
-    const normalized = normalizeUpperText(text);
-    const groups = normalized
-      .split(/[^A-Z0-9]+/)
-      .map(group => group.trim())
-      .filter(group => group.length >= 4 && group.length <= 8);
-    const compact = normalized.replace(/[^A-Z0-9]+/g, "");
-    if (compact.length >= 4 && compact.length <= 8) groups.push(compact);
-    return [...new Set(groups)].slice(0, 4);
+    return rawTextGroups(text).slice(0, 4);
   };
 
   const loadImage = dataUrl => new Promise((resolve, reject) => {
@@ -254,11 +321,13 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = (index === 0 ? "BEST: " : "OPTION: ") + item.code;
+      button.title = item.reason || "OCR suggestion";
+      button.setAttribute("aria-label", item.code + ". " + (item.reason || "OCR suggestion"));
       button.style.minHeight = "42px";
       button.addEventListener("click", () => {
         ocrReviewInput.value = item.code;
         updateOcrReviewButton();
-        setOcrStatus("SELECTED " + item.code + ". VERIFY ALL 6 CHARACTERS, THEN CONFIRM & SAVE.", "warning");
+        setOcrStatus("SELECTED " + item.code + ". " + (item.reason ? item.reason + ". " : "") + "VERIFY ALL 6 CHARACTERS, THEN CONFIRM & SAVE.", "warning");
       });
       panel.appendChild(button);
     });
@@ -318,6 +387,7 @@
       const totals = new Map();
       const appearances = new Map();
       const confidenceByCode = new Map();
+      const reasonByCode = new Map();
       const partialReads = new Set();
       let activePageSegMode = "7";
       let lastText = "";
@@ -339,11 +409,22 @@
           totals.set(candidate.code, (totals.get(candidate.code) || 0) + contribution);
           appearances.set(candidate.code, (appearances.get(candidate.code) || 0) + 1);
           confidenceByCode.set(candidate.code, Math.max(confidenceByCode.get(candidate.code) || 0, confidence));
+          if (candidate.reason) {
+            const reasons = reasonByCode.get(candidate.code) || new Set();
+            reasons.add(candidate.reason);
+            reasonByCode.set(candidate.code, reasons);
+          }
         });
       }
 
       const ranked = [...totals.entries()]
-        .map(([code, score]) => ({ code, score, appearances: appearances.get(code) || 0, confidence: Math.round(confidenceByCode.get(code) || 0) }))
+        .map(([code, score]) => ({
+          code,
+          score,
+          appearances: appearances.get(code) || 0,
+          confidence: Math.round(confidenceByCode.get(code) || 0),
+          reason: [...(reasonByCode.get(code) || [])].slice(0, 2).join("; ")
+        }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 3);
 
@@ -365,7 +446,7 @@
       }
 
       const best = ranked[0];
-      showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT—CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
+      showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + (best.reason ? best.reason.toUpperCase() + ". " : "") + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT - CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
       showSuggestions(ranked);
       setStatus("OCR suggestions are waiting for your verification. Nothing has been saved.", "warning");
     } catch (error) {

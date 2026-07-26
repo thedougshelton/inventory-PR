@@ -35,10 +35,14 @@
 
     [...panel.querySelectorAll("button")].forEach((button, index) => {
       const original = button.textContent.replace(/^BEST:\s*|^OPTION:\s*/i, "").trim();
+      const reason = button.title && !/^Best scanner match:|^Possible scanner match:/i.test(button.title)
+        ? button.title
+        : "";
       button.textContent = index === 0 ? `Best: ${original}` : original;
-      button.title = index === 0
+      const baseTitle = index === 0
         ? `Best scanner match: ${original}`
         : `Possible scanner match: ${original}`;
+      button.title = reason ? `${baseTitle}. ${reason}` : baseTitle;
       button.style.flex = "0 0 auto";
       button.style.width = "auto";
       button.style.minWidth = index === 0 ? "104px" : "82px";
