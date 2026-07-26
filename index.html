@@ -584,53 +584,6 @@
     .unit-photo-status.error { color: var(--danger); }
     .unit-photo-status.info { color: var(--info); }
 
-    .ocr-square-camera[hidden] {
-      display: none;
-    }
-
-    .ocr-square-camera {
-      display: grid;
-      gap: 8px;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: #ffffff;
-    }
-
-    .ocr-square-camera-view {
-      position: relative;
-      width: min(100%, 520px);
-      aspect-ratio: 1 / 1;
-      margin: 0 auto;
-      overflow: hidden;
-      border: 2px solid var(--ink);
-      border-radius: 10px;
-      background: #111827;
-    }
-
-    #ocrSquareVideo {
-      display: block;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    .ocr-square-camera-view::after {
-      content: "";
-      position: absolute;
-      inset: 8%;
-      border: 3px solid #22c55e;
-      border-radius: 8px;
-      box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.22);
-      pointer-events: none;
-    }
-
-    .ocr-square-actions {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
-      gap: 8px;
-    }
-
     .ocr-crop-panel[hidden] {
       display: none;
     }
@@ -1567,15 +1520,6 @@
         <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
-        <div id="ocrSquareCameraPanel" class="ocr-square-camera" hidden>
-          <div class="ocr-square-camera-view" aria-label="Square camera scan area">
-            <video id="ocrSquareVideo" autoplay muted playsinline></video>
-          </div>
-          <div class="ocr-square-actions">
-            <button id="ocrSquareCaptureBtn" class="primary" type="button">Capture Scan Area</button>
-            <button id="ocrSquareCancelBtn" type="button">Cancel Camera</button>
-          </div>
-        </div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
           <div class="ocr-crop-canvas-wrap">
             <canvas id="ocrCropCanvas"></canvas>
@@ -1968,10 +1912,6 @@
     const scanContainerOcrBtn = document.getElementById("scanContainerOcrBtn");
     const ocrPhotoInput = document.getElementById("ocrPhotoInput");
     const ocrStatus = document.getElementById("ocrStatus");
-    const ocrSquareCameraPanel = document.getElementById("ocrSquareCameraPanel");
-    const ocrSquareVideo = document.getElementById("ocrSquareVideo");
-    const ocrSquareCaptureBtn = document.getElementById("ocrSquareCaptureBtn");
-    const ocrSquareCancelBtn = document.getElementById("ocrSquareCancelBtn");
     const ocrCropPanel = document.getElementById("ocrCropPanel");
     const ocrCropCanvas = document.getElementById("ocrCropCanvas");
     const ocrZoomOutBtn = document.getElementById("ocrZoomOutBtn");
@@ -2023,7 +1963,6 @@
     let ocrCropState = null;
     let ocrCropOrientation = "horizontal";
     let ocrWorkerPromise = null;
-    let ocrSquareCameraStream = null;
 
     sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = loadEmployeeInitials();
@@ -2874,7 +2813,6 @@
     }
 
     function resetOcrCrop() {
-      stopOcrSquareCamera();
       ocrCropState = null;
       ocrCropPanel.hidden = true;
       ocrCropPanel.classList.remove("camera-assist-mode");
@@ -3160,16 +3098,6 @@
       return [focused, visibleFocusedArea].filter((value, index, list) => value && list.indexOf(value) === index);
     }
 
-    function stopOcrSquareCamera() {
-      if (ocrSquareCameraStream) {
-        ocrSquareCameraStream.getTracks().forEach(track => track.stop());
-        ocrSquareCameraStream = null;
-      }
-      if (ocrSquareVideo) ocrSquareVideo.srcObject = null;
-      if (ocrSquareCameraPanel) ocrSquareCameraPanel.hidden = true;
-      if (ocrSquareCaptureBtn) ocrSquareCaptureBtn.disabled = false;
-    }
-
     async function openOcrCapturedSquare(dataUrl) {
       const image = await loadImageFromDataUrl(dataUrl);
       ocrCropState = {
@@ -3201,75 +3129,25 @@
       });
     }
 
-    async function startOcrSquareCamera() {
-      if (requireUnlocked("scan a container number")) return;
-      resetOcrCrop();
-      stopOcrSquareCamera();
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setOcrStatus("LIVE SQUARE CAMERA IS NOT AVAILABLE. OPENING PHOTO CAMERA INSTEAD.", "warning");
-        ocrPhotoInput.click();
-        return;
-      }
-
-      try {
-        ocrSquareCameraPanel.hidden = false;
-        ocrSquareCaptureBtn.disabled = true;
-        setOcrStatus("OPENING SQUARE CAMERA. PLACE THE NUMBER INSIDE THE GREEN SQUARE.", "info");
-        setStatus("Opening square camera for container scan.", "info");
-        ocrSquareCameraStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        });
-        ocrSquareVideo.srcObject = ocrSquareCameraStream;
-        await ocrSquareVideo.play();
-        ocrSquareCaptureBtn.disabled = false;
-        setOcrStatus("PLACE THE FULL CONTAINER NUMBER INSIDE THE GREEN SQUARE, THEN TAP CAPTURE SCAN AREA.", "info");
-        setStatus("Square camera ready. Capture only the number area.", "info");
-      } catch (error) {
-        stopOcrSquareCamera();
-        setOcrStatus("SQUARE CAMERA FAILED: " + error.message + ". OPENING PHOTO CAMERA INSTEAD.", "warning");
-        setStatus("Square camera failed. Falling back to normal camera/photo picker.", "warning");
-        ocrPhotoInput.click();
-      }
-    }
-
-    async function captureOcrSquareCamera() {
-      if (!ocrSquareVideo || !ocrSquareCameraStream) return;
-      const videoWidth = ocrSquareVideo.videoWidth || 0;
-      const videoHeight = ocrSquareVideo.videoHeight || 0;
-      if (!videoWidth || !videoHeight) {
-        setOcrStatus("CAMERA IS STILL STARTING. TRY CAPTURE AGAIN IN A SECOND.", "warning");
-        return;
-      }
-
-      try {
-        ocrSquareCaptureBtn.disabled = true;
-        const side = Math.min(videoWidth, videoHeight);
-        const sourceX = Math.max(0, Math.round((videoWidth - side) / 2));
-        const sourceY = Math.max(0, Math.round((videoHeight - side) / 2));
-        const outputSide = Math.min(1400, Math.max(720, side));
-        const canvas = document.createElement("canvas");
-        canvas.width = outputSide;
-        canvas.height = outputSide;
-        const context = canvas.getContext("2d", { alpha: false });
-        if (!context) throw new Error("Square capture is not available on this device.");
-        context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = "high";
-        context.fillStyle = "#FFFFFF";
-        context.fillRect(0, 0, outputSide, outputSide);
-        context.drawImage(ocrSquareVideo, sourceX, sourceY, side, side, 0, 0, outputSide, outputSide);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
-        stopOcrSquareCamera();
-        await openOcrCapturedSquare(dataUrl);
-      } catch (error) {
-        ocrSquareCaptureBtn.disabled = false;
-        setOcrStatus("SQUARE CAPTURE FAILED: " + error.message, "error");
-        setStatus("Square capture failed. Try again or type manually.", "error");
-      }
+    async function centerSquarePhotoDataUrl(dataUrl) {
+      const image = await loadImageFromDataUrl(dataUrl);
+      const imageWidth = image.naturalWidth || image.width;
+      const imageHeight = image.naturalHeight || image.height;
+      const side = Math.min(imageWidth, imageHeight);
+      const sourceX = Math.max(0, Math.round((imageWidth - side) / 2));
+      const sourceY = Math.max(0, Math.round((imageHeight - side) / 2));
+      const outputSide = Math.min(1400, Math.max(720, side));
+      const canvas = document.createElement("canvas");
+      canvas.width = outputSide;
+      canvas.height = outputSide;
+      const context = canvas.getContext("2d", { alpha: false });
+      if (!context) throw new Error("Square photo crop is not available on this device.");
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.fillStyle = "#FFFFFF";
+      context.fillRect(0, 0, outputSide, outputSide);
+      context.drawImage(image, sourceX, sourceY, side, side, 0, 0, outputSide, outputSide);
+      return canvas.toDataURL("image/jpeg", 0.94);
     }
 
     async function openOcrCropFromPhoto(file) {
@@ -3278,40 +3156,10 @@
 
       try {
         const originalImageData = await readImageFileAsDataUrl(file);
-        const image = await loadImageFromDataUrl(originalImageData);
-        ocrCropState = {
-          dataUrl: originalImageData,
-          image,
-          zoom: 1,
-          offsetX: 0,
-          offsetY: 0,
-          detectedRegion: null,
-          previewScale: 1
-        };
-        ocrCropPanel.hidden = false;
-        ocrCropPanel.classList.add("camera-assist-mode");
-        setContainerInputValue("");
-        resetOcrReview();
-        ocrScanCropBtn.hidden = false;
-        ocrScanCropBtn.disabled = editLocked;
-        ocrScanCropBtn.textContent = "Scan Focused Photo";
-        requestAnimationFrame(() => {
-          renderOcrCropPreview();
-          const detectedRegion = detectOcrTextRegion(image);
-          ocrCropState.detectedRegion = detectedRegion;
-          const autoFocused = detectedRegion ? applyAutoOcrCrop(detectedRegion) : false;
-          if (!autoFocused) {
-            ocrCropOrientation = detectedRegion && detectedRegion.orientation === "vertical" ? "vertical" : "horizontal";
-            setOcrCropOrientation(ocrCropOrientation);
-          }
-          setOcrStatus(
-            autoFocused
-              ? "PHOTO AUTO-FOCUSED TO A LIKELY NUMBER AREA. TAP SCAN FOCUSED PHOTO, THEN VERIFY BEFORE SAVING."
-              : "PHOTO READY. TAP SCAN FOCUSED PHOTO. IF THE APP CANNOT FIND THE NUMBER, TYPE IT FROM THE PHOTO BELOW.",
-            "info"
-          );
-          setStatus(autoFocused ? "OCR photo auto-focused. Tap Scan Focused Photo when ready." : "OCR photo ready. Tap Scan Focused Photo when ready.", "info");
-        });
+        const squareImageData = await centerSquarePhotoDataUrl(originalImageData);
+        await openOcrCapturedSquare(squareImageData);
+        setOcrStatus("CENTER SQUARE FROM PHOTO CAPTURED. TAP SCAN CAPTURED SQUARE, THEN VERIFY BEFORE SAVING.", "info");
+        setStatus("Center square from photo captured. Tap Scan Captured Square when ready.", "info");
       } catch (error) {
         resetOcrCrop();
         setOcrStatus("Photo could not be loaded: " + error.message, "error");
@@ -6496,9 +6344,6 @@
         button.disabled = editLocked;
       });
       scanContainerOcrBtn.disabled = editLocked;
-      ocrSquareCameraPanel.querySelectorAll("button").forEach(button => {
-        button.disabled = editLocked;
-      });
       ocrCropPanel.querySelectorAll("button").forEach(button => {
         button.disabled = editLocked;
       });
@@ -6635,12 +6480,11 @@
 
     addBtn.addEventListener("click", addEntry);
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
-    scanContainerOcrBtn.addEventListener("click", startOcrSquareCamera);
-    ocrSquareCaptureBtn.addEventListener("click", captureOcrSquareCamera);
-    ocrSquareCancelBtn.addEventListener("click", () => {
-      stopOcrSquareCamera();
-      setOcrStatus("SQUARE CAMERA CANCELLED.", "warning");
-      setStatus("Square camera cancelled.", "warning");
+    scanContainerOcrBtn.addEventListener("click", () => {
+      if (requireUnlocked("scan a container number")) return;
+      resetOcrCrop();
+      setOcrStatus("TAKE A PHOTO WITH THE CONTAINER NUMBER CENTERED. THE APP WILL SCAN THE CENTER SQUARE ONLY.", "info");
+      ocrPhotoInput.click();
     });
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
