@@ -407,6 +407,71 @@
     return panel;
   };
 
+  const visualAlternatives = code => {
+    const normalized = normalizeCode(code || "");
+    if (!VALID_CODE.test(normalized)) return [];
+    const alternatives = new Set();
+    const add = value => {
+      if (value !== normalized && VALID_CODE.test(value)) alternatives.add(value);
+    };
+
+    if (/^[DBC]\d{5}$/.test(normalized)) {
+      ["D", "8", "C", "B"].forEach(prefix => add(prefix + normalized.slice(1)));
+    } else if (/^[378]\d{5}$/.test(normalized)) {
+      ["8", "7", "3"].forEach(prefix => add(prefix + normalized.slice(1)));
+      if (normalized[0] === "8") {
+        add("B" + normalized.slice(1));
+        add("D" + normalized.slice(1));
+      }
+    } else if (/^(?:ZM|TR|PS)\d{4}$/.test(normalized)) {
+      ["ZM", "TR", "PS"].forEach(prefix => add(prefix + normalized.slice(2)));
+    }
+
+    const digitAlternatives = {
+      "0": ["8"],
+      "1": ["7"],
+      "3": ["8"],
+      "5": ["6"],
+      "6": ["5"],
+      "7": ["1"],
+      "8": ["3", "0"]
+    };
+    for (let index = 0; index < normalized.length; index += 1) {
+      (digitAlternatives[normalized[index]] || []).forEach(replacement => {
+        add(normalized.slice(0, index) + replacement + normalized.slice(index + 1));
+      });
+    }
+    return [...alternatives];
+  };
+
+  const completeSuggestionChoices = suggestions => {
+    const choices = new Map();
+    const add = item => {
+      const code = normalizeCode(item && item.code ? item.code : "");
+      if (!VALID_CODE.test(code) || choices.has(code)) return;
+      choices.set(code, { ...item, code });
+    };
+    suggestions.forEach(add);
+    const primary = [...choices.values()][0];
+    if (!primary) return [];
+
+    uploadedCodes()
+      .filter(code => code !== primary.code)
+      .map(code => ({ code, distance: codeDistance(primary.code, code) }))
+      .filter(match => match.distance <= 1.5)
+      .sort((left, right) => left.distance - right.distance || formatWeight(right.code) - formatWeight(left.code))
+      .forEach(match => add({
+        code: match.code,
+        reason: "close uploaded inventory alternative"
+      }));
+
+    visualAlternatives(primary.code).forEach(code => add({
+      code,
+      reason: "possible visual character variation - verify carefully"
+    }));
+    return [...choices.values()].slice(0, 3);
+  };
+
   const showSuggestions = suggestions => {
     const panel = ensureSuggestionUi();
     panel.innerHTML = "";
@@ -623,8 +688,9 @@
       }
 
       const best = ranked[0];
+      const choices = completeSuggestionChoices(ranked);
       showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + (best.reason ? best.reason.toUpperCase() + ". " : "") + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT - CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
-      showSuggestions(ranked);
+      showSuggestions(choices);
       setStatus("OCR suggestions are waiting for your verification. Nothing has been saved.", "warning");
     } catch (error) {
       const wasCancelled = error && error.name === "AbortError";
