@@ -2,6 +2,8 @@
   "use strict";
 
   const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
+  const ALLOWED_OCR_CHARACTERS = "BCDMPRSTZ0123456789";
+  const DIGIT_OCR_CHARACTERS = "0123456789";
   const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
   const PREFIX_SHAPE_MAP = {
     A: ["8", "D"],
@@ -497,14 +499,14 @@
         // Vertical labels can read in either direction. The focused crop keeps
         // edge characters, then word, line, and raw-line modes vote together.
         attemptGroups.push([
-          { dataUrl: clockwiseVariants[0], pageSegMode: "8" },
-          { dataUrl: clockwiseVariants[1], pageSegMode: "7" },
-          { dataUrl: clockwiseVariants[2], pageSegMode: "13" }
+          { dataUrl: clockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS },
+          { dataUrl: clockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS },
+          { dataUrl: clockwiseVariants[2], pageSegMode: "13", whitelist: ALLOWED_OCR_CHARACTERS }
         ]);
         attemptGroups.push([
-          { dataUrl: counterclockwiseVariants[0], pageSegMode: "8" },
-          { dataUrl: counterclockwiseVariants[1], pageSegMode: "7" },
-          { dataUrl: counterclockwiseVariants[2], pageSegMode: "13" }
+          { dataUrl: counterclockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS },
+          { dataUrl: counterclockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS },
+          { dataUrl: counterclockwiseVariants[2], pageSegMode: "13", whitelist: ALLOWED_OCR_CHARACTERS }
         ]);
       } else {
         const tight = await autoTightCrop(originalImageData);
@@ -514,9 +516,10 @@
         for (const base of bases) {
           const variants = await enhancedVariants(base);
           confirmActiveScan(scanId);
-          orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map(dataUrl => ({
+          orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map((dataUrl, variantIndex) => ({
             dataUrl,
-            pageSegMode: "7"
+            pageSegMode: "7",
+            whitelist: variantIndex === 1 ? DIGIT_OCR_CHARACTERS : ALLOWED_OCR_CHARACTERS
           })));
         }
         attemptGroups.push(orientationAttempts);
@@ -534,7 +537,7 @@
       confirmActiveScan(scanId);
       try {
         await worker.setParameters({
-          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+          tessedit_char_whitelist: ALLOWED_OCR_CHARACTERS,
           preserve_interword_spaces: "0"
         });
       } catch {}
@@ -545,18 +548,23 @@
       const confidenceByCode = new Map();
       const reasonByCode = new Map();
       const partialReads = new Set();
-      let activePageSegMode = "7";
+      let activePageSegMode = "";
+      let activeWhitelist = "";
       let lastText = "";
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         confirmActiveScan(scanId);
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
-        if (attempt.pageSegMode !== activePageSegMode) {
+        if (attempt.pageSegMode !== activePageSegMode || attempt.whitelist !== activeWhitelist) {
           try {
-            await worker.setParameters({ tessedit_pageseg_mode: attempt.pageSegMode });
+            await worker.setParameters({
+              tessedit_pageseg_mode: attempt.pageSegMode,
+              tessedit_char_whitelist: attempt.whitelist
+            });
           } catch {}
           confirmActiveScan(scanId);
           activePageSegMode = attempt.pageSegMode;
+          activeWhitelist = attempt.whitelist;
         }
         const result = await withOcrTimeout(
           worker.recognize(attempt.dataUrl),
