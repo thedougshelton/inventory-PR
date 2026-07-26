@@ -3087,6 +3087,12 @@
       return output.toDataURL("image/jpeg", 0.94);
     }
 
+    function ocrPhotoScanDataUrls() {
+      const focused = ocrAutoPhotoScanDataUrl();
+      const fullPhoto = ocrAssistPhotoDataUrl();
+      return [focused, fullPhoto].filter((value, index, list) => value && list.indexOf(value) === index);
+    }
+
     async function openOcrCropFromPhoto(file) {
       if (!file) return;
       if (requireUnlocked("scan a container number")) return;
@@ -6455,11 +6461,16 @@
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
     ocrScanCropBtn.addEventListener("click", () => {
+      const scanImages = ocrPhotoScanDataUrls();
       if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
-        window.scanContainerNumberFromPhotoQuick(ocrAutoPhotoScanDataUrl());
+        if (typeof window.scanContainerNumberFromPhotoQuickSources === "function") {
+          window.scanContainerNumberFromPhotoQuickSources(scanImages);
+          return;
+        }
+        window.scanContainerNumberFromPhotoQuick(scanImages[0] || "");
         return;
       }
-      scanContainerNumberFromImageData(ocrAutoPhotoScanDataUrl());
+      scanContainerNumberFromImageData(scanImages);
     });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {

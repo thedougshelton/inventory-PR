@@ -789,6 +789,15 @@
     }
   };
 
+  window.scanContainerNumberFromPhotoQuickSources = async dataUrls => {
+    photoQuickScanMode = true;
+    try {
+      await scanContainerNumberFromImageData(Array.isArray(dataUrls) ? dataUrls : [dataUrls]);
+    } finally {
+      photoQuickScanMode = false;
+    }
+  };
+
   async function captureLiveScanBurst() {
     if (!liveScanActive || liveScanCapturing) return;
     const video = document.getElementById("ocrLiveScanVideo");
@@ -837,7 +846,10 @@
   ocrLiteralCandidateCodes = text => priorityCandidateObjects(text).map(item => item.code);
 
   scanContainerNumberFromImageData = async function scanContainerNumberFromImageDataAdvanced(originalImageData) {
-    if (!originalImageData) return;
+    const imageSources = (Array.isArray(originalImageData) ? originalImageData : [originalImageData])
+      .filter(Boolean)
+      .slice(0, 3);
+    if (!imageSources.length) return;
     if (requireUnlocked("scan a container number")) return;
     if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
       setOcrStatus("OCR did not load. Reopen the app after one successful online visit.", "error");
@@ -850,32 +862,44 @@
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
     showSuggestions([]);
-    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTION FROM THE PHOTO..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
-    setStatus(photoQuickScanMode ? "OCR is trying to suggest the number. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
+    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTIONS FROM THE FOCUSED PHOTO AND FULL PHOTO..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
+    setStatus(photoQuickScanMode ? "OCR is trying focused and full-photo views. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
-      const orientations = [];
-      if (ocrCropOrientation === "vertical") {
-        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
-        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "6" });
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "11" });
-      } else {
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
-      }
-
       let imageAttempts = [];
-      for (const oriented of orientations) {
-        const tight = await autoTightCrop(oriented.dataUrl);
-        const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
-        for (const base of bases) {
-          const variants = await enhancedVariants(base);
-          imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
-        }
-      }
       const quickScanMode = liveScanQuickMode || photoQuickScanMode;
+      for (const [sourceIndex, imageSource] of imageSources.entries()) {
+        const orientations = [];
+        if (sourceIndex > 0) {
+          orientations.push({ dataUrl: imageSource, pageSegMode: "7" });
+          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
+          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, 90), pageSegMode: "7" });
+          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, -90), pageSegMode: "7" });
+        } else if (ocrCropOrientation === "vertical") {
+          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, 90), pageSegMode: "7" });
+          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, -90), pageSegMode: "7" });
+          orientations.push({ dataUrl: imageSource, pageSegMode: "6" });
+          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
+        } else {
+          orientations.push({ dataUrl: imageSource, pageSegMode: "7" });
+          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
+        }
+
+        let sourceAttempts = [];
+        for (const oriented of orientations) {
+          const tight = await autoTightCrop(oriented.dataUrl);
+          const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
+          for (const base of bases) {
+            const variants = await enhancedVariants(base);
+            sourceAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode, sourceIndex })));
+          }
+        }
+        sourceAttempts = [...new Map(sourceAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
+          .slice(0, quickScanMode ? 2 : 8);
+        imageAttempts.push(...sourceAttempts);
+      }
       imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
-        .slice(0, quickScanMode ? 2 : 14);
+        .slice(0, quickScanMode ? Math.min(6, Math.max(2, imageSources.length * 2)) : 16);
 
       let worker = await getOcrWorker();
       try {

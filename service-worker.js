@@ -1,4 +1,4 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-26";
+const CACHE_NAME = "packrat-inventory-v5-runtime-27";
 const APP_PATHS = [
   "./",
   "./index.html",
