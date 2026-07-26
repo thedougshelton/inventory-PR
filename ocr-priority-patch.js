@@ -338,10 +338,17 @@
   let liveScanActive = false;
   let liveScanCapturing = false;
   let liveScanQuickMode = false;
+  let liveScanDetectedBox = null;
+  let liveScanDetectionTimer = null;
 
   const stopLiveScan = () => {
     liveScanActive = false;
     liveScanCapturing = false;
+    liveScanDetectedBox = null;
+    if (liveScanDetectionTimer) {
+      clearInterval(liveScanDetectionTimer);
+      liveScanDetectionTimer = null;
+    }
     if (liveScanStream) {
       liveScanStream.getTracks().forEach(track => track.stop());
       liveScanStream = null;
@@ -353,14 +360,39 @@
     }
   };
 
-  const liveScanGuideBox = () => ocrCropOrientation === "vertical"
+  const liveScanFallbackBox = () => ocrCropOrientation === "vertical"
     ? { x: 0.35, y: 0.08, width: 0.30, height: 0.84, inset: "8% 35%" }
     : { x: 0.08, y: 0.35, width: 0.84, height: 0.30, inset: "35% 8%" };
 
+  const boxToInset = box => {
+    const top = Math.max(0, box.y * 100);
+    const right = Math.max(0, (1 - box.x - box.width) * 100);
+    const bottom = Math.max(0, (1 - box.y - box.height) * 100);
+    const left = Math.max(0, box.x * 100);
+    return top.toFixed(1) + "% " + right.toFixed(1) + "% " + bottom.toFixed(1) + "% " + left.toFixed(1) + "%";
+  };
+
+  const liveScanActiveBox = () => liveScanDetectedBox || liveScanFallbackBox();
+
   const updateLiveScanGuide = () => {
     const frame = document.getElementById("ocrLiveScanFrame");
+    const captureButton = document.getElementById("ocrCaptureLiveScanBtn");
     if (!frame) return;
-    frame.style.inset = liveScanGuideBox().inset;
+    if (!liveScanDetectedBox) {
+      frame.style.display = "none";
+      if (captureButton) {
+        captureButton.disabled = true;
+        captureButton.textContent = liveScanActive ? "Waiting For Scan Area" : "Capture Live Scan";
+      }
+      return;
+    }
+    frame.style.display = "block";
+    frame.style.inset = boxToInset(liveScanDetectedBox);
+    frame.setAttribute("aria-label", "Detected scan area");
+    if (captureButton) {
+      captureButton.disabled = liveScanCapturing || !liveScanActive;
+      captureButton.textContent = "Capture Detected Area";
+    }
   };
 
   const liveFrameScore = canvas => {
@@ -399,9 +431,10 @@
     const visibleHeight = wrapRect.height / coverScale;
     const visibleX = Math.max(0, (sourceWidth - visibleWidth) / 2);
     const visibleY = Math.max(0, (sourceHeight - visibleHeight) / 2);
-    const guide = liveScanGuideBox();
-    const padX = visibleWidth * (ocrCropOrientation === "vertical" ? 0.08 : 0.06);
-    const padY = visibleHeight * (ocrCropOrientation === "vertical" ? 0.06 : 0.10);
+    const guide = liveScanActiveBox();
+    const isVertical = guide.height > guide.width;
+    const padX = visibleWidth * (isVertical ? 0.08 : 0.06);
+    const padY = visibleHeight * (isVertical ? 0.06 : 0.10);
     const cropX = Math.max(0, visibleX + guide.x * visibleWidth - padX);
     const cropY = Math.max(0, visibleY + guide.y * visibleHeight - padY);
     const cropRight = Math.min(sourceWidth, visibleX + (guide.x + guide.width) * visibleWidth + padX);
@@ -422,6 +455,111 @@
       dataUrl: canvas.toDataURL("image/jpeg", 0.94),
       score: liveFrameScore(canvas)
     };
+  };
+
+  const edgeWindowScore = (integral, stride, x, y, width, height) => {
+    const x2 = x + width;
+    const y2 = y + height;
+    const total = integral[y2 * stride + x2] - integral[y * stride + x2] - integral[y2 * stride + x] + integral[y * stride + x];
+    return total / Math.max(1, width * height);
+  };
+
+  const detectLiveTextBox = video => {
+    const sourceWidth = video.videoWidth || 0;
+    const sourceHeight = video.videoHeight || 0;
+    if (!sourceWidth || !sourceHeight) return null;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
+    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    if (!context) return null;
+    const wrap = video.parentElement;
+    const wrapRect = wrap ? wrap.getBoundingClientRect() : { width: 4, height: 3 };
+    const coverScale = Math.max(wrapRect.width / sourceWidth, wrapRect.height / sourceHeight);
+    const visibleWidth = Math.max(1, wrapRect.width / coverScale);
+    const visibleHeight = Math.max(1, wrapRect.height / coverScale);
+    const visibleX = Math.max(0, (sourceWidth - visibleWidth) / 2);
+    const visibleY = Math.max(0, (sourceHeight - visibleHeight) / 2);
+    context.fillStyle = "#111827";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(video, visibleX, visibleY, visibleWidth, visibleHeight, 0, 0, canvas.width, canvas.height);
+
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    const width = canvas.width;
+    const height = canvas.height;
+    const gray = new Uint8ClampedArray(width * height);
+    for (let index = 0; index < pixels.length; index += 4) {
+      gray[index / 4] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
+    }
+
+    const stride = width + 1;
+    const integral = new Float32Array((width + 1) * (height + 1));
+    for (let y = 1; y <= height; y += 1) {
+      let rowTotal = 0;
+      for (let x = 1; x <= width; x += 1) {
+        const center = gray[(y - 1) * width + (x - 1)];
+        const right = gray[(y - 1) * width + Math.min(width - 1, x)];
+        const down = gray[Math.min(height - 1, y) * width + (x - 1)];
+        const edge = Math.min(255, Math.abs(center - right) + Math.abs(center - down));
+        rowTotal += edge;
+        integral[y * stride + x] = integral[(y - 1) * stride + x] + rowTotal;
+      }
+    }
+
+    const candidates = [];
+    const addCandidates = (boxWidth, boxHeight, orientation) => {
+      const stepX = Math.max(8, Math.round(boxWidth / 6));
+      const stepY = Math.max(8, Math.round(boxHeight / 6));
+      for (let y = 0; y <= height - boxHeight; y += stepY) {
+        for (let x = 0; x <= width - boxWidth; x += stepX) {
+          const score = edgeWindowScore(integral, stride, x, y, boxWidth, boxHeight);
+          const centerX = x + boxWidth / 2;
+          const centerY = y + boxHeight / 2;
+          const centerPenalty = (Math.abs(centerX - width / 2) / width + Math.abs(centerY - height / 2) / height) * 10;
+          candidates.push({ x, y, width: boxWidth, height: boxHeight, orientation, score: score - centerPenalty });
+        }
+      }
+    };
+
+    addCandidates(Math.round(width * 0.64), Math.round(height * 0.22), "horizontal");
+    addCandidates(Math.round(width * 0.78), Math.round(height * 0.26), "horizontal");
+    addCandidates(Math.round(width * 0.26), Math.round(height * 0.66), "vertical");
+    addCandidates(Math.round(width * 0.22), Math.round(height * 0.78), "vertical");
+
+    const best = candidates.sort((a, b) => b.score - a.score)[0];
+    if (!best || best.score < 15) return null;
+
+    const padX = best.width * 0.10;
+    const padY = best.height * 0.14;
+    const x = Math.max(0, best.x - padX);
+    const y = Math.max(0, best.y - padY);
+    const right = Math.min(width, best.x + best.width + padX);
+    const bottom = Math.min(height, best.y + best.height + padY);
+    return {
+      x: x / width,
+      y: y / height,
+      width: Math.max(0.08, (right - x) / width),
+      height: Math.max(0.08, (bottom - y) / height),
+      score: best.score,
+      orientation: best.orientation
+    };
+  };
+
+  const beginLiveScanDetection = video => {
+    if (liveScanDetectionTimer) clearInterval(liveScanDetectionTimer);
+    liveScanDetectionTimer = setInterval(() => {
+      if (!liveScanActive || liveScanCapturing) return;
+      const detected = detectLiveTextBox(video);
+      liveScanDetectedBox = detected;
+      if (detected) {
+        ocrCropOrientation = detected.orientation === "vertical" ? "vertical" : "horizontal";
+        setOcrStatus("SCAN AREA DETECTED. TAP CAPTURE DETECTED AREA WHEN THE BOX IS AROUND THE NUMBER.", "info");
+      } else {
+        setOcrStatus("LOOKING FOR A CONTAINER NUMBER. MOVE THE CAMERA UNTIL A GREEN BOX APPEARS.", "info");
+      }
+      updateLiveScanGuide();
+    }, 650);
   };
 
   const ensureLiveScanUi = () => {
@@ -467,7 +605,8 @@
     const frame = document.createElement("div");
     frame.id = "ocrLiveScanFrame";
     frame.style.position = "absolute";
-    frame.style.inset = liveScanGuideBox().inset;
+    frame.style.display = "none";
+    frame.style.inset = boxToInset(liveScanFallbackBox());
     frame.style.border = "2px solid #22c55e";
     frame.style.borderRadius = "8px";
     frame.style.boxShadow = "0 0 0 999px rgba(15, 23, 42, 0.32)";
@@ -531,8 +670,9 @@
       video.srcObject = liveScanStream;
       await video.play();
       updateLiveScanGuide();
-      setOcrStatus("LIVE CAMERA READY. FIT THE NUMBER INSIDE THE GREEN BOX, THEN TAP CAPTURE LIVE SCAN.", "info");
-      setStatus("Live scan camera is open. Line up the number, then tap Capture Live Scan.", "info");
+      beginLiveScanDetection(video);
+      setOcrStatus("LIVE CAMERA READY. THE GREEN BOX WILL APPEAR WHEN A SCAN AREA IS DETECTED.", "info");
+      setStatus("Live scan camera is open. Wait for the green detected box, then capture.", "info");
     } catch (error) {
       stopLiveScan();
       setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
@@ -545,6 +685,10 @@
     const video = document.getElementById("ocrLiveScanVideo");
     const captureButton = document.getElementById("ocrCaptureLiveScanBtn");
     if (!video) return;
+    if (!liveScanDetectedBox) {
+      setOcrStatus("NO SCAN AREA DETECTED YET. MOVE CLOSER OR CHANGE ANGLE UNTIL THE GREEN BOX APPEARS.", "warning");
+      return;
+    }
 
     try {
       liveScanCapturing = true;
