@@ -705,7 +705,7 @@
     }
   }
 
-  window.startDetectedLiveScan = startLiveScan;
+  window.startDetectedLiveScan = null;
 
   async function captureLiveScanBurst() {
     if (!liveScanActive || liveScanCapturing) return;
