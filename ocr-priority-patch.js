@@ -391,6 +391,179 @@
     return output.toDataURL("image/jpeg", 0.96);
   };
 
+  const compactVerticalGlyphSpacing = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    const source = document.createElement("canvas");
+    source.width = image.naturalWidth || image.width;
+    source.height = image.naturalHeight || image.height;
+    const context = source.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, source.width, source.height);
+    const pixels = context.getImageData(0, 0, source.width, source.height).data;
+    const corners = [
+      [2, 2],
+      [source.width - 3, 2],
+      [2, source.height - 3],
+      [source.width - 3, source.height - 3]
+    ];
+    const background = corners.reduce((sum, [x, y]) => {
+      const index = (Math.max(0, y) * source.width + Math.max(0, x)) * 4;
+      return sum + pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+    }, 0) / corners.length;
+    const isInk = (x, y) => {
+      const index = (y * source.width + x) * 4;
+      const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+      return Math.abs(gray - background) >= 48;
+    };
+
+    let minY = source.height;
+    let maxY = -1;
+    const activeColumns = new Array(source.width).fill(false);
+    const minimumInkPerColumn = Math.max(2, Math.round(source.height * 0.015));
+    for (let x = 0; x < source.width; x += 1) {
+      let inkCount = 0;
+      for (let y = 0; y < source.height; y += 1) {
+        if (!isInk(x, y)) continue;
+        inkCount += 1;
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+      activeColumns[x] = inkCount >= minimumInkPerColumn;
+    }
+    if (maxY <= minY) return dataUrl;
+
+    const runs = [];
+    let runStart = -1;
+    for (let x = 0; x <= source.width; x += 1) {
+      if (x < source.width && activeColumns[x]) {
+        if (runStart < 0) runStart = x;
+      } else if (runStart >= 0) {
+        runs.push({ start: runStart, end: x - 1 });
+        runStart = -1;
+      }
+    }
+    if (runs.length < 5 || runs.length > 8) return dataUrl;
+
+    const contentHeight = maxY - minY + 1;
+    const glyphPad = Math.max(2, Math.round(contentHeight * 0.025));
+    const gap = Math.max(8, Math.round(contentHeight * 0.14));
+    const verticalPad = Math.max(10, Math.round(contentHeight * 0.12));
+    const paddedRuns = runs.map(run => ({
+      start: Math.max(0, run.start - glyphPad),
+      end: Math.min(source.width - 1, run.end + glyphPad)
+    }));
+    const outputWidth = paddedRuns.reduce((sum, run) => sum + run.end - run.start + 1, 0)
+      + gap * (paddedRuns.length - 1)
+      + glyphPad * 2;
+    const output = document.createElement("canvas");
+    output.width = outputWidth;
+    output.height = contentHeight + verticalPad * 2;
+    const outputContext = output.getContext("2d", { alpha: false });
+    const backgroundValue = Math.max(0, Math.min(255, Math.round(background)));
+    outputContext.fillStyle = `rgb(${backgroundValue}, ${backgroundValue}, ${backgroundValue})`;
+    outputContext.fillRect(0, 0, output.width, output.height);
+    let drawX = glyphPad;
+    paddedRuns.forEach(run => {
+      const width = run.end - run.start + 1;
+      outputContext.drawImage(
+        source,
+        run.start,
+        minY,
+        width,
+        contentHeight,
+        drawX,
+        verticalPad,
+        width,
+        contentHeight
+      );
+      drawX += width + gap;
+    });
+    return output.toDataURL("image/jpeg", 0.96);
+  };
+
+  const recomposeStackedVerticalGlyphs = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    const source = document.createElement("canvas");
+    source.width = image.naturalWidth || image.width;
+    source.height = image.naturalHeight || image.height;
+    const context = source.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, source.width, source.height);
+    const pixels = context.getImageData(0, 0, source.width, source.height).data;
+    const corners = [
+      [2, 2],
+      [source.width - 3, 2],
+      [2, source.height - 3],
+      [source.width - 3, source.height - 3]
+    ];
+    const background = corners.reduce((sum, [x, y]) => {
+      const index = (Math.max(0, y) * source.width + Math.max(0, x)) * 4;
+      return sum + pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+    }, 0) / corners.length;
+    const isInk = (x, y) => {
+      const index = (y * source.width + x) * 4;
+      const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+      return Math.abs(gray - background) >= 48;
+    };
+
+    let minX = source.width;
+    let maxX = -1;
+    const activeRows = new Array(source.height).fill(false);
+    const minimumInkPerRow = Math.max(2, Math.round(source.width * 0.015));
+    for (let y = 0; y < source.height; y += 1) {
+      let inkCount = 0;
+      for (let x = 0; x < source.width; x += 1) {
+        if (!isInk(x, y)) continue;
+        inkCount += 1;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+      activeRows[y] = inkCount >= minimumInkPerRow;
+    }
+    if (maxX <= minX) return dataUrl;
+
+    const runs = [];
+    let runStart = -1;
+    for (let y = 0; y <= source.height; y += 1) {
+      if (y < source.height && activeRows[y]) {
+        if (runStart < 0) runStart = y;
+      } else if (runStart >= 0) {
+        runs.push({ start: runStart, end: y - 1 });
+        runStart = -1;
+      }
+    }
+    if (runs.length < 5 || runs.length > 8) return dataUrl;
+
+    const contentWidth = maxX - minX + 1;
+    const horizontalPad = Math.max(8, Math.round(contentWidth * 0.10));
+    const verticalPad = Math.max(8, Math.round(contentWidth * 0.10));
+    const gap = Math.max(8, Math.round(contentWidth * 0.14));
+    const glyphWidth = contentWidth + horizontalPad * 2;
+    const maximumGlyphHeight = Math.max(...runs.map(run => run.end - run.start + 1));
+    const output = document.createElement("canvas");
+    output.width = glyphWidth * runs.length + gap * (runs.length - 1);
+    output.height = maximumGlyphHeight + verticalPad * 2;
+    const outputContext = output.getContext("2d", { alpha: false });
+    const backgroundValue = Math.max(0, Math.min(255, Math.round(background)));
+    outputContext.fillStyle = `rgb(${backgroundValue}, ${backgroundValue}, ${backgroundValue})`;
+    outputContext.fillRect(0, 0, output.width, output.height);
+    runs.forEach((run, index) => {
+      const glyphHeight = run.end - run.start + 1;
+      const drawX = index * (glyphWidth + gap) + horizontalPad;
+      const drawY = verticalPad + Math.round((maximumGlyphHeight - glyphHeight) / 2);
+      outputContext.drawImage(
+        source,
+        minX,
+        run.start,
+        contentWidth,
+        glyphHeight,
+        drawX,
+        drawY,
+        contentWidth,
+        glyphHeight
+      );
+    });
+    return output.toDataURL("image/jpeg", 0.96);
+  };
+
   const ensureSuggestionUi = () => {
     let panel = document.getElementById("ocrSuggestionButtons");
     if (panel) return panel;
@@ -561,13 +734,30 @@
           foregroundTightCrop(counterclockwise)
         ]);
         confirmActiveScan(scanId);
+        const [clockwiseCompacted, counterclockwiseCompacted] = await Promise.all([
+          compactVerticalGlyphSpacing(clockwiseFocused),
+          compactVerticalGlyphSpacing(counterclockwiseFocused)
+        ]);
+        confirmActiveScan(scanId);
+        const stackedFocused = await foregroundTightCrop(originalImageData);
+        confirmActiveScan(scanId);
+        const stackedCompacted = await recomposeStackedVerticalGlyphs(stackedFocused);
+        confirmActiveScan(scanId);
         const [clockwiseVariants, counterclockwiseVariants] = await Promise.all([
-          enhancedVariants(clockwiseFocused),
-          enhancedVariants(counterclockwiseFocused)
+          enhancedVariants(clockwiseCompacted),
+          enhancedVariants(counterclockwiseCompacted)
         ]);
         confirmActiveScan(scanId);
         // Vertical labels can read in either direction. The focused crop keeps
         // edge characters, then word, line, and raw-line modes vote together.
+        if (stackedCompacted !== stackedFocused) {
+          const stackedVariants = await enhancedVariants(stackedCompacted);
+          confirmActiveScan(scanId);
+          attemptGroups.push([
+            { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS },
+            { dataUrl: stackedVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS }
+          ]);
+        }
         attemptGroups.push([
           { dataUrl: clockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS },
           { dataUrl: clockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS },

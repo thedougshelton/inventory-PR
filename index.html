@@ -2697,7 +2697,14 @@
     }
 
     function setOcrCropOrientation(orientation) {
-      ocrCropOrientation = orientation === "vertical" ? "vertical" : "horizontal";
+      const nextOrientation = orientation === "vertical" ? "vertical" : "horizontal";
+      const orientationChanged = nextOrientation !== ocrCropOrientation;
+      ocrCropOrientation = nextOrientation;
+      if (ocrCropState && orientationChanged) {
+        ocrCropState.zoom = ocrCropOrientation === "vertical" ? 1 : 1.7;
+        ocrCropState.offsetX = 0;
+        ocrCropState.offsetY = 0;
+      }
       const wrap = ocrCropCanvas.closest(".ocr-crop-canvas-wrap");
       if (wrap) wrap.classList.toggle("vertical", ocrCropOrientation === "vertical");
       ocrOrientationButtons.forEach(button => {
@@ -2854,7 +2861,7 @@
         ocrCropState = {
           dataUrl: originalImageData,
           image,
-          zoom: 1.7,
+          zoom: ocrCropOrientation === "vertical" ? 1 : 1.7,
           offsetX: 0,
           offsetY: 0
         };
@@ -6223,7 +6230,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=44"></script>
-<script src="./ocr-hard-rules.js?v=44"></script>
+<script src="./ocr-priority-patch.js?v=47"></script>
+<script src="./ocr-hard-rules.js?v=47"></script>
 </body>
 </html>
