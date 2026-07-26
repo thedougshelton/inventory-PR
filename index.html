@@ -630,7 +630,7 @@
 
     .ocr-crop-controls {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 8px;
     }
 
@@ -1527,7 +1527,7 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
+        <button id="scanContainerOcrBtn" type="button">Take Container Number Photo</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
@@ -1537,7 +1537,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Scan Cropped Photo</button>
+            <button id="ocrScanCropBtn" class="primary" type="button" hidden>Scan Cropped Photo</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -1559,7 +1559,7 @@
               <button id="ocrUseVerifiedBtn" class="primary" type="button" disabled>Confirm &amp; Save</button>
             </div>
           </div>
-          <button id="ocrCancelCropBtn" type="button">Cancel OCR Photo</button>
+          <button id="ocrCancelCropBtn" type="button">Cancel Photo</button>
         </div>
       </div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
@@ -2825,6 +2825,8 @@
     function resetOcrCrop() {
       ocrCropState = null;
       ocrCropPanel.hidden = true;
+      ocrScanCropBtn.hidden = true;
+      ocrScanCropBtn.disabled = true;
       ocrPhotoInput.value = "";
       resetOcrReview();
     }
@@ -2933,14 +2935,20 @@
         ocrCropPanel.hidden = false;
         setContainerInputValue("");
         resetOcrReview();
+        ocrScanCropBtn.hidden = true;
+        ocrScanCropBtn.disabled = true;
         setOcrCropOrientation(ocrCropOrientation);
-        setOcrStatus("PHOTO READY. ZOOM OR DRAG SO THE FULL CONTAINER NUMBER IS INSIDE THE GREEN BOX, THEN SCAN CROPPED PHOTO.", "info");
-        setStatus("OCR photo ready. The photo starts zoomed out so you can fit the full number.", "info");
+        showOcrReview(
+          "",
+          "PHOTO READY. COMPARE THE PHOTO, TYPE THE 6-CHARACTER CONTAINER NUMBER BELOW, THEN CONFIRM & SAVE.",
+          "warning"
+        );
+        setStatus("Camera photo ready. OCR scanning is turned off to prevent freezes.", "warning");
         requestAnimationFrame(renderOcrCropPreview);
       } catch (error) {
         resetOcrCrop();
-        setOcrStatus("OCR photo could not be loaded: " + error.message, "error");
-        setStatus("OCR photo could not be loaded. Try another photo or type manually.", "error");
+        setOcrStatus("Photo could not be loaded: " + error.message, "error");
+        setStatus("Photo could not be loaded. Try another photo or type manually.", "error");
         input.focus();
       }
     }
@@ -6264,7 +6272,14 @@
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
-    ocrScanCropBtn.addEventListener("click", () => scanContainerNumberFromImageData(ocrCropDataUrl()));
+    ocrScanCropBtn.addEventListener("click", () => {
+      showOcrReview(
+        "",
+        "OCR SCANNING IS TURNED OFF TO PREVENT FREEZES. TYPE THE 6-CHARACTER NUMBER FROM THE PHOTO, THEN CONFIRM & SAVE.",
+        "warning"
+      );
+      setStatus("OCR scanning is turned off. Use the photo as a reference and type the number.", "warning");
+    });
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {
       if (requireUnlocked("use a camera-scanned container number")) return;
@@ -6284,7 +6299,7 @@
     });
     ocrCancelCropBtn.addEventListener("click", () => {
       resetOcrCrop();
-      setOcrStatus("OCR photo cancelled. Take another photo or type manually.", "warning");
+      setOcrStatus("PHOTO CANCELLED. TAKE ANOTHER PHOTO OR TYPE MANUALLY.", "warning");
       input.focus();
     });
     let ocrCropDragPoint = null;
