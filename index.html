@@ -2440,7 +2440,7 @@
       return isValid(normalized) && !IGNORED_UPLOADED_UNIT_CODES.has(normalized);
     }
 
-    const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D", "M", "P", "R", "T", "Z"]);
+    const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D"]);
 
     function isOcrContainerCode(code) {
       const normalized = normalizeCode(code || "");
