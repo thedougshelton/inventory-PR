@@ -2791,12 +2791,16 @@
     }
 
     async function buildOcrImageAttempts(originalImageData) {
+      const makeAttempts = (imageDataUrls, pageSegMode) => imageDataUrls.map(imageData => ({ imageData, pageSegMode }));
+
       if (ocrCropOrientation === "vertical") {
         const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
         const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
         const rightAttempts = await prepareOcrImageDataUrls(rotatedRight);
         const leftAttempts = await prepareOcrImageDataUrls(rotatedLeft);
-        return rightAttempts.concat(leftAttempts);
+        const stackedAttempts = await prepareOcrImageDataUrls(originalImageData);
+        return makeAttempts(rightAttempts.concat(leftAttempts), "7")
+          .concat(makeAttempts(stackedAttempts, "6"), makeAttempts(stackedAttempts, "11"));
       }
 
       const straightAttempts = await prepareOcrImageDataUrls(originalImageData);
@@ -2804,7 +2808,7 @@
       const tiltedLeft = await rotateImageDataUrl(originalImageData, -2);
       const rightAttempts = await prepareOcrImageDataUrls(tiltedRight);
       const leftAttempts = await prepareOcrImageDataUrls(tiltedLeft);
-      return straightAttempts.concat(rightAttempts, leftAttempts);
+      return makeAttempts(straightAttempts.concat(rightAttempts, leftAttempts), "7");
     }
 
     function resetOcrCrop() {
@@ -2978,12 +2982,19 @@
         const votes = new Map();
         const confidenceByCode = new Map();
         const observedReads = new Set();
+        let activePageSegMode = "7";
         let lastText = "";
 
-        for (const [attemptIndex, imageData] of imageAttempts.entries()) {
+        for (const [attemptIndex, attempt] of imageAttempts.entries()) {
           if (attemptIndex > 0) {
             setOcrStatus("Checking the number again with another image detail pass...", "info");
           }
+          const pageSegMode = attempt.pageSegMode || "7";
+          if (pageSegMode !== activePageSegMode) {
+            await worker.setParameters({ tessedit_pageseg_mode: pageSegMode });
+            activePageSegMode = pageSegMode;
+          }
+          const imageData = attempt.imageData || attempt;
           const result = await worker.recognize(imageData);
           lastText = result && result.data ? result.data.text || "" : "";
           const candidates = ocrLiteralCandidateCodes(lastText);
