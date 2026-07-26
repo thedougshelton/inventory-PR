@@ -1517,9 +1517,9 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
+        <button id="scanContainerOcrBtn" type="button">Use Phone Scan Text</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
-        <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
+        <div id="ocrStatus" class="unit-photo-status">USES YOUR PHONE'S BUILT-IN TEXT SCANNER. NO PHOTO IS SAVED.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
           <div class="ocr-crop-canvas-wrap">
             <canvas id="ocrCropCanvas"></canvas>
@@ -6483,8 +6483,16 @@
     scanContainerOcrBtn.addEventListener("click", () => {
       if (requireUnlocked("scan a container number")) return;
       resetOcrCrop();
-      setOcrStatus("TAKE A PHOTO WITH THE CONTAINER NUMBER CENTERED. THE APP WILL SCAN THE CENTER SQUARE ONLY.", "info");
-      ocrPhotoInput.click();
+      if (!containerKeyboard.hidden) {
+        containerKeyboard.hidden = true;
+        updateContainerKeyboardToggle();
+      }
+      input.setAttribute("inputmode", "text");
+      input.focus();
+      const cursorPosition = input.value.length;
+      input.setSelectionRange(cursorPosition, cursorPosition);
+      setOcrStatus("IPHONE: TAP SCAN TEXT ON THE KEYBOARD OR FIELD MENU. ANDROID/SAMSUNG: OPEN THE KEYBOARD TOOLBAR AND TAP SCAN TEXT.", "info");
+      setStatus("PHONE TEXT SCANNER READY. VERIFY ALL 6 CHARACTERS BEFORE PRESSING ENTER.", "info");
     });
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
