@@ -334,6 +334,189 @@
     panel.hidden = suggestions.length === 0;
   };
 
+  let liveScanStream = null;
+  let liveScanActive = false;
+
+  const stopLiveScan = () => {
+    liveScanActive = false;
+    if (liveScanStream) {
+      liveScanStream.getTracks().forEach(track => track.stop());
+      liveScanStream = null;
+    }
+    const panel = document.getElementById("ocrLiveScanPanel");
+    if (panel) {
+      panel.hidden = true;
+      panel.style.display = "none";
+    }
+  };
+
+  const liveFrameScore = canvas => {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return 0;
+    const width = canvas.width;
+    const height = canvas.height;
+    const pixels = context.getImageData(0, 0, width, height).data;
+    const step = Math.max(1, Math.floor(Math.min(width, height) / 80));
+    let score = 0;
+    let count = 0;
+
+    for (let y = step; y < height - step; y += step) {
+      for (let x = step; x < width - step; x += step) {
+        const index = (y * width + x) * 4;
+        const rightIndex = (y * width + Math.min(width - 1, x + step)) * 4;
+        const downIndex = (Math.min(height - 1, y + step) * width + x) * 4;
+        const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+        const rightGray = pixels[rightIndex] * 0.299 + pixels[rightIndex + 1] * 0.587 + pixels[rightIndex + 2] * 0.114;
+        const downGray = pixels[downIndex] * 0.299 + pixels[downIndex + 1] * 0.587 + pixels[downIndex + 2] * 0.114;
+        score += Math.abs(gray - rightGray) + Math.abs(gray - downGray);
+        count += 1;
+      }
+    }
+
+    return count ? score / count : 0;
+  };
+
+  const captureLiveFrame = video => {
+    const sourceWidth = video.videoWidth || 1280;
+    const sourceHeight = video.videoHeight || 720;
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+    if (!context) return { dataUrl: "", score: 0 };
+    context.fillStyle = "#FFFFFF";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return {
+      dataUrl: canvas.toDataURL("image/jpeg", 0.94),
+      score: liveFrameScore(canvas)
+    };
+  };
+
+  const ensureLiveScanUi = () => {
+    if (document.getElementById("ocrLiveScanBtn")) return;
+    if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
+
+    const button = document.createElement("button");
+    button.id = "ocrLiveScanBtn";
+    button.type = "button";
+    button.textContent = "Live Scan Camera";
+    button.style.minHeight = "46px";
+    button.addEventListener("click", startLiveScan);
+    scanContainerOcrBtn.insertAdjacentElement("afterend", button);
+
+    const panel = document.createElement("div");
+    panel.id = "ocrLiveScanPanel";
+    panel.hidden = true;
+    panel.style.display = "none";
+    panel.style.gap = "8px";
+    panel.style.padding = "8px";
+    panel.style.border = "1px solid var(--border)";
+    panel.style.borderRadius = "10px";
+    panel.style.background = "#ffffff";
+
+    const videoWrap = document.createElement("div");
+    videoWrap.style.position = "relative";
+    videoWrap.style.width = "100%";
+    videoWrap.style.aspectRatio = "4 / 3";
+    videoWrap.style.overflow = "hidden";
+    videoWrap.style.borderRadius = "10px";
+    videoWrap.style.background = "#111827";
+
+    const video = document.createElement("video");
+    video.id = "ocrLiveScanVideo";
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.style.width = "100%";
+    video.style.height = "100%";
+    video.style.objectFit = "cover";
+
+    const frame = document.createElement("div");
+    frame.style.position = "absolute";
+    frame.style.inset = "35% 8%";
+    frame.style.border = "2px solid #22c55e";
+    frame.style.borderRadius = "8px";
+    frame.style.boxShadow = "0 0 0 999px rgba(15, 23, 42, 0.32)";
+    frame.style.pointerEvents = "none";
+
+    const stopButton = document.createElement("button");
+    stopButton.id = "ocrStopLiveScanBtn";
+    stopButton.type = "button";
+    stopButton.textContent = "Stop Live Scan";
+    stopButton.style.minHeight = "40px";
+    stopButton.addEventListener("click", () => {
+      stopLiveScan();
+      setOcrStatus("LIVE SCAN STOPPED.", "warning");
+    });
+
+    videoWrap.appendChild(video);
+    videoWrap.appendChild(frame);
+    panel.appendChild(videoWrap);
+    panel.appendChild(stopButton);
+    ocrStatus.insertAdjacentElement("afterend", panel);
+  };
+
+  async function startLiveScan() {
+    if (requireUnlocked("start live scan")) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setOcrStatus("LIVE CAMERA IS NOT AVAILABLE IN THIS BROWSER. USE PHOTO SCAN INSTEAD.", "error");
+      return;
+    }
+    if (liveScanActive) return;
+
+    const panel = document.getElementById("ocrLiveScanPanel");
+    const video = document.getElementById("ocrLiveScanVideo");
+    if (!panel || !video) return;
+
+    try {
+      liveScanActive = true;
+      panel.hidden = false;
+      panel.style.display = "grid";
+      resetOcrReview();
+      showSuggestions([]);
+      setOcrStatus("STARTING LIVE CAMERA...", "info");
+      liveScanStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = liveScanStream;
+      await video.play();
+
+      let bestFrame = { dataUrl: "", score: -1 };
+      for (let index = 1; index <= 5 && liveScanActive; index += 1) {
+        await new Promise(resolve => setTimeout(resolve, index === 1 ? 450 : 260));
+        const frame = captureLiveFrame(video);
+        if (frame.dataUrl && frame.score > bestFrame.score) bestFrame = frame;
+        setOcrStatus("LIVE SCAN CAPTURED FRAME " + index + " OF 5...", "info");
+      }
+
+      const wasStopped = !liveScanActive;
+      stopLiveScan();
+      if (wasStopped) {
+        setOcrStatus("LIVE SCAN STOPPED.", "warning");
+        return;
+      }
+      if (!bestFrame.dataUrl) {
+        setOcrStatus("LIVE SCAN COULD NOT CAPTURE A CLEAR FRAME. TRY PHOTO SCAN.", "warning");
+        return;
+      }
+
+      setOcrStatus("LIVE SCAN PICKED THE CLEAREST FRAME. CHECKING OCR NOW...", "info");
+      await scanContainerNumberFromImageData(bestFrame.dataUrl);
+    } catch (error) {
+      stopLiveScan();
+      setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
+      setStatus("Live scan failed. Use photo scan or type manually.", "error");
+    }
+  }
+
   isOcrContainerCode = code => VALID_CODE.test(normalizeCode(code || ""));
   ocrLiteralCandidateCodes = text => priorityCandidateObjects(text).map(item => item.code);
 
@@ -458,4 +641,10 @@
       ocrScanCropBtn.disabled = editLocked;
     }
   };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensureLiveScanUi, { once: true });
+  } else {
+    ensureLiveScanUi();
+  }
 })();
