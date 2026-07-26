@@ -396,28 +396,42 @@
     setStatus("OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
-      const orientations = [];
-      if (ocrCropOrientation === "vertical") {
-        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
-        confirmActiveScan(scanId);
-        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
-        confirmActiveScan(scanId);
-      } else {
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
-      }
-
       const attemptGroups = [];
-      for (const oriented of orientations) {
-        const orientationAttempts = [];
-        const tight = await autoTightCrop(oriented.dataUrl);
+      if (ocrCropOrientation === "vertical") {
+        const clockwise = await rotateImageDataUrl(originalImageData, 90);
         confirmActiveScan(scanId);
-        const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
+        const counterclockwise = await rotateImageDataUrl(originalImageData, -90);
+        confirmActiveScan(scanId);
+        const [clockwiseVariants, counterclockwiseVariants, stackedVariants] = await Promise.all([
+          enhancedVariants(clockwise),
+          enhancedVariants(counterclockwise),
+          enhancedVariants(originalImageData)
+        ]);
+        confirmActiveScan(scanId);
+        // Vertical labels can read in either direction. PSM 8 treats the
+        // rotated code as one word, while PSM 7 handles a normal line.
+        // PSM 6 also covers labels whose characters are individually stacked.
+        attemptGroups.push([
+          { dataUrl: clockwiseVariants[0], pageSegMode: "8" },
+          { dataUrl: clockwiseVariants[1], pageSegMode: "7" },
+          { dataUrl: stackedVariants[0], pageSegMode: "6" }
+        ]);
+        attemptGroups.push([
+          { dataUrl: counterclockwiseVariants[0], pageSegMode: "8" },
+          { dataUrl: counterclockwiseVariants[1], pageSegMode: "7" },
+          { dataUrl: stackedVariants[2], pageSegMode: "6" }
+        ]);
+      } else {
+        const tight = await autoTightCrop(originalImageData);
+        confirmActiveScan(scanId);
+        const bases = tight === originalImageData ? [originalImageData] : [tight, originalImageData];
+        const orientationAttempts = [];
         for (const base of bases) {
           const variants = await enhancedVariants(base);
           confirmActiveScan(scanId);
           orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map(dataUrl => ({
             dataUrl,
-            pageSegMode: oriented.pageSegMode
+            pageSegMode: "7"
           })));
         }
         attemptGroups.push(orientationAttempts);
