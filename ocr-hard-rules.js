@@ -3,7 +3,7 @@
 
   const FORBIDDEN_LETTERS = new Set(["A", "E", "F", "G", "H", "I", "J", "K", "L", "N", "O", "Q", "U", "V", "W", "X", "Y"]);
   const VALID_NUMERIC_STARTS = new Set(["3", "7", "8"]);
-  const VALID_CONTAINER_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|[378]\d{5})$/;
+  const VALID_CONTAINER_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
 
   const normalize = value => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
 

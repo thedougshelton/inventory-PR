@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|[378]\d{5})$/;
+  const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
   const CONFUSION_GROUPS = ["0ODQ", "1IL", "2Z", "5S", "6G", "8B", "MN"];
 
   const formatWeight = code => {
@@ -12,6 +12,7 @@
     if (/^3\d{5}$/.test(code)) return 100;
     if (/^C\d{5}$/.test(code)) return 65;
     if (/^B\d{5}$/.test(code)) return 50;
+    if (/^(TR|PS)\d{4}$/.test(code)) return 35;
     return 0;
   };
 
@@ -99,6 +100,8 @@
         if (/[Z237]/.test(raw[0]) && /[MN]/.test(raw[1])) {
           addCandidate(candidates, "ZM" + tail, raw.startsWith("ZM") ? 75 : 42, "likely ZM prefix");
         }
+        if (raw.startsWith("TR")) addCandidate(candidates, "TR" + tail, 18, "unusual TR prefix");
+        if (raw[0] === "P" && /[S5]/.test(raw[1])) addCandidate(candidates, "PS" + tail, raw.startsWith("PS") ? 18 : 8, "unusual PS prefix");
       });
 
       fuzzyInventoryMatches(raw).forEach(match => {
@@ -107,6 +110,17 @@
     }
 
     return [...candidates.values()].sort((a, b) => b.score - a.score);
+  };
+
+  const previewCandidateTexts = text => {
+    const normalized = normalizeUpperText(text);
+    const groups = normalized
+      .split(/[^A-Z0-9]+/)
+      .map(group => group.trim())
+      .filter(group => group.length >= 4 && group.length <= 8);
+    const compact = normalized.replace(/[^A-Z0-9]+/g, "");
+    if (compact.length >= 4 && compact.length <= 8) groups.push(compact);
+    return [...new Set(groups)].slice(0, 4);
   };
 
   const loadImage = dataUrl => new Promise((resolve, reject) => {
@@ -246,19 +260,24 @@
     try {
       const orientations = [];
       if (ocrCropOrientation === "vertical") {
-        orientations.push(await rotateImageDataUrl(originalImageData, 90));
-        orientations.push(await rotateImageDataUrl(originalImageData, -90));
+        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
+        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "6" });
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "11" });
       } else {
-        orientations.push(originalImageData);
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
       }
 
       let imageAttempts = [];
       for (const oriented of orientations) {
-        const tight = await autoTightCrop(oriented);
-        const bases = tight === oriented ? [oriented] : [tight, oriented];
-        for (const base of bases) imageAttempts.push(...await enhancedVariants(base));
+        const tight = await autoTightCrop(oriented.dataUrl);
+        const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
+        for (const base of bases) {
+          const variants = await enhancedVariants(base);
+          imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
+        }
       }
-      imageAttempts = [...new Set(imageAttempts)].slice(0, 10);
+      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 14);
 
       const worker = await getOcrWorker();
       try {
@@ -271,12 +290,21 @@
       const totals = new Map();
       const appearances = new Map();
       const confidenceByCode = new Map();
+      const partialReads = new Set();
+      let activePageSegMode = "7";
       let lastText = "";
 
-      for (const [attemptIndex, imageData] of imageAttempts.entries()) {
+      for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
-        const result = await worker.recognize(imageData);
+        if (attempt.pageSegMode !== activePageSegMode) {
+          try {
+            await worker.setParameters({ tessedit_pageseg_mode: attempt.pageSegMode });
+          } catch {}
+          activePageSegMode = attempt.pageSegMode;
+        }
+        const result = await worker.recognize(attempt.dataUrl);
         lastText = result && result.data ? result.data.text || "" : "";
+        previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
         priorityCandidateObjects(lastText).slice(0, 6).forEach((candidate, rank) => {
           const contribution = candidate.score + Math.max(0, 45 - rank * 8) + confidence * 0.4;
@@ -292,8 +320,17 @@
         .slice(0, 3);
 
       if (!ranked.length) {
+        const fiveCharacterRead = [...partialReads].find(read => read.length === 5);
         const preview = normalizeUpperText(lastText).replace(/\s+/g, " ").trim().slice(0, 40);
-        showOcrReview("", preview ? "NO RELIABLE NUMBER FOUND. OCR SAW: " + preview + ". TYPE THE 6 CHARACTERS BELOW." : "NO RELIABLE NUMBER FOUND. TYPE THE 6 CHARACTERS BELOW.", "warning");
+        showOcrReview(
+          "",
+          fiveCharacterRead
+            ? "OCR ONLY SAW 5 CHARACTERS: " + fiveCharacterRead + ". NOTHING WAS ENTERED. KEEP ALL 6 CHARACTERS INSIDE THE GREEN BOX, THEN TRY AGAIN OR TYPE ALL 6 BELOW."
+            : preview
+            ? "NO RELIABLE NUMBER FOUND. OCR SAW: " + preview + ". TYPE THE 6 CHARACTERS BELOW."
+            : "NO RELIABLE NUMBER FOUND. TYPE THE 6 CHARACTERS BELOW.",
+          "warning"
+        );
         showSuggestions([]);
         setStatus("OCR could not produce a safe suggestion. Type it manually or try another photo.", "warning");
         return;
