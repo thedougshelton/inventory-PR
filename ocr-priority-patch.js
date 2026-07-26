@@ -264,20 +264,6 @@
     return variants;
   };
 
-  const withOcrTimeout = (promise, milliseconds, message) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), milliseconds);
-    Promise.resolve(promise).then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-
   const autoTightCrop = async dataUrl => {
     const image = await loadImage(dataUrl);
     const source = document.createElement("canvas");
@@ -321,10 +307,13 @@
     if (panel) return panel;
     panel = document.createElement("div");
     panel.id = "ocrSuggestionButtons";
-    panel.style.display = "grid";
-    panel.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+    panel.style.display = "flex";
     panel.style.gap = "6px";
-    panel.style.marginTop = "4px";
+    panel.style.margin = "4px 0 0";
+    panel.style.padding = "0 0 2px";
+    panel.style.overflowX = "auto";
+    panel.style.overflowY = "hidden";
+    panel.style.maxWidth = "100%";
     ocrReviewPanel.insertBefore(panel, ocrReviewPanel.querySelector(".ocr-review-row"));
     return panel;
   };
@@ -335,10 +324,19 @@
     suggestions.slice(0, 3).forEach((item, index) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = (index === 0 ? "BEST: " : "OPTION: ") + item.code;
+      button.textContent = (index === 0 ? "BEST: " : "") + item.code;
       button.title = item.reason || "OCR suggestion";
       button.setAttribute("aria-label", item.code + ". " + (item.reason || "OCR suggestion"));
-      button.style.minHeight = "42px";
+      button.style.flex = "0 0 auto";
+      button.style.width = "auto";
+      button.style.minWidth = index === 0 ? "104px" : "82px";
+      button.style.maxWidth = "145px";
+      button.style.height = "34px";
+      button.style.minHeight = "34px";
+      button.style.padding = "5px 9px";
+      button.style.fontSize = "0.82rem";
+      button.style.lineHeight = "1";
+      button.style.whiteSpace = "nowrap";
       button.addEventListener("click", () => {
         ocrReviewInput.value = item.code;
         updateOcrReviewButton();
@@ -352,6 +350,31 @@
   isOcrContainerCode = code => VALID_CODE.test(normalizeCode(code || ""));
   ocrLiteralCandidateCodes = text => priorityCandidateObjects(text).map(item => item.code);
 
+  let activeScanId = 0;
+  let scanRunning = false;
+  const cancelledScanError = () => {
+    const error = new Error("OCR scan canceled.");
+    error.name = "AbortError";
+    return error;
+  };
+  const confirmActiveScan = scanId => {
+    if (scanId !== activeScanId) throw cancelledScanError();
+  };
+
+  window.cancelContainerOcrScan = async function cancelContainerOcrScan(options = {}) {
+    activeScanId += 1;
+    const wasRunning = scanRunning;
+    scanRunning = false;
+    ocrProgressEnabled = false;
+    if (wasRunning) await resetOcrWorker();
+    scanContainerOcrBtn.disabled = editLocked;
+    ocrScanCropBtn.disabled = editLocked;
+    if (!options.quiet && wasRunning) {
+      setOcrStatus("OCR scan canceled. Take another photo or type manually.", "warning");
+      setStatus("OCR scan canceled. Nothing was saved.", "warning");
+    }
+  };
+
   scanContainerNumberFromImageData = async function scanContainerNumberFromImageDataAdvanced(originalImageData) {
     if (!originalImageData) return;
     if (requireUnlocked("scan a container number")) return;
@@ -362,6 +385,9 @@
       return;
     }
 
+    const scanId = ++activeScanId;
+    scanRunning = true;
+    ocrProgressEnabled = true;
     scanContainerOcrBtn.disabled = true;
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
@@ -373,7 +399,9 @@
       const orientations = [];
       if (ocrCropOrientation === "vertical") {
         orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
+        confirmActiveScan(scanId);
         orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
+        confirmActiveScan(scanId);
       } else {
         orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
       }
@@ -382,9 +410,11 @@
       for (const oriented of orientations) {
         const orientationAttempts = [];
         const tight = await autoTightCrop(oriented.dataUrl);
+        confirmActiveScan(scanId);
         const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
         for (const base of bases) {
           const variants = await enhancedVariants(base);
+          confirmActiveScan(scanId);
           orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map(dataUrl => ({
             dataUrl,
             pageSegMode: oriented.pageSegMode
@@ -402,12 +432,14 @@
       imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 6);
 
       const worker = await withOcrTimeout(getOcrWorker(), 20000, "OCR STARTUP TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY.");
+      confirmActiveScan(scanId);
       try {
         await worker.setParameters({
           tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
           preserve_interword_spaces: "0"
         });
       } catch {}
+      confirmActiveScan(scanId);
 
       const totals = new Map();
       const appearances = new Map();
@@ -418,11 +450,13 @@
       let lastText = "";
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
+        confirmActiveScan(scanId);
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
         if (attempt.pageSegMode !== activePageSegMode) {
           try {
             await worker.setParameters({ tessedit_pageseg_mode: attempt.pageSegMode });
           } catch {}
+          confirmActiveScan(scanId);
           activePageSegMode = attempt.pageSegMode;
         }
         const result = await withOcrTimeout(
@@ -430,6 +464,7 @@
           10000,
           "OCR IMAGE PASS TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY."
         );
+        confirmActiveScan(scanId);
         lastText = result && result.data ? result.data.text || "" : "";
         previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
@@ -456,6 +491,7 @@
         }))
         .sort((a, b) => b.score - a.score)
         .slice(0, 3);
+      confirmActiveScan(scanId);
 
       if (!ranked.length) {
         const fiveCharacterRead = [...partialReads].find(read => read.length === 5);
@@ -479,12 +515,20 @@
       showSuggestions(ranked);
       setStatus("OCR suggestions are waiting for your verification. Nothing has been saved.", "warning");
     } catch (error) {
-      resetOcrWorker();
+      const wasCancelled = error && error.name === "AbortError";
+      if (!wasCancelled && scanId === activeScanId) {
+        await resetOcrWorker();
+      }
+      if (wasCancelled || scanId !== activeScanId) return;
       setOcrStatus("OCR FAILED: " + error.message, "error");
       setStatus("OCR failed. Type the container number manually or try another photo.", "error");
     } finally {
-      scanContainerOcrBtn.disabled = editLocked;
-      ocrScanCropBtn.disabled = editLocked;
+      if (scanId === activeScanId) {
+        scanRunning = false;
+        ocrProgressEnabled = false;
+        scanContainerOcrBtn.disabled = editLocked;
+        ocrScanCropBtn.disabled = editLocked;
+      }
     }
   };
 })();

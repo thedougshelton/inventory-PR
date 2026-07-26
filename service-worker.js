@@ -1,10 +1,9 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-33";
+const CACHE_NAME = "packrat-inventory-v5-runtime-34";
 const APP_PATHS = [
   "./",
   "./index.html",
-  "./ocr-priority-patch.js",
-  "./ocr-hard-rules.js",
-  "./ocr-compact-variations.js",
+  "./ocr-priority-patch.js?v=34",
+  "./ocr-hard-rules.js?v=34",
   "./vendor/xlsx.bundle.js",
   "./vendor/tesseract.min.js",
   "./vendor/tesseract-worker.min.js",
@@ -17,39 +16,11 @@ const APP_PATHS = [
 const APP_FILES = APP_PATHS.map(path => new URL(path, self.location.href).href);
 const INDEX_URL = new URL("./index.html", self.location.href).href;
 const ROOT_URL = new URL("./", self.location.href).href;
-const OCR_PATCH_TAGS = [
-  '<script src="./ocr-priority-patch.js"></script>',
-  '<script src="./ocr-hard-rules.js"></script>',
-  '<script src="./ocr-compact-variations.js"></script>'
-];
-
-async function injectOcrPriorityPatch(response) {
-  if (!response) return response;
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("text/html")) return response;
-
-  let html = await response.text();
-  const missingTags = OCR_PATCH_TAGS.filter(tag => !html.includes(tag));
-  if (missingTags.length) {
-    const injection = missingTags.join("\n");
-    html = html.includes("</body>")
-      ? html.replace("</body>", injection + "\n</body>")
-      : html + injection;
-  }
-
-  const headers = new Headers(response.headers);
-  headers.delete("content-length");
-  return new Response(html, {
-    status: response.status,
-    statusText: response.statusText,
-    headers
-  });
-}
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    await Promise.allSettled(APP_FILES.map(url => cache.add(new Request(url, { cache: "reload" }))));
+    await cache.addAll(APP_FILES.map(url => new Request(url, { cache: "reload" })));
     await self.skipWaiting();
   })());
 });
@@ -74,11 +45,10 @@ self.addEventListener("fetch", event => {
       try {
         const response = await fetch(event.request);
         const cache = await caches.open(CACHE_NAME);
-        cache.put(INDEX_URL, response.clone());
-        return injectOcrPriorityPatch(response);
+        await cache.put(INDEX_URL, response.clone());
+        return response;
       } catch {
-        const cachedResponse = (await caches.match(INDEX_URL)) || (await caches.match(ROOT_URL));
-        return injectOcrPriorityPatch(cachedResponse);
+        return (await caches.match(INDEX_URL)) || (await caches.match(ROOT_URL));
       }
     })());
     return;

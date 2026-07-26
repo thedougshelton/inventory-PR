@@ -53,13 +53,11 @@
 
   const attachAll = () => {
     attachValidation(document.getElementById("ocrReviewInput"));
-    attachValidation(document.getElementById("containerNumber") || document.querySelector('input[maxlength="6"]'));
+    attachValidation(document.getElementById("containerInput"));
   };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attachAll);
   else attachAll();
-
-  new MutationObserver(attachAll).observe(document.documentElement, { childList: true, subtree: true });
 
   window.PACKRAT_OCR_HARD_RULES = Object.freeze({
     forbiddenLetters: Object.freeze([...FORBIDDEN_LETTERS]),

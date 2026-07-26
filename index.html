@@ -1973,6 +1973,7 @@
     let ocrCropState = null;
     let ocrCropOrientation = "horizontal";
     let ocrWorkerPromise = null;
+    let ocrProgressEnabled = false;
 
     sessionNameInput.value = loadSessionName();
     employeeInitialsInput.value = loadEmployeeInitials();
@@ -2675,41 +2676,24 @@
       });
     }
 
-    function ocrContrastGray(gray) {
-      return gray < 150 ? Math.max(0, gray - 45) : Math.min(255, gray + 35);
-    }
-
-    function ocrAutomaticThreshold(pixelData) {
-      const histogram = new Array(256).fill(0);
-      let total = 0;
-      let weightedTotal = 0;
-      for (let index = 0; index < pixelData.length; index += 4) {
-        const value = pixelData[index];
-        histogram[value] += 1;
-        total += 1;
-        weightedTotal += value;
+    async function prepareOcrSourcePhoto(file) {
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const image = await loadImageFromDataUrl(objectUrl);
+        const maxLongSide = 2048;
+        const scale = Math.min(1, maxLongSide / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d", { alpha: false });
+        if (!context) throw new Error("This browser could not prepare the OCR photo.");
+        context.fillStyle = "#FFFFFF";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL("image/jpeg", 0.9);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
       }
-
-      let backgroundWeight = 0;
-      let backgroundSum = 0;
-      let bestVariance = -1;
-      let threshold = 128;
-      for (let value = 0; value < 256; value += 1) {
-        backgroundWeight += histogram[value];
-        if (!backgroundWeight) continue;
-        const foregroundWeight = total - backgroundWeight;
-        if (!foregroundWeight) break;
-        backgroundSum += value * histogram[value];
-        const backgroundMean = backgroundSum / backgroundWeight;
-        const foregroundMean = (weightedTotal - backgroundSum) / foregroundWeight;
-        const difference = backgroundMean - foregroundMean;
-        const variance = backgroundWeight * foregroundWeight * difference * difference;
-        if (variance > bestVariance) {
-          bestVariance = variance;
-          threshold = value;
-        }
-      }
-      return threshold;
     }
 
     function setOcrCropOrientation(orientation) {
@@ -2744,47 +2728,6 @@
       };
     }
 
-    async function prepareOcrImageDataUrls(dataUrl) {
-      const image = await loadImageFromDataUrl(dataUrl);
-      const maxSide = 1800;
-      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-      const width = Math.max(1, Math.round(image.width * scale));
-      const height = Math.max(1, Math.round(image.height * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-      if (!context) return [dataUrl];
-
-      context.fillStyle = "#FFFFFF";
-      context.fillRect(0, 0, width, height);
-      context.drawImage(image, 0, 0, width, height);
-
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      for (let index = 0; index < data.length; index += 4) {
-        const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
-        const contrasted = ocrContrastGray(gray);
-        data[index] = contrasted;
-        data[index + 1] = contrasted;
-        data[index + 2] = contrasted;
-        data[index + 3] = 255;
-      }
-      context.putImageData(imageData, 0, 0);
-      const enhancedImage = canvas.toDataURL("image/png");
-      const threshold = ocrAutomaticThreshold(data);
-      for (let index = 0; index < data.length; index += 4) {
-        const value = data[index] <= threshold ? 0 : 255;
-        data[index] = value;
-        data[index + 1] = value;
-        data[index + 2] = value;
-      }
-      context.putImageData(imageData, 0, 0);
-      const thresholdImage = canvas.toDataURL("image/png");
-
-      return [enhancedImage, thresholdImage, dataUrl];
-    }
-
     async function rotateImageDataUrl(dataUrl, degrees) {
       const image = await loadImageFromDataUrl(dataUrl);
       const quarterTurn = Math.abs(degrees) % 180 === 90;
@@ -2799,27 +2742,6 @@
       context.rotate(degrees * Math.PI / 180);
       context.drawImage(image, -image.width / 2, -image.height / 2);
       return canvas.toDataURL("image/jpeg", 0.94);
-    }
-
-    async function buildOcrImageAttempts(originalImageData) {
-      const makeAttempts = (imageDataUrls, pageSegMode) => imageDataUrls.map(imageData => ({ imageData, pageSegMode }));
-
-      if (ocrCropOrientation === "vertical") {
-        const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
-        const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
-        const rightAttempts = await prepareOcrImageDataUrls(rotatedRight);
-        const leftAttempts = await prepareOcrImageDataUrls(rotatedLeft);
-        const stackedAttempts = await prepareOcrImageDataUrls(originalImageData);
-        return makeAttempts(rightAttempts.concat(leftAttempts), "7")
-          .concat(makeAttempts(stackedAttempts, "6"), makeAttempts(stackedAttempts, "11"));
-      }
-
-      const straightAttempts = await prepareOcrImageDataUrls(originalImageData);
-      const tiltedRight = await rotateImageDataUrl(originalImageData, 2);
-      const tiltedLeft = await rotateImageDataUrl(originalImageData, -2);
-      const rightAttempts = await prepareOcrImageDataUrls(tiltedRight);
-      const leftAttempts = await prepareOcrImageDataUrls(tiltedLeft);
-      return makeAttempts(straightAttempts.concat(rightAttempts, leftAttempts), "7");
     }
 
     function resetOcrCrop() {
@@ -2918,7 +2840,10 @@
       if (requireUnlocked("scan a container number")) return;
 
       try {
-        const originalImageData = await readImageFileAsDataUrl(file);
+        if (typeof window.cancelContainerOcrScan === "function") {
+          await window.cancelContainerOcrScan({ quiet: true });
+        }
+        const originalImageData = await prepareOcrSourcePhoto(file);
         const image = await loadImageFromDataUrl(originalImageData);
         ocrCropState = {
           dataUrl: originalImageData,
@@ -2949,7 +2874,7 @@
           corePath: "./vendor",
           langPath: "./vendor",
           logger: progress => {
-            if (!progress || !progress.status) return;
+            if (!ocrProgressEnabled || !progress || !progress.status) return;
             const percent = Number.isFinite(progress.progress)
               ? " " + Math.round(progress.progress * 100) + "%"
               : "";
@@ -2971,120 +2896,38 @@
       return ocrWorkerPromise;
     }
 
+    function withOcrTimeout(promise, milliseconds, message) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(message)), milliseconds);
+        Promise.resolve(promise).then(
+          value => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          error => {
+            clearTimeout(timer);
+            reject(error);
+          }
+        );
+      });
+    }
+
     async function resetOcrWorker() {
       const workerPromise = ocrWorkerPromise;
       ocrWorkerPromise = null;
       if (!workerPromise) return;
       try {
-        const worker = await workerPromise;
-        await worker.terminate();
+        const worker = await withOcrTimeout(workerPromise, 5000, "OCR worker did not finish starting.");
+        await withOcrTimeout(worker.terminate(), 3000, "OCR worker did not finish stopping.");
       } catch {
         // A failed worker is discarded so the next scan can initialize a new one.
       }
     }
 
-    async function scanContainerNumberFromImageData(originalImageData) {
-      if (!originalImageData) return;
-      if (requireUnlocked("scan a container number")) return;
-      if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
-        setOcrStatus("OCR did not load. Reopen the app after one successful online visit.", "error");
-        setStatus("OCR did not load. Type the container number manually.", "error");
-        input.focus();
-        return;
-      }
-
-      scanContainerOcrBtn.disabled = true;
-      ocrScanCropBtn.disabled = true;
-      setOcrStatus("Reading the cropped container number with automatic detail checks...", "info");
-      setStatus("OCR is checking the cropped photo. This may take a few seconds.", "info");
-
-      try {
-        const imageAttempts = await buildOcrImageAttempts(originalImageData);
-        const worker = await getOcrWorker();
-        const votes = new Map();
-        const confidenceByCode = new Map();
-        const observedReads = new Set();
-        const partialReads = new Set();
-        let activePageSegMode = "7";
-        let lastText = "";
-
-        for (const [attemptIndex, attempt] of imageAttempts.entries()) {
-          if (attemptIndex > 0) {
-            setOcrStatus("Checking the number again with another image detail pass...", "info");
-          }
-          const pageSegMode = attempt.pageSegMode || "7";
-          if (pageSegMode !== activePageSegMode) {
-            await worker.setParameters({ tessedit_pageseg_mode: pageSegMode });
-            activePageSegMode = pageSegMode;
-          }
-          const imageData = attempt.imageData || attempt;
-          const result = await worker.recognize(imageData);
-          lastText = result && result.data ? result.data.text || "" : "";
-          const candidates = ocrLiteralCandidateCodes(lastText);
-          ocrPreviewCandidateTexts(lastText).forEach(read => partialReads.add(read));
-          candidates.forEach(code => observedReads.add(code));
-          if (candidates.length === 1) {
-            const code = candidates[0];
-            votes.set(code, (votes.get(code) || 0) + 1);
-            const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
-            confidenceByCode.set(code, Math.max(confidenceByCode.get(code) || 0, confidence));
-            if (votes.get(code) >= 2) break;
-          }
-        }
-
-        const rankedVotes = [...votes.entries()].sort((first, second) => second[1] - first[1]);
-        const bestRead = rankedVotes.length ? rankedVotes[0] : null;
-        const secondRead = rankedVotes.length > 1 ? rankedVotes[1] : null;
-        const hasAgreement = Boolean(bestRead && bestRead[1] >= 2 && (!secondRead || bestRead[1] > secondRead[1]));
-
-        if (!observedReads.size) {
-          const fiveCharacterRead = [...partialReads].find(read => read.length === 5);
-          const preview = normalizeUpperText(lastText).replace(/\s+/g, " ").trim().slice(0, 40);
-          showOcrReview(
-            "",
-            fiveCharacterRead
-              ? "OCR only saw 5 characters: " + fiveCharacterRead + ". Nothing was entered. Keep all 6 characters inside the green box, then try again or type all 6 below."
-              : preview
-              ? "No exact valid number found. OCR saw: " + preview + ". Type all 6 characters from the photo below."
-              : "No exact valid number found. Type all 6 characters from the photo below.",
-            "warning"
-          );
-          setStatus("OCR did not find a valid container number. Type it manually or try again.", "warning");
-          return;
-        }
-
-        if (!hasAgreement) {
-          const reads = [...observedReads].slice(0, 4).join(", ");
-          showOcrReview(
-            "",
-            "Unsafe OCR: the detail passes did not agree. Nothing was filled. Possible reads: " + reads + ". Type all 6 characters from the photo below.",
-            "warning"
-          );
-          setStatus("OCR reads did not agree, so no number was entered. Verify it from the photo.", "warning");
-          return;
-        }
-
-        const bestCandidate = bestRead[0];
-        const confidence = Math.round(confidenceByCode.get(bestCandidate) || 0);
-        const inventoryText = occupiedMaster.codes.length
-          ? (isMonthlyPhysicalMatch(bestCandidate) ? " It is on the uploaded inventory list." : " It is not on the uploaded inventory list.")
-          : "";
-        const characterWarning = /[38]/.test(bestCandidate) ? " Check every 3 and 8 especially carefully." : "";
-        showOcrReview(
-          bestCandidate,
-          "Independent OCR passes agreed on " + bestCandidate + " (confidence " + confidence + "%)." + characterWarning + inventoryText + " Verify all 6 characters, then tap Confirm & Save.",
-          "warning"
-        );
-        setStatus("OCR result is waiting for photo verification. Nothing has been entered yet.", "warning");
-      } catch (error) {
-        resetOcrWorker();
-        setOcrStatus("OCR failed: " + error.message, "error");
-        setStatus("OCR failed. Type the container number manually or try another photo.", "error");
-      } finally {
-        scanContainerOcrBtn.disabled = editLocked;
-        ocrScanCropBtn.disabled = editLocked;
-      }
-    }
+    let scanContainerNumberFromImageData = async function scanContainerNumberFromImageData() {
+      setOcrStatus("OCR scanner did not load. Reopen the app while online or type the number manually.", "error");
+      setStatus("OCR scanner did not load. Nothing was saved.", "error");
+    };
 
     function imageToJpegDataUrl(image, maxSide, quality) {
       const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
@@ -6279,7 +6122,10 @@
     ocrOrientationButtons.forEach(button => {
       button.addEventListener("click", () => setOcrCropOrientation(button.dataset.ocrOrientation || "horizontal"));
     });
-    ocrCancelCropBtn.addEventListener("click", () => {
+    ocrCancelCropBtn.addEventListener("click", async () => {
+      if (typeof window.cancelContainerOcrScan === "function") {
+        await window.cancelContainerOcrScan({ quiet: true });
+      }
       resetOcrCrop();
       setOcrStatus("OCR photo cancelled. Take another photo or type manually.", "warning");
       input.focus();
@@ -6364,5 +6210,7 @@
     render();
     input.focus();
   </script>
+  <script src="./ocr-priority-patch.js?v=34"></script>
+  <script src="./ocr-hard-rules.js?v=34"></script>
 </body>
 </html>
