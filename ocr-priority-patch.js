@@ -336,9 +336,11 @@
 
   let liveScanStream = null;
   let liveScanActive = false;
+  let liveScanCapturing = false;
 
   const stopLiveScan = () => {
     liveScanActive = false;
+    liveScanCapturing = false;
     if (liveScanStream) {
       liveScanStream.getTracks().forEach(track => track.stop());
       liveScanStream = null;
@@ -348,6 +350,16 @@
       panel.hidden = true;
       panel.style.display = "none";
     }
+  };
+
+  const liveScanGuideBox = () => ocrCropOrientation === "vertical"
+    ? { x: 0.35, y: 0.08, width: 0.30, height: 0.84, inset: "8% 35%" }
+    : { x: 0.08, y: 0.35, width: 0.84, height: 0.30, inset: "35% 8%" };
+
+  const updateLiveScanGuide = () => {
+    const frame = document.getElementById("ocrLiveScanFrame");
+    if (!frame) return;
+    frame.style.inset = liveScanGuideBox().inset;
   };
 
   const liveFrameScore = canvas => {
@@ -379,16 +391,32 @@
   const captureLiveFrame = video => {
     const sourceWidth = video.videoWidth || 1280;
     const sourceHeight = video.videoHeight || 720;
+    const wrap = video.parentElement;
+    const wrapRect = wrap ? wrap.getBoundingClientRect() : { width: sourceWidth, height: sourceHeight };
+    const coverScale = Math.max(wrapRect.width / sourceWidth, wrapRect.height / sourceHeight);
+    const visibleWidth = wrapRect.width / coverScale;
+    const visibleHeight = wrapRect.height / coverScale;
+    const visibleX = Math.max(0, (sourceWidth - visibleWidth) / 2);
+    const visibleY = Math.max(0, (sourceHeight - visibleHeight) / 2);
+    const guide = liveScanGuideBox();
+    const padX = visibleWidth * (ocrCropOrientation === "vertical" ? 0.08 : 0.06);
+    const padY = visibleHeight * (ocrCropOrientation === "vertical" ? 0.06 : 0.10);
+    const cropX = Math.max(0, visibleX + guide.x * visibleWidth - padX);
+    const cropY = Math.max(0, visibleY + guide.y * visibleHeight - padY);
+    const cropRight = Math.min(sourceWidth, visibleX + (guide.x + guide.width) * visibleWidth + padX);
+    const cropBottom = Math.min(sourceHeight, visibleY + (guide.y + guide.height) * visibleHeight + padY);
+    const cropWidth = Math.max(1, cropRight - cropX);
+    const cropHeight = Math.max(1, cropBottom - cropY);
     const maxSide = 1400;
-    const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+    const scale = Math.min(1, maxSide / Math.max(cropWidth, cropHeight));
     const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(sourceWidth * scale));
-    canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+    canvas.width = Math.max(1, Math.round(cropWidth * scale));
+    canvas.height = Math.max(1, Math.round(cropHeight * scale));
     const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
     if (!context) return { dataUrl: "", score: 0 };
     context.fillStyle = "#FFFFFF";
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
     return {
       dataUrl: canvas.toDataURL("image/jpeg", 0.94),
       score: liveFrameScore(canvas)
@@ -424,6 +452,7 @@
     videoWrap.style.overflow = "hidden";
     videoWrap.style.borderRadius = "10px";
     videoWrap.style.background = "#111827";
+    videoWrap.id = "ocrLiveScanVideoWrap";
 
     const video = document.createElement("video");
     video.id = "ocrLiveScanVideo";
@@ -435,12 +464,21 @@
     video.style.objectFit = "cover";
 
     const frame = document.createElement("div");
+    frame.id = "ocrLiveScanFrame";
     frame.style.position = "absolute";
-    frame.style.inset = "35% 8%";
+    frame.style.inset = liveScanGuideBox().inset;
     frame.style.border = "2px solid #22c55e";
     frame.style.borderRadius = "8px";
     frame.style.boxShadow = "0 0 0 999px rgba(15, 23, 42, 0.32)";
     frame.style.pointerEvents = "none";
+
+    const captureButton = document.createElement("button");
+    captureButton.id = "ocrCaptureLiveScanBtn";
+    captureButton.type = "button";
+    captureButton.className = "primary";
+    captureButton.textContent = "Capture Live Scan";
+    captureButton.style.minHeight = "44px";
+    captureButton.addEventListener("click", captureLiveScanBurst);
 
     const stopButton = document.createElement("button");
     stopButton.id = "ocrStopLiveScanBtn";
@@ -455,8 +493,10 @@
     videoWrap.appendChild(video);
     videoWrap.appendChild(frame);
     panel.appendChild(videoWrap);
+    panel.appendChild(captureButton);
     panel.appendChild(stopButton);
     ocrStatus.insertAdjacentElement("afterend", panel);
+    ocrOrientationButtons.forEach(button => button.addEventListener("click", updateLiveScanGuide));
   };
 
   async function startLiveScan() {
@@ -473,6 +513,7 @@
 
     try {
       liveScanActive = true;
+      liveScanCapturing = false;
       panel.hidden = false;
       panel.style.display = "grid";
       resetOcrReview();
@@ -488,10 +529,28 @@
       });
       video.srcObject = liveScanStream;
       await video.play();
+      updateLiveScanGuide();
+      setOcrStatus("LIVE CAMERA READY. FIT THE NUMBER INSIDE THE GREEN BOX, THEN TAP CAPTURE LIVE SCAN.", "info");
+      setStatus("Live scan camera is open. Line up the number, then tap Capture Live Scan.", "info");
+    } catch (error) {
+      stopLiveScan();
+      setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
+      setStatus("Live scan failed. Use photo scan or type manually.", "error");
+    }
+  }
 
+  async function captureLiveScanBurst() {
+    if (!liveScanActive || liveScanCapturing) return;
+    const video = document.getElementById("ocrLiveScanVideo");
+    const captureButton = document.getElementById("ocrCaptureLiveScanBtn");
+    if (!video) return;
+
+    try {
+      liveScanCapturing = true;
+      if (captureButton) captureButton.disabled = true;
       let bestFrame = { dataUrl: "", score: -1 };
       for (let index = 1; index <= 5 && liveScanActive; index += 1) {
-        await new Promise(resolve => setTimeout(resolve, index === 1 ? 450 : 260));
+        await new Promise(resolve => setTimeout(resolve, index === 1 ? 650 : 280));
         const frame = captureLiveFrame(video);
         if (frame.dataUrl && frame.score > bestFrame.score) bestFrame = frame;
         setOcrStatus("LIVE SCAN CAPTURED FRAME " + index + " OF 5...", "info");
@@ -514,6 +573,9 @@
       stopLiveScan();
       setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
       setStatus("Live scan failed. Use photo scan or type manually.", "error");
+    } finally {
+      liveScanCapturing = false;
+      if (captureButton && liveScanActive) captureButton.disabled = false;
     }
   }
 
