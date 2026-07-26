@@ -1,0 +1,180 @@
+name: Apply OCR priority update
+on:
+  push:
+    paths:
+      - .github/workflows/apply-ocr-priority-update.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch scanner logic
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path("index.html")
+          text = path.read_text(encoding="utf-8")
+
+          candidate_block = r'''    const OCR_SINGLE_LETTER_PREFIXES = new Set(["B", "C", "D"]);
+
+    function isOcrContainerCode(code) {
+      const normalized = normalizeCode(code || "");
+      return /^(?:D\d{5}|[BC]\d{5}|ZM\d{4}|[378]\d{5})$/.test(normalized);
+    }
+
+    function ocrFormatPriority(code) {
+      const normalized = normalizeCode(code || "");
+      if (/^D\d{5}$/.test(normalized)) return 100;
+      if (/^ZM\d{4}$/.test(normalized)) return 98;
+      if (/^8\d{5}$/.test(normalized)) return 94;
+      if (/^7\d{5}$/.test(normalized)) return 92;
+      if (/^3\d{5}$/.test(normalized)) return 90;
+      if (/^C\d{5}$/.test(normalized)) return 72;
+      if (/^B\d{5}$/.test(normalized)) return 68;
+      return 0;
+    }
+
+    function ocrAmbiguousVariants(rawCode) {
+      const source = normalizeCode(rawCode || "");
+      if (source.length !== 6) return [];
+      const variants = new Set([source]);
+
+      const first = source.charAt(0);
+      const rest = source.slice(1);
+      if (/^\d{5}$/.test(rest) && ["0", "O", "D"].includes(first)) variants.add("D" + rest);
+      if (/^\d{5}$/.test(rest) && ["8", "B"].includes(first)) {
+        variants.add("8" + rest);
+        variants.add("B" + rest);
+      }
+      if (/^\d{5}$/.test(rest) && ["C", "G", "6"].includes(first)) variants.add("C" + rest);
+
+      const second = source.charAt(1);
+      const finalFour = source.slice(2);
+      if (/^\d{4}$/.test(finalFour)) {
+        if (["Z", "2", "3", "7"].includes(first) && ["M", "N", "H"].includes(second)) {
+          variants.add("ZM" + finalFour);
+        }
+      }
+
+      return [...variants].filter(isOcrContainerCode);
+    }
+
+    function ocrCandidateScore(code) {
+      let score = ocrFormatPriority(code);
+      if (occupiedMaster && Array.isArray(occupiedMaster.codes) && occupiedMaster.codes.includes(code)) score += 1000;
+      return score;
+    }
+
+    function ocrLiteralCandidateCodes(text) {
+      const candidates = new Set();
+      const normalized = normalizeUpperText(text);
+      const groups = normalized
+        .split(/[^A-Z0-9]+/)
+        .map(group => group.trim())
+        .filter(Boolean);
+      const compact = normalized.replace(/[^A-Z0-9]+/g, "");
+      if (compact && !groups.includes(compact)) groups.push(compact);
+
+      groups.forEach(group => {
+        for (let index = 0; index <= group.length - 6; index += 1) {
+          ocrAmbiguousVariants(group.slice(index, index + 6)).forEach(code => {
+            if (!IGNORED_UPLOADED_UNIT_CODES.has(code)) candidates.add(code);
+          });
+        }
+      });
+
+      return [...candidates].sort((a, b) => ocrCandidateScore(b) - ocrCandidateScore(a));
+    }
+'''
+
+          text, count1 = re.subn(
+              r'    const OCR_SINGLE_LETTER_PREFIXES = new Set\([\s\S]*?\n    function setOcrStatus\(',
+              candidate_block + '\n    function setOcrStatus(',
+              text,
+              count=1,
+          )
+          if count1 != 1:
+              raise SystemExit("Could not replace OCR candidate block")
+
+          old_vote = '''          const candidates = ocrLiteralCandidateCodes(lastText);
+          candidates.forEach(code => observedReads.add(code));
+          if (candidates.length === 1) {
+            const code = candidates[0];
+            votes.set(code, (votes.get(code) || 0) + 1);
+            const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
+            confidenceByCode.set(code, Math.max(confidenceByCode.get(code) || 0, confidence));
+            if (votes.get(code) >= 2) break;
+          }'''
+          new_vote = '''          const candidates = ocrLiteralCandidateCodes(lastText);
+          candidates.forEach(code => observedReads.add(code));
+          if (candidates.length) {
+            const code = candidates[0];
+            const weightedVote = 1 + (ocrCandidateScore(code) / 1000);
+            votes.set(code, (votes.get(code) || 0) + weightedVote);
+            const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
+            confidenceByCode.set(code, Math.max(confidenceByCode.get(code) || 0, confidence));
+            if (votes.get(code) >= 2) break;
+          }'''
+          if old_vote not in text:
+              raise SystemExit("Could not replace OCR voting block")
+          text = text.replace(old_vote, new_vote, 1)
+
+          old_agreement = '''        const rankedVotes = [...votes.entries()].sort((first, second) => second[1] - first[1]);
+        const bestRead = rankedVotes.length ? rankedVotes[0] : null;
+        const secondRead = rankedVotes.length > 1 ? rankedVotes[1] : null;
+        const hasAgreement = Boolean(bestRead && bestRead[1] >= 2 && (!secondRead || bestRead[1] > secondRead[1]));'''
+          new_agreement = '''        const rankedVotes = [...votes.entries()].sort((first, second) => {
+          const voteDifference = second[1] - first[1];
+          return voteDifference || (ocrCandidateScore(second[0]) - ocrCandidateScore(first[0]));
+        });
+        const bestRead = rankedVotes.length ? rankedVotes[0] : null;
+        const secondRead = rankedVotes.length > 1 ? rankedVotes[1] : null;
+        const hasAgreement = Boolean(bestRead && bestRead[1] >= 2 && (!secondRead || bestRead[1] > secondRead[1]));'''
+          if old_agreement not in text:
+              raise SystemExit("Could not replace OCR agreement block")
+          text = text.replace(old_agreement, new_agreement, 1)
+
+          old_reject = '''        if (!hasAgreement) {
+          const reads = [...observedReads].slice(0, 4).join(", ");
+          showOcrReview(
+            "",
+            "Unsafe OCR: the detail passes did not agree. Nothing was filled. Possible reads: " + reads + ". Type all 6 characters from the photo below.",
+            "warning"
+          );
+          setStatus("OCR reads did not agree, so no number was entered. Verify it from the photo.", "warning");
+          return;
+        }
+
+        const bestCandidate = bestRead[0];'''
+          new_reject = '''        const bestCandidate = bestRead ? bestRead[0] : [...observedReads].sort((a, b) => ocrCandidateScore(b) - ocrCandidateScore(a))[0];
+        const agreementMessage = hasAgreement
+          ? "Independent OCR passes agreed on "
+          : "OCR passes differed. Best suggested match is ";'''
+          if old_reject not in text:
+              raise SystemExit("Could not replace OCR disagreement block")
+          text = text.replace(old_reject, new_reject, 1)
+
+          text = text.replace(
+              '"Independent OCR passes agreed on " + bestCandidate + " (confidence " + confidence + "%)."',
+              'agreementMessage + bestCandidate + " (confidence " + confidence + "%)."',
+              1,
+          )
+          text = text.replace(
+              'const characterWarning = /[38]/.test(bestCandidate) ? " Check every 3 and 8 especially carefully." : "";',
+              'const characterWarning = /^[8B]/.test(bestCandidate) ? " Check the first character carefully because 8 is more common than B." : (/^D/.test(bestCandidate) ? " Confirm the first character is D." : "");',
+              1,
+          )
+          text = text.replace("<span class=\"badge\">App Updated July 19</span>", "<span class=\"badge\">App Updated July 26</span>", 1)
+
+          path.write_text(text, encoding="utf-8")
+      - name: Commit scanner update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Improve OCR container number prioritization" || exit 0
+          git push
