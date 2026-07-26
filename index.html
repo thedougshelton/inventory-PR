@@ -1527,7 +1527,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Scan Photo</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Scan Focused Photo</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -3109,20 +3109,23 @@
         resetOcrReview();
         ocrScanCropBtn.hidden = false;
         ocrScanCropBtn.disabled = editLocked;
-        ocrScanCropBtn.textContent = "Scan Photo";
+        ocrScanCropBtn.textContent = "Scan Focused Photo";
         requestAnimationFrame(() => {
           renderOcrCropPreview();
           const detectedRegion = detectOcrTextRegion(image);
           ocrCropState.detectedRegion = detectedRegion;
-          ocrCropOrientation = detectedRegion && detectedRegion.orientation === "vertical" ? "vertical" : "horizontal";
-          setOcrCropOrientation(ocrCropOrientation);
+          const autoFocused = detectedRegion ? applyAutoOcrCrop(detectedRegion) : false;
+          if (!autoFocused) {
+            ocrCropOrientation = detectedRegion && detectedRegion.orientation === "vertical" ? "vertical" : "horizontal";
+            setOcrCropOrientation(ocrCropOrientation);
+          }
           setOcrStatus(
-            detectedRegion
-              ? "PHOTO READY. TAP SCAN PHOTO. THE APP WILL CHECK THE LIKELY NUMBER AREA, THEN YOU VERIFY BEFORE SAVING."
-              : "PHOTO READY. TAP SCAN PHOTO. IF THE APP CANNOT FIND THE NUMBER, TYPE IT FROM THE PHOTO BELOW.",
+            autoFocused
+              ? "PHOTO AUTO-FOCUSED TO A LIKELY NUMBER AREA. TAP SCAN FOCUSED PHOTO, THEN VERIFY BEFORE SAVING."
+              : "PHOTO READY. TAP SCAN FOCUSED PHOTO. IF THE APP CANNOT FIND THE NUMBER, TYPE IT FROM THE PHOTO BELOW.",
             "info"
           );
-          setStatus("OCR photo ready. Tap Scan Photo when ready.", "info");
+          setStatus(autoFocused ? "OCR photo auto-focused. Tap Scan Focused Photo when ready." : "OCR photo ready. Tap Scan Focused Photo when ready.", "info");
         });
       } catch (error) {
         resetOcrCrop();
