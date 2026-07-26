@@ -609,25 +609,35 @@
     }
 
     .ocr-crop-canvas-wrap::after {
-      display: none;
+      content: "";
+      position: absolute;
+      inset: 35% 8%;
+      border: 2px solid #22c55e;
+      border-radius: 8px;
+      box-shadow: 0 0 0 999px rgba(15, 23, 42, 0.34);
+      pointer-events: none;
     }
 
-    .ocr-crop-controls #ocrZoomOutBtn,
-    .ocr-crop-controls #ocrZoomInBtn,
-    .ocr-orientation-controls {
-      display: none;
-    }
-
-    .ocr-crop-controls {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 8px;
+    .ocr-crop-canvas-wrap.vertical::after {
+      inset: 8% 35%;
     }
 
     #ocrCropCanvas {
       display: block;
       width: 100%;
       height: 100%;
+    }
+
+    .ocr-crop-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .ocr-orientation-controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
     }
 
     .ocr-crop-panel button {
@@ -1517,9 +1527,9 @@
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
       <div class="unit-photo-panel">
-        <button id="scanContainerOcrBtn" type="button">Use Phone Scan Text</button>
+        <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
-        <div id="ocrStatus" class="unit-photo-status">USES YOUR PHONE'S BUILT-IN TEXT SCANNER. NO PHOTO IS SAVED.</div>
+        <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
         <div id="ocrCropPanel" class="ocr-crop-panel" hidden>
           <div class="ocr-crop-canvas-wrap">
             <canvas id="ocrCropCanvas"></canvas>
@@ -1527,7 +1537,7 @@
           <div class="ocr-crop-controls">
             <button id="ocrZoomOutBtn" type="button">Zoom Out</button>
             <button id="ocrZoomInBtn" type="button">Zoom In</button>
-            <button id="ocrScanCropBtn" class="primary" type="button">Scan Focused Photo</button>
+            <button id="ocrScanCropBtn" class="primary" type="button">Scan Cropped Photo</button>
           </div>
           <div class="ocr-orientation-controls" aria-label="OCR crop box direction">
             <button type="button" data-ocr-orientation="horizontal">Horizontal Box</button>
@@ -1549,7 +1559,7 @@
               <button id="ocrUseVerifiedBtn" class="primary" type="button" disabled>Confirm &amp; Save</button>
             </div>
           </div>
-          <button id="ocrCancelCropBtn" type="button">Cancel Photo</button>
+          <button id="ocrCancelCropBtn" type="button">Cancel OCR Photo</button>
         </div>
       </div>
       <div id="status" class="status" role="status" aria-live="polite">Ready for first container.</div>
@@ -2815,20 +2825,15 @@
     function resetOcrCrop() {
       ocrCropState = null;
       ocrCropPanel.hidden = true;
-      ocrCropPanel.classList.remove("camera-assist-mode");
-      ocrScanCropBtn.hidden = true;
-      ocrScanCropBtn.disabled = true;
       ocrPhotoInput.value = "";
       resetOcrReview();
     }
 
     function ocrCropDrawBounds(state, canvas) {
-      const imageWidth = state.image.naturalWidth || state.image.width;
-      const imageHeight = state.image.naturalHeight || state.image.height;
-      const baseScale = Math.min(canvas.width / imageWidth, canvas.height / imageHeight);
+      const baseScale = Math.max(canvas.width / state.image.width, canvas.height / state.image.height);
       const scale = baseScale * state.zoom;
-      const drawWidth = imageWidth * scale;
-      const drawHeight = imageHeight * scale;
+      const drawWidth = state.image.width * scale;
+      const drawHeight = state.image.height * scale;
       const maxOffsetX = Math.max(0, (drawWidth - canvas.width) / 2);
       const maxOffsetY = Math.max(0, (drawHeight - canvas.height) / 2);
       state.offsetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, state.offsetX));
@@ -2845,18 +2850,12 @@
     function renderOcrCropPreview() {
       if (!ocrCropState) return;
       const rect = ocrCropCanvas.getBoundingClientRect();
-      const cssWidth = Math.max(320, Math.round(rect.width || 640));
-      const cssHeight = Math.max(240, Math.round(rect.height || 480));
-      const pixelRatio = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
-      const width = Math.max(320, Math.round(cssWidth * pixelRatio));
-      const height = Math.max(240, Math.round(cssHeight * pixelRatio));
+      const width = Math.max(320, Math.round(rect.width || 640));
+      const height = Math.max(240, Math.round(rect.height || 480));
       ocrCropCanvas.width = width;
       ocrCropCanvas.height = height;
-      ocrCropState.previewScale = width / cssWidth;
       const context = ocrCropCanvas.getContext("2d", { alpha: false });
       if (!context) return;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
       context.fillStyle = "#111827";
       context.fillRect(0, 0, width, height);
       const bounds = ocrCropDrawBounds(ocrCropState, ocrCropCanvas);
@@ -2865,124 +2864,15 @@
 
     function zoomOcrCrop(multiplier) {
       if (!ocrCropState) return;
-      ocrCropState.zoom = Math.max(0.45, Math.min(8, ocrCropState.zoom * multiplier));
+      ocrCropState.zoom = Math.max(1, Math.min(6, ocrCropState.zoom * multiplier));
       renderOcrCropPreview();
     }
 
     function dragOcrCrop(deltaX, deltaY) {
       if (!ocrCropState) return;
-      const previewScale = ocrCropState.previewScale || 1;
-      ocrCropState.offsetX += deltaX * previewScale;
-      ocrCropState.offsetY += deltaY * previewScale;
+      ocrCropState.offsetX += deltaX;
+      ocrCropState.offsetY += deltaY;
       renderOcrCropPreview();
-    }
-
-    function ocrEdgeWindowScore(integral, stride, x, y, width, height) {
-      const x2 = x + width;
-      const y2 = y + height;
-      const total = integral[y2 * stride + x2] - integral[y * stride + x2] - integral[y2 * stride + x] + integral[y * stride + x];
-      return total / Math.max(1, width * height);
-    }
-
-    function detectOcrTextRegion(image) {
-      const sourceWidth = image.naturalWidth || image.width;
-      const sourceHeight = image.naturalHeight || image.height;
-      if (!sourceWidth || !sourceHeight) return null;
-
-      const canvas = document.createElement("canvas");
-      canvas.width = 360;
-      canvas.height = 270;
-      const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-      if (!context) return null;
-      context.fillStyle = "#111827";
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      const width = canvas.width;
-      const height = canvas.height;
-      const gray = new Uint8ClampedArray(width * height);
-      for (let index = 0; index < pixels.length; index += 4) {
-        gray[index / 4] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
-      }
-
-      const stride = width + 1;
-      const integral = new Float32Array((width + 1) * (height + 1));
-      for (let y = 1; y <= height; y += 1) {
-        let rowTotal = 0;
-        for (let x = 1; x <= width; x += 1) {
-          const center = gray[(y - 1) * width + (x - 1)];
-          const right = gray[(y - 1) * width + Math.min(width - 1, x)];
-          const down = gray[Math.min(height - 1, y) * width + (x - 1)];
-          rowTotal += Math.min(255, Math.abs(center - right) + Math.abs(center - down));
-          integral[y * stride + x] = integral[(y - 1) * stride + x] + rowTotal;
-        }
-      }
-
-      const candidates = [];
-      const addCandidates = (boxWidth, boxHeight, orientation) => {
-        const stepX = Math.max(10, Math.round(boxWidth / 5));
-        const stepY = Math.max(10, Math.round(boxHeight / 5));
-        for (let y = 0; y <= height - boxHeight; y += stepY) {
-          for (let x = 0; x <= width - boxWidth; x += stepX) {
-            const score = ocrEdgeWindowScore(integral, stride, x, y, boxWidth, boxHeight);
-            const centerX = x + boxWidth / 2;
-            const centerY = y + boxHeight / 2;
-            const centerPenalty = (Math.abs(centerX - width / 2) / width + Math.abs(centerY - height / 2) / height) * 7;
-            candidates.push({ x, y, width: boxWidth, height: boxHeight, orientation, score: score - centerPenalty });
-          }
-        }
-      };
-
-      addCandidates(Math.round(width * 0.58), Math.round(height * 0.18), "horizontal");
-      addCandidates(Math.round(width * 0.72), Math.round(height * 0.22), "horizontal");
-      addCandidates(Math.round(width * 0.24), Math.round(height * 0.58), "vertical");
-      addCandidates(Math.round(width * 0.20), Math.round(height * 0.72), "vertical");
-
-      const best = candidates.sort((a, b) => b.score - a.score)[0];
-      if (!best || best.score < 14) return null;
-      const padX = best.width * 0.12;
-      const padY = best.height * 0.18;
-      const x = Math.max(0, best.x - padX);
-      const y = Math.max(0, best.y - padY);
-      const right = Math.min(width, best.x + best.width + padX);
-      const bottom = Math.min(height, best.y + best.height + padY);
-      return {
-        x: x / width * sourceWidth,
-        y: y / height * sourceHeight,
-        width: Math.max(1, (right - x) / width * sourceWidth),
-        height: Math.max(1, (bottom - y) / height * sourceHeight),
-        orientation: best.orientation,
-        score: best.score
-      };
-    }
-
-    function applyAutoOcrCrop(region) {
-      if (!ocrCropState || !region) return false;
-      if (!ocrCropCanvas.width || !ocrCropCanvas.height) renderOcrCropPreview();
-      setOcrCropOrientation(region.orientation === "vertical" ? "vertical" : "horizontal");
-
-      const canvas = ocrCropCanvas;
-      const image = ocrCropState.image;
-      const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = image.naturalHeight || image.height;
-      const crop = ocrCropBox(canvas);
-      const baseScale = Math.min(canvas.width / imageWidth, canvas.height / imageHeight);
-      const widthFit = crop.width / Math.max(1, region.width * 1.45);
-      const heightFit = crop.height / Math.max(1, region.height * 1.8);
-      const targetScale = Math.max(baseScale * 0.55, Math.min(baseScale * 8, Math.min(widthFit, heightFit)));
-      const drawWidth = imageWidth * targetScale;
-      const drawHeight = imageHeight * targetScale;
-      const cropCenterX = crop.x + crop.width / 2;
-      const cropCenterY = crop.y + crop.height / 2;
-      const regionCenterX = region.x + region.width / 2;
-      const regionCenterY = region.y + region.height / 2;
-
-      ocrCropState.zoom = targetScale / baseScale;
-      ocrCropState.offsetX = cropCenterX - regionCenterX * targetScale - (canvas.width - drawWidth) / 2;
-      ocrCropState.offsetY = cropCenterY - regionCenterY * targetScale - (canvas.height - drawHeight) / 2;
-      renderOcrCropPreview();
-      return true;
     }
 
     function ocrCropDataUrl() {
@@ -2991,163 +2881,34 @@
       if (!previewCanvas.width || !previewCanvas.height) renderOcrCropPreview();
       const bounds = ocrCropDrawBounds(ocrCropState, previewCanvas);
       const crop = ocrCropBox(previewCanvas);
-      const visibleLeft = Math.max(crop.x, bounds.drawX);
-      const visibleTop = Math.max(crop.y, bounds.drawY);
-      const visibleRight = Math.min(crop.x + crop.width, bounds.drawX + bounds.drawWidth);
-      const visibleBottom = Math.min(crop.y + crop.height, bounds.drawY + bounds.drawHeight);
-      if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return ocrCropState.dataUrl;
-      const imageWidth = ocrCropState.image.naturalWidth || ocrCropState.image.width;
-      const imageHeight = ocrCropState.image.naturalHeight || ocrCropState.image.height;
       const source = {
-        x: Math.max(0, (visibleLeft - bounds.drawX) / bounds.scale),
-        y: Math.max(0, (visibleTop - bounds.drawY) / bounds.scale),
-        width: Math.min(imageWidth, (visibleRight - visibleLeft) / bounds.scale),
-        height: Math.min(imageHeight, (visibleBottom - visibleTop) / bounds.scale)
+        x: Math.max(0, (crop.x - bounds.drawX) / bounds.scale),
+        y: Math.max(0, (crop.y - bounds.drawY) / bounds.scale),
+        width: Math.min(ocrCropState.image.width, crop.width / bounds.scale),
+        height: Math.min(ocrCropState.image.height, crop.height / bounds.scale)
       };
-      source.width = Math.max(1, Math.min(source.width, imageWidth - source.x));
-      source.height = Math.max(1, Math.min(source.height, imageHeight - source.y));
+      source.width = Math.max(1, Math.min(source.width, ocrCropState.image.width - source.x));
+      source.height = Math.max(1, Math.min(source.height, ocrCropState.image.height - source.y));
 
       const padX = source.width * (ocrCropOrientation === "vertical" ? 0.18 : 0.16);
       const padY = source.height * (ocrCropOrientation === "vertical" ? 0.14 : 0.22);
-      const paddedRight = Math.min(imageWidth, source.x + source.width + padX);
-      const paddedBottom = Math.min(imageHeight, source.y + source.height + padY);
+      const paddedRight = Math.min(ocrCropState.image.width, source.x + source.width + padX);
+      const paddedBottom = Math.min(ocrCropState.image.height, source.y + source.height + padY);
       source.x = Math.max(0, source.x - padX);
       source.y = Math.max(0, source.y - padY);
       source.width = Math.max(1, paddedRight - source.x);
       source.height = Math.max(1, paddedBottom - source.y);
 
       const output = document.createElement("canvas");
-      const scale = Math.min(3.4, Math.max(1.8, 1900 / Math.max(source.width, source.height)));
+      const scale = Math.min(5, Math.max(2.5, 2400 / Math.max(source.width, source.height)));
       output.width = Math.max(1, Math.round(source.width * scale));
       output.height = Math.max(1, Math.round(source.height * scale));
       const context = output.getContext("2d", { alpha: false });
       if (!context) return ocrCropState.dataUrl;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
       context.fillStyle = "#FFFFFF";
       context.fillRect(0, 0, output.width, output.height);
       context.drawImage(ocrCropState.image, source.x, source.y, source.width, source.height, 0, 0, output.width, output.height);
       return output.toDataURL("image/jpeg", 0.94);
-    }
-
-    function ocrAssistPhotoDataUrl() {
-      if (!ocrCropState || !ocrCropState.image) return "";
-      const image = ocrCropState.image;
-      const sourceWidth = image.naturalWidth || image.width;
-      const sourceHeight = image.naturalHeight || image.height;
-      const maxSide = 1000;
-      const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
-      const output = document.createElement("canvas");
-      output.width = Math.max(1, Math.round(sourceWidth * scale));
-      output.height = Math.max(1, Math.round(sourceHeight * scale));
-      const context = output.getContext("2d", { alpha: false });
-      if (!context) return ocrCropState.dataUrl;
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.fillStyle = "#FFFFFF";
-      context.fillRect(0, 0, output.width, output.height);
-      context.drawImage(image, 0, 0, sourceWidth, sourceHeight, 0, 0, output.width, output.height);
-      return output.toDataURL("image/jpeg", 0.9);
-    }
-
-    function ocrAutoPhotoScanDataUrl() {
-      if (!ocrCropState || !ocrCropState.image) return "";
-      const region = ocrCropState.detectedRegion;
-      if (!region) return ocrCropDataUrl();
-
-      const image = ocrCropState.image;
-      const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = image.naturalHeight || image.height;
-      const isVertical = region.orientation === "vertical";
-      const padX = region.width * (isVertical ? 0.22 : 0.18);
-      const padY = region.height * (isVertical ? 0.18 : 0.30);
-      const source = {
-        x: Math.max(0, region.x - padX),
-        y: Math.max(0, region.y - padY),
-        width: 0,
-        height: 0
-      };
-      const right = Math.min(imageWidth, region.x + region.width + padX);
-      const bottom = Math.min(imageHeight, region.y + region.height + padY);
-      source.width = Math.max(1, right - source.x);
-      source.height = Math.max(1, bottom - source.y);
-
-      ocrCropOrientation = isVertical ? "vertical" : "horizontal";
-      const output = document.createElement("canvas");
-      const scale = Math.min(3.4, Math.max(1.8, 1900 / Math.max(source.width, source.height)));
-      output.width = Math.max(1, Math.round(source.width * scale));
-      output.height = Math.max(1, Math.round(source.height * scale));
-      const context = output.getContext("2d", { alpha: false });
-      if (!context) return ocrCropDataUrl();
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.fillStyle = "#FFFFFF";
-      context.fillRect(0, 0, output.width, output.height);
-      context.drawImage(image, source.x, source.y, source.width, source.height, 0, 0, output.width, output.height);
-      return output.toDataURL("image/jpeg", 0.94);
-    }
-
-    function ocrPhotoScanDataUrls() {
-      if (ocrCropState && ocrCropState.squareCapture) {
-        const square = ocrCropState.dataUrl;
-        const centerStrip = ocrCropDataUrl();
-        return [centerStrip, square].filter((value, index, list) => value && list.indexOf(value) === index);
-      }
-      const focused = ocrAutoPhotoScanDataUrl();
-      const visibleFocusedArea = ocrCropDataUrl();
-      return [focused, visibleFocusedArea].filter((value, index, list) => value && list.indexOf(value) === index);
-    }
-
-    async function openOcrCapturedSquare(dataUrl) {
-      const image = await loadImageFromDataUrl(dataUrl);
-      ocrCropState = {
-        dataUrl,
-        image,
-        zoom: 1,
-        offsetX: 0,
-        offsetY: 0,
-        detectedRegion: null,
-        previewScale: 1,
-        squareCapture: true
-      };
-      ocrCropPanel.hidden = false;
-      ocrCropPanel.classList.add("camera-assist-mode");
-      setContainerInputValue("");
-      resetOcrReview();
-      ocrScanCropBtn.hidden = false;
-      ocrScanCropBtn.disabled = editLocked;
-      ocrScanCropBtn.textContent = "Scan Captured Square";
-      requestAnimationFrame(() => {
-        renderOcrCropPreview();
-        ocrCropOrientation = "horizontal";
-        setOcrCropOrientation("horizontal");
-        setOcrStatus(
-          "SQUARE SCAN AREA CAPTURED. TAP SCAN CAPTURED SQUARE, THEN VERIFY BEFORE SAVING.",
-          "info"
-        );
-        setStatus("Square scan area captured. Tap Scan Captured Square when ready.", "info");
-      });
-    }
-
-    async function centerSquarePhotoDataUrl(dataUrl) {
-      const image = await loadImageFromDataUrl(dataUrl);
-      const imageWidth = image.naturalWidth || image.width;
-      const imageHeight = image.naturalHeight || image.height;
-      const side = Math.min(imageWidth, imageHeight);
-      const sourceX = Math.max(0, Math.round((imageWidth - side) / 2));
-      const sourceY = Math.max(0, Math.round((imageHeight - side) / 2));
-      const outputSide = Math.min(1400, Math.max(720, side));
-      const canvas = document.createElement("canvas");
-      canvas.width = outputSide;
-      canvas.height = outputSide;
-      const context = canvas.getContext("2d", { alpha: false });
-      if (!context) throw new Error("Square photo crop is not available on this device.");
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.fillStyle = "#FFFFFF";
-      context.fillRect(0, 0, outputSide, outputSide);
-      context.drawImage(image, sourceX, sourceY, side, side, 0, 0, outputSide, outputSide);
-      return canvas.toDataURL("image/jpeg", 0.94);
     }
 
     async function openOcrCropFromPhoto(file) {
@@ -3156,14 +2917,25 @@
 
       try {
         const originalImageData = await readImageFileAsDataUrl(file);
-        const squareImageData = await centerSquarePhotoDataUrl(originalImageData);
-        await openOcrCapturedSquare(squareImageData);
-        setOcrStatus("CENTER SQUARE FROM PHOTO CAPTURED. TAP SCAN CAPTURED SQUARE, THEN VERIFY BEFORE SAVING.", "info");
-        setStatus("Center square from photo captured. Tap Scan Captured Square when ready.", "info");
+        const image = await loadImageFromDataUrl(originalImageData);
+        ocrCropState = {
+          dataUrl: originalImageData,
+          image,
+          zoom: 1.7,
+          offsetX: 0,
+          offsetY: 0
+        };
+        ocrCropPanel.hidden = false;
+        setContainerInputValue("");
+        resetOcrReview();
+        setOcrCropOrientation(ocrCropOrientation);
+        setOcrStatus("Zoom or drag the photo so the container number is inside the green box, then scan cropped photo.", "info");
+        setStatus("OCR photo ready. Crop around the container number, then scan cropped photo.", "info");
+        requestAnimationFrame(renderOcrCropPreview);
       } catch (error) {
         resetOcrCrop();
-        setOcrStatus("Photo could not be loaded: " + error.message, "error");
-        setStatus("Photo could not be loaded. Try another photo or type manually.", "error");
+        setOcrStatus("OCR photo could not be loaded: " + error.message, "error");
+        setStatus("OCR photo could not be loaded. Try another photo or type manually.", "error");
         input.focus();
       }
     }
@@ -6482,33 +6254,12 @@
     toggleContainerKeyboardBtn.addEventListener("click", toggleContainerKeyboard);
     scanContainerOcrBtn.addEventListener("click", () => {
       if (requireUnlocked("scan a container number")) return;
-      resetOcrCrop();
-      if (!containerKeyboard.hidden) {
-        containerKeyboard.hidden = true;
-        updateContainerKeyboardToggle();
-      }
-      input.setAttribute("inputmode", "text");
-      input.focus();
-      const cursorPosition = input.value.length;
-      input.setSelectionRange(cursorPosition, cursorPosition);
-      setOcrStatus("IPHONE: TAP SCAN TEXT ON THE KEYBOARD OR FIELD MENU. ANDROID/SAMSUNG: OPEN THE KEYBOARD TOOLBAR AND TAP SCAN TEXT.", "info");
-      setStatus("PHONE TEXT SCANNER READY. VERIFY ALL 6 CHARACTERS BEFORE PRESSING ENTER.", "info");
+      ocrPhotoInput.click();
     });
     ocrPhotoInput.addEventListener("change", () => openOcrCropFromPhoto(ocrPhotoInput.files && ocrPhotoInput.files[0]));
     ocrZoomOutBtn.addEventListener("click", () => zoomOcrCrop(0.82));
     ocrZoomInBtn.addEventListener("click", () => zoomOcrCrop(1.22));
-    ocrScanCropBtn.addEventListener("click", () => {
-      const scanImages = ocrPhotoScanDataUrls();
-      if (typeof window.scanContainerNumberFromPhotoQuick === "function") {
-        if (typeof window.scanContainerNumberFromPhotoQuickSources === "function") {
-          window.scanContainerNumberFromPhotoQuickSources(scanImages);
-          return;
-        }
-        window.scanContainerNumberFromPhotoQuick(scanImages[0] || "");
-        return;
-      }
-      scanContainerNumberFromImageData(scanImages);
-    });
+    ocrScanCropBtn.addEventListener("click", () => scanContainerNumberFromImageData(ocrCropDataUrl()));
     ocrReviewInput.addEventListener("input", updateOcrReviewButton);
     ocrUseVerifiedBtn.addEventListener("click", () => {
       if (requireUnlocked("use a camera-scanned container number")) return;
@@ -6528,7 +6279,7 @@
     });
     ocrCancelCropBtn.addEventListener("click", () => {
       resetOcrCrop();
-      setOcrStatus("CAMERA ASSIST CANCELLED. TAKE ANOTHER PHOTO OR TYPE MANUALLY.", "warning");
+      setOcrStatus("OCR photo cancelled. Take another photo or type manually.", "warning");
       input.focus();
     });
     let ocrCropDragPoint = null;
@@ -6611,8 +6362,5 @@
     render();
     input.focus();
   </script>
-  <script src="./ocr-priority-patch.js"></script>
-  <script src="./ocr-hard-rules.js"></script>
-  <script src="./ocr-compact-variations.js"></script>
 </body>
 </html>

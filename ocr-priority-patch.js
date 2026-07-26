@@ -2,7 +2,7 @@
   "use strict";
 
   const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
-  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "38", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
+  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
   const PREFIX_SHAPE_MAP = {
     A: ["8", "D"],
     E: ["B"],
@@ -69,72 +69,6 @@
       .filter(item => item.distance <= 1.5)
       .sort((a, b) => a.distance - b.distance || formatWeight(b.code) - formatWeight(a.code))
       .slice(0, 4);
-  };
-
-  const editCost = (seen, expected) => {
-    if (!seen || seen === "?") return 0.65;
-    if (seen === expected) return 0;
-    if (digitPossibilities(seen).includes(expected)) return 0.20;
-    if (shapeAlternatives(seen).includes(expected)) return 0.35;
-    if (confusionCost(seen, expected) <= 0.25) return 0.35;
-    if (/\d/.test(seen) && /\d/.test(expected)) return 1.05;
-    if (/[A-Z]/.test(seen) && /[A-Z]/.test(expected)) return 1.15;
-    return 1.35;
-  };
-
-  const missingExpectedCost = (expected, index) => {
-    if (index === 0 && (expected === "D" || expected === "8" || expected === "7" || expected === "3")) return 0.55;
-    if (/\d/.test(expected)) return 0.72;
-    return 0.88;
-  };
-
-  const extraSeenCost = seen => /[A-Z0-9]/.test(seen || "") ? 1.05 : 0.75;
-
-  const flexibleInventoryDistance = (rawValue, expectedCode) => {
-    const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
-    const expected = normalizeCode(expectedCode || "");
-    if (!raw || !expected) return 99;
-
-    const rows = raw.length + 1;
-    const cols = expected.length + 1;
-    const dp = Array.from({ length: rows }, () => new Array(cols).fill(99));
-    dp[0][0] = 0;
-
-    for (let i = 1; i <= raw.length; i += 1) {
-      dp[i][0] = dp[i - 1][0] + extraSeenCost(raw[i - 1]);
-    }
-    for (let j = 1; j <= expected.length; j += 1) {
-      dp[0][j] = dp[0][j - 1] + missingExpectedCost(expected[j - 1], j - 1);
-    }
-
-    for (let i = 1; i <= raw.length; i += 1) {
-      for (let j = 1; j <= expected.length; j += 1) {
-        dp[i][j] = Math.min(
-          dp[i - 1][j - 1] + editCost(raw[i - 1], expected[j - 1]),
-          dp[i - 1][j] + extraSeenCost(raw[i - 1]),
-          dp[i][j - 1] + missingExpectedCost(expected[j - 1], j - 1)
-        );
-      }
-    }
-
-    return dp[raw.length][expected.length];
-  };
-
-  const closeInventoryMatches = rawValue => {
-    const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
-    if (raw.length < 4 || raw.length > 8) return [];
-    const limit = raw.length === 6 ? 1.65 : 2.45;
-
-    return uploadedCodes()
-      .map(code => ({ code, distance: flexibleInventoryDistance(raw, code) }))
-      .filter(item => item.distance <= limit)
-      .sort((a, b) => a.distance - b.distance || formatWeight(b.code) - formatWeight(a.code))
-      .slice(0, 5)
-      .map(item => ({
-        code: item.code,
-        bonus: 1320 - item.distance * 210,
-        reason: "close uploaded inventory match from OCR read: " + raw
-      }));
   };
 
   const addCandidate = (map, code, bonus = 0, reason = "OCR") => {
@@ -245,9 +179,6 @@
     const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
     const candidates = new Map();
     rawTextGroups(text).forEach(group => {
-      closeInventoryMatches(group).forEach(match => {
-        addCandidate(candidates, match.code, match.bonus, match.reason);
-      });
       partialInventoryMatches(group).forEach(match => {
         addCandidate(candidates, match.code, match.bonus, match.reason);
       });
@@ -275,10 +206,6 @@
         if (raw[0] === "P" && matchesAny(raw[1], ["S", "5"])) addCandidate(candidates, "PS" + tail, raw.startsWith("PS") ? 18 : 8, "unusual PS prefix");
       });
 
-      closeInventoryMatches(raw).forEach(match => {
-        addCandidate(candidates, match.code, match.bonus, match.reason);
-      });
-
       fuzzyInventoryMatches(raw).forEach(match => {
         addCandidate(candidates, match.code, 900 - match.distance * 180, "close uploaded inventory match");
       });
@@ -297,15 +224,6 @@
     image.onerror = () => reject(new Error("Could not prepare OCR image."));
     image.src = dataUrl;
   });
-
-  const withTimeout = (promise, milliseconds, message) => {
-    let timer = null;
-    promise.catch(() => {});
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(message)), milliseconds);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
-  };
 
   const canvasDataUrl = async (dataUrl, transform) => {
     const image = await loadImage(dataUrl);
@@ -416,440 +334,11 @@
     panel.hidden = suggestions.length === 0;
   };
 
-  let liveScanStream = null;
-  let liveScanActive = false;
-  let liveScanCapturing = false;
-  let liveScanQuickMode = false;
-  let photoQuickScanMode = false;
-  let liveScanDetectedBox = null;
-  let liveScanDetectionTimer = null;
-
-  const stopLiveScan = () => {
-    liveScanActive = false;
-    liveScanCapturing = false;
-    liveScanDetectedBox = null;
-    if (liveScanDetectionTimer) {
-      clearInterval(liveScanDetectionTimer);
-      liveScanDetectionTimer = null;
-    }
-    if (liveScanStream) {
-      liveScanStream.getTracks().forEach(track => track.stop());
-      liveScanStream = null;
-    }
-    const panel = document.getElementById("ocrLiveScanPanel");
-    if (panel) {
-      panel.hidden = true;
-      panel.style.display = "none";
-    }
-  };
-
-  const liveScanFallbackBox = () => ocrCropOrientation === "vertical"
-    ? { x: 0.35, y: 0.08, width: 0.30, height: 0.84, inset: "8% 35%" }
-    : { x: 0.08, y: 0.35, width: 0.84, height: 0.30, inset: "35% 8%" };
-
-  const boxToInset = box => {
-    const top = Math.max(0, box.y * 100);
-    const right = Math.max(0, (1 - box.x - box.width) * 100);
-    const bottom = Math.max(0, (1 - box.y - box.height) * 100);
-    const left = Math.max(0, box.x * 100);
-    return top.toFixed(1) + "% " + right.toFixed(1) + "% " + bottom.toFixed(1) + "% " + left.toFixed(1) + "%";
-  };
-
-  const liveScanActiveBox = () => liveScanDetectedBox || liveScanFallbackBox();
-
-  const updateLiveScanGuide = () => {
-    const frame = document.getElementById("ocrLiveScanFrame");
-    const captureButton = document.getElementById("ocrCaptureLiveScanBtn");
-    if (!frame) return;
-    if (!liveScanDetectedBox) {
-      frame.style.display = "none";
-      if (captureButton) {
-        captureButton.disabled = true;
-        captureButton.textContent = liveScanActive ? "Waiting For Scan Area" : "Capture Live Scan";
-      }
-      return;
-    }
-    frame.style.display = "block";
-    frame.style.inset = boxToInset(liveScanDetectedBox);
-    frame.setAttribute("aria-label", "Detected scan area");
-    if (captureButton) {
-      captureButton.disabled = liveScanCapturing || !liveScanActive;
-      captureButton.textContent = "Capture Detected Area";
-    }
-  };
-
-  const liveFrameScore = canvas => {
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) return 0;
-    const width = canvas.width;
-    const height = canvas.height;
-    const pixels = context.getImageData(0, 0, width, height).data;
-    const step = Math.max(1, Math.floor(Math.min(width, height) / 80));
-    let score = 0;
-    let count = 0;
-
-    for (let y = step; y < height - step; y += step) {
-      for (let x = step; x < width - step; x += step) {
-        const index = (y * width + x) * 4;
-        const rightIndex = (y * width + Math.min(width - 1, x + step)) * 4;
-        const downIndex = (Math.min(height - 1, y + step) * width + x) * 4;
-        const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
-        const rightGray = pixels[rightIndex] * 0.299 + pixels[rightIndex + 1] * 0.587 + pixels[rightIndex + 2] * 0.114;
-        const downGray = pixels[downIndex] * 0.299 + pixels[downIndex + 1] * 0.587 + pixels[downIndex + 2] * 0.114;
-        score += Math.abs(gray - rightGray) + Math.abs(gray - downGray);
-        count += 1;
-      }
-    }
-
-    return count ? score / count : 0;
-  };
-
-  const captureLiveFrame = video => {
-    const sourceWidth = video.videoWidth || 1280;
-    const sourceHeight = video.videoHeight || 720;
-    const wrap = video.parentElement;
-    const wrapRect = wrap ? wrap.getBoundingClientRect() : { width: sourceWidth, height: sourceHeight };
-    const coverScale = Math.max(wrapRect.width / sourceWidth, wrapRect.height / sourceHeight);
-    const visibleWidth = wrapRect.width / coverScale;
-    const visibleHeight = wrapRect.height / coverScale;
-    const visibleX = Math.max(0, (sourceWidth - visibleWidth) / 2);
-    const visibleY = Math.max(0, (sourceHeight - visibleHeight) / 2);
-    const guide = liveScanActiveBox();
-    const isVertical = guide.height > guide.width;
-    const padX = visibleWidth * (isVertical ? 0.08 : 0.06);
-    const padY = visibleHeight * (isVertical ? 0.06 : 0.10);
-    const cropX = Math.max(0, visibleX + guide.x * visibleWidth - padX);
-    const cropY = Math.max(0, visibleY + guide.y * visibleHeight - padY);
-    const cropRight = Math.min(sourceWidth, visibleX + (guide.x + guide.width) * visibleWidth + padX);
-    const cropBottom = Math.min(sourceHeight, visibleY + (guide.y + guide.height) * visibleHeight + padY);
-    const cropWidth = Math.max(1, cropRight - cropX);
-    const cropHeight = Math.max(1, cropBottom - cropY);
-    const maxSide = 650;
-    const scale = Math.min(1, maxSide / Math.max(cropWidth, cropHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(cropWidth * scale));
-    canvas.height = Math.max(1, Math.round(cropHeight * scale));
-    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    if (!context) return { dataUrl: "", score: 0 };
-    context.fillStyle = "#FFFFFF";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
-    return {
-      dataUrl: canvas.toDataURL("image/jpeg", 0.94),
-      score: liveFrameScore(canvas)
-    };
-  };
-
-  const edgeWindowScore = (integral, stride, x, y, width, height) => {
-    const x2 = x + width;
-    const y2 = y + height;
-    const total = integral[y2 * stride + x2] - integral[y * stride + x2] - integral[y2 * stride + x] + integral[y * stride + x];
-    return total / Math.max(1, width * height);
-  };
-
-  const detectLiveTextBox = video => {
-    const sourceWidth = video.videoWidth || 0;
-    const sourceHeight = video.videoHeight || 0;
-    if (!sourceWidth || !sourceHeight) return null;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 240;
-    const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
-    if (!context) return null;
-    const wrap = video.parentElement;
-    const wrapRect = wrap ? wrap.getBoundingClientRect() : { width: 4, height: 3 };
-    const coverScale = Math.max(wrapRect.width / sourceWidth, wrapRect.height / sourceHeight);
-    const visibleWidth = Math.max(1, wrapRect.width / coverScale);
-    const visibleHeight = Math.max(1, wrapRect.height / coverScale);
-    const visibleX = Math.max(0, (sourceWidth - visibleWidth) / 2);
-    const visibleY = Math.max(0, (sourceHeight - visibleHeight) / 2);
-    context.fillStyle = "#111827";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(video, visibleX, visibleY, visibleWidth, visibleHeight, 0, 0, canvas.width, canvas.height);
-
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    const width = canvas.width;
-    const height = canvas.height;
-    const gray = new Uint8ClampedArray(width * height);
-    for (let index = 0; index < pixels.length; index += 4) {
-      gray[index / 4] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
-    }
-
-    const stride = width + 1;
-    const integral = new Float32Array((width + 1) * (height + 1));
-    for (let y = 1; y <= height; y += 1) {
-      let rowTotal = 0;
-      for (let x = 1; x <= width; x += 1) {
-        const center = gray[(y - 1) * width + (x - 1)];
-        const right = gray[(y - 1) * width + Math.min(width - 1, x)];
-        const down = gray[Math.min(height - 1, y) * width + (x - 1)];
-        const edge = Math.min(255, Math.abs(center - right) + Math.abs(center - down));
-        rowTotal += edge;
-        integral[y * stride + x] = integral[(y - 1) * stride + x] + rowTotal;
-      }
-    }
-
-    const candidates = [];
-    const addCandidates = (boxWidth, boxHeight, orientation) => {
-      const stepX = Math.max(8, Math.round(boxWidth / 6));
-      const stepY = Math.max(8, Math.round(boxHeight / 6));
-      for (let y = 0; y <= height - boxHeight; y += stepY) {
-        for (let x = 0; x <= width - boxWidth; x += stepX) {
-          const score = edgeWindowScore(integral, stride, x, y, boxWidth, boxHeight);
-          const centerX = x + boxWidth / 2;
-          const centerY = y + boxHeight / 2;
-          const centerPenalty = (Math.abs(centerX - width / 2) / width + Math.abs(centerY - height / 2) / height) * 10;
-          candidates.push({ x, y, width: boxWidth, height: boxHeight, orientation, score: score - centerPenalty });
-        }
-      }
-    };
-
-    addCandidates(Math.round(width * 0.64), Math.round(height * 0.22), "horizontal");
-    addCandidates(Math.round(width * 0.78), Math.round(height * 0.26), "horizontal");
-    addCandidates(Math.round(width * 0.26), Math.round(height * 0.66), "vertical");
-    addCandidates(Math.round(width * 0.22), Math.round(height * 0.78), "vertical");
-
-    const best = candidates.sort((a, b) => b.score - a.score)[0];
-    if (!best || best.score < 15) return null;
-
-    const padX = best.width * 0.10;
-    const padY = best.height * 0.14;
-    const x = Math.max(0, best.x - padX);
-    const y = Math.max(0, best.y - padY);
-    const right = Math.min(width, best.x + best.width + padX);
-    const bottom = Math.min(height, best.y + best.height + padY);
-    return {
-      x: x / width,
-      y: y / height,
-      width: Math.max(0.08, (right - x) / width),
-      height: Math.max(0.08, (bottom - y) / height),
-      score: best.score,
-      orientation: best.orientation
-    };
-  };
-
-  const beginLiveScanDetection = video => {
-    if (liveScanDetectionTimer) clearInterval(liveScanDetectionTimer);
-    liveScanDetectionTimer = setInterval(() => {
-      if (!liveScanActive || liveScanCapturing) return;
-      const detected = detectLiveTextBox(video);
-      liveScanDetectedBox = detected;
-      if (detected) {
-        ocrCropOrientation = detected.orientation === "vertical" ? "vertical" : "horizontal";
-        setOcrStatus("SCAN AREA DETECTED. TAP CAPTURE DETECTED AREA WHEN THE BOX IS AROUND THE NUMBER.", "info");
-      } else {
-        setOcrStatus("LOOKING FOR A CONTAINER NUMBER. MOVE THE CAMERA UNTIL A GREEN BOX APPEARS.", "info");
-      }
-      updateLiveScanGuide();
-    }, 650);
-  };
-
-  const showLiveScanCaptureForReview = async dataUrl => {
-    const image = await loadImage(dataUrl);
-    ocrCropState = {
-      dataUrl,
-      image,
-      zoom: 1,
-      offsetX: 0,
-      offsetY: 0
-    };
-    ocrCropPanel.hidden = false;
-    setContainerInputValue("");
-    resetOcrReview();
-    showSuggestions([]);
-    setOcrCropOrientation(ocrCropOrientation);
-    showOcrReview(
-      "",
-      "DETECTED AREA CAPTURED. LIVE OCR WAS NOT RUN SO THE APP DOES NOT FREEZE. COMPARE THE PHOTO, TYPE THE 6 CHARACTERS, THEN CONFIRM & SAVE.",
-      "warning"
-    );
-    setStatus("Live Scan captured a still image for review. Nothing was saved.", "warning");
-    requestAnimationFrame(renderOcrCropPreview);
-  };
-
-  const ensureLiveScanUi = () => {
-    if (document.getElementById("ocrLiveScanPanel")) return;
-    if (!scanContainerOcrBtn || !scanContainerOcrBtn.parentNode) return;
-    scanContainerOcrBtn.textContent = "Scan Container Number With Camera";
-
-    const panel = document.createElement("div");
-    panel.id = "ocrLiveScanPanel";
-    panel.hidden = true;
-    panel.style.display = "none";
-    panel.style.gap = "8px";
-    panel.style.padding = "8px";
-    panel.style.border = "1px solid var(--border)";
-    panel.style.borderRadius = "10px";
-    panel.style.background = "#ffffff";
-
-    const videoWrap = document.createElement("div");
-    videoWrap.style.position = "relative";
-    videoWrap.style.width = "100%";
-    videoWrap.style.aspectRatio = "4 / 3";
-    videoWrap.style.overflow = "hidden";
-    videoWrap.style.borderRadius = "10px";
-    videoWrap.style.background = "#111827";
-    videoWrap.id = "ocrLiveScanVideoWrap";
-
-    const video = document.createElement("video");
-    video.id = "ocrLiveScanVideo";
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-    video.style.width = "100%";
-    video.style.height = "100%";
-    video.style.objectFit = "cover";
-
-    const frame = document.createElement("div");
-    frame.id = "ocrLiveScanFrame";
-    frame.style.position = "absolute";
-    frame.style.display = "none";
-    frame.style.inset = boxToInset(liveScanFallbackBox());
-    frame.style.border = "2px solid #22c55e";
-    frame.style.borderRadius = "8px";
-    frame.style.boxShadow = "0 0 0 999px rgba(15, 23, 42, 0.32)";
-    frame.style.pointerEvents = "none";
-
-    const captureButton = document.createElement("button");
-    captureButton.id = "ocrCaptureLiveScanBtn";
-    captureButton.type = "button";
-    captureButton.className = "primary";
-    captureButton.textContent = "Capture Live Scan";
-    captureButton.style.minHeight = "44px";
-    captureButton.addEventListener("click", captureLiveScanBurst);
-
-    const stopButton = document.createElement("button");
-    stopButton.id = "ocrStopLiveScanBtn";
-    stopButton.type = "button";
-    stopButton.textContent = "Stop Live Scan";
-    stopButton.style.minHeight = "40px";
-    stopButton.addEventListener("click", () => {
-      stopLiveScan();
-      setOcrStatus("LIVE SCAN STOPPED.", "warning");
-    });
-
-    videoWrap.appendChild(video);
-    videoWrap.appendChild(frame);
-    panel.appendChild(videoWrap);
-    panel.appendChild(captureButton);
-    panel.appendChild(stopButton);
-    ocrStatus.insertAdjacentElement("afterend", panel);
-    ocrOrientationButtons.forEach(button => button.addEventListener("click", updateLiveScanGuide));
-  };
-
-  async function startLiveScan() {
-    if (requireUnlocked("start live scan")) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setOcrStatus("LIVE CAMERA IS NOT AVAILABLE IN THIS BROWSER. USE PHOTO SCAN INSTEAD.", "error");
-      return;
-    }
-    if (liveScanActive) return;
-
-    const panel = document.getElementById("ocrLiveScanPanel");
-    const video = document.getElementById("ocrLiveScanVideo");
-    if (!panel || !video) return;
-
-    try {
-      liveScanActive = true;
-      liveScanCapturing = false;
-      panel.hidden = false;
-      panel.style.display = "grid";
-      resetOcrReview();
-      showSuggestions([]);
-      setOcrStatus("STARTING LIVE CAMERA...", "info");
-      liveScanStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
-      video.srcObject = liveScanStream;
-      await video.play();
-      updateLiveScanGuide();
-      beginLiveScanDetection(video);
-      setOcrStatus("LIVE CAMERA READY. THE GREEN BOX WILL APPEAR WHEN A SCAN AREA IS DETECTED.", "info");
-      setStatus("Live scan camera is open. Wait for the green detected box, then capture.", "info");
-    } catch (error) {
-      stopLiveScan();
-      setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
-      setStatus("Live scan failed. Use photo scan or type manually.", "error");
-    }
-  }
-
-  window.startDetectedLiveScan = null;
-  window.scanContainerNumberFromPhotoQuick = async dataUrl => {
-    photoQuickScanMode = true;
-    try {
-      await scanContainerNumberFromImageData(dataUrl);
-    } finally {
-      photoQuickScanMode = false;
-    }
-  };
-
-  window.scanContainerNumberFromPhotoQuickSources = async dataUrls => {
-    photoQuickScanMode = true;
-    try {
-      await scanContainerNumberFromImageData(Array.isArray(dataUrls) ? dataUrls : [dataUrls]);
-    } finally {
-      photoQuickScanMode = false;
-    }
-  };
-
-  async function captureLiveScanBurst() {
-    if (!liveScanActive || liveScanCapturing) return;
-    const video = document.getElementById("ocrLiveScanVideo");
-    const captureButton = document.getElementById("ocrCaptureLiveScanBtn");
-    if (!video) return;
-    if (!liveScanDetectedBox) {
-      setOcrStatus("NO SCAN AREA DETECTED YET. MOVE CLOSER OR CHANGE ANGLE UNTIL THE GREEN BOX APPEARS.", "warning");
-      return;
-    }
-
-    try {
-      liveScanCapturing = true;
-      if (captureButton) captureButton.disabled = true;
-      let bestFrame = { dataUrl: "", score: -1 };
-      for (let index = 1; index <= 2 && liveScanActive; index += 1) {
-        await new Promise(resolve => setTimeout(resolve, index === 1 ? 250 : 160));
-        const frame = captureLiveFrame(video);
-        if (frame.dataUrl && frame.score > bestFrame.score) bestFrame = frame;
-        setOcrStatus("LIVE SCAN CAPTURED FRAME " + index + " OF 2...", "info");
-      }
-
-      const wasStopped = !liveScanActive;
-      stopLiveScan();
-      if (wasStopped) {
-        setOcrStatus("LIVE SCAN STOPPED.", "warning");
-        return;
-      }
-      if (!bestFrame.dataUrl) {
-        setOcrStatus("LIVE SCAN COULD NOT CAPTURE A CLEAR FRAME. TRY PHOTO SCAN.", "warning");
-        return;
-      }
-
-      await showLiveScanCaptureForReview(bestFrame.dataUrl);
-    } catch (error) {
-      stopLiveScan();
-      setOcrStatus("LIVE SCAN FAILED: " + error.message, "error");
-      setStatus("Live scan failed. Use photo scan or type manually.", "error");
-    } finally {
-      liveScanQuickMode = false;
-      liveScanCapturing = false;
-      if (captureButton && liveScanActive) captureButton.disabled = false;
-    }
-  }
-
   isOcrContainerCode = code => VALID_CODE.test(normalizeCode(code || ""));
   ocrLiteralCandidateCodes = text => priorityCandidateObjects(text).map(item => item.code);
 
   scanContainerNumberFromImageData = async function scanContainerNumberFromImageDataAdvanced(originalImageData) {
-    const imageSources = (Array.isArray(originalImageData) ? originalImageData : [originalImageData])
-      .filter(Boolean)
-      .slice(0, 3);
-    if (!imageSources.length) return;
+    if (!originalImageData) return;
     if (requireUnlocked("scan a container number")) return;
     if (typeof Tesseract === "undefined" || !Tesseract.createWorker) {
       setOcrStatus("OCR did not load. Reopen the app after one successful online visit.", "error");
@@ -862,46 +351,32 @@
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
     showSuggestions([]);
-    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTIONS FROM THE FOCUSED PHOTO AREA..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
-    setStatus(photoQuickScanMode ? "OCR is trying limited focused-photo views. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
+    setOcrStatus("AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
+    setStatus("OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
-      let imageAttempts = [];
-      const quickScanMode = liveScanQuickMode || photoQuickScanMode;
-      for (const [sourceIndex, imageSource] of imageSources.entries()) {
-        const orientations = [];
-        if (sourceIndex > 0) {
-          orientations.push({ dataUrl: imageSource, pageSegMode: "7" });
-          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
-          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, 90), pageSegMode: "7" });
-          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, -90), pageSegMode: "7" });
-        } else if (ocrCropOrientation === "vertical") {
-          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, 90), pageSegMode: "7" });
-          orientations.push({ dataUrl: await rotateImageDataUrl(imageSource, -90), pageSegMode: "7" });
-          orientations.push({ dataUrl: imageSource, pageSegMode: "6" });
-          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
-        } else {
-          orientations.push({ dataUrl: imageSource, pageSegMode: "7" });
-          orientations.push({ dataUrl: imageSource, pageSegMode: "11" });
-        }
-
-        let sourceAttempts = [];
-        for (const oriented of orientations) {
-          const tight = await autoTightCrop(oriented.dataUrl);
-          const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
-          for (const base of bases) {
-            const variants = await enhancedVariants(base);
-            sourceAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode, sourceIndex })));
-          }
-        }
-        sourceAttempts = [...new Map(sourceAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
-          .slice(0, quickScanMode ? 2 : 8);
-        imageAttempts.push(...sourceAttempts);
+      const orientations = [];
+      if (ocrCropOrientation === "vertical") {
+        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
+        orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "6" });
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "11" });
+      } else {
+        orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
       }
-      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()]
-        .slice(0, quickScanMode ? Math.min(6, Math.max(2, imageSources.length * 2)) : 16);
 
-      let worker = await getOcrWorker();
+      let imageAttempts = [];
+      for (const oriented of orientations) {
+        const tight = await autoTightCrop(oriented.dataUrl);
+        const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
+        for (const base of bases) {
+          const variants = await enhancedVariants(base);
+          imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
+        }
+      }
+      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 14);
+
+      const worker = await getOcrWorker();
       try {
         await worker.setParameters({
           tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -919,29 +394,13 @@
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
-        await new Promise(resolve => setTimeout(resolve, 20));
         if (attempt.pageSegMode !== activePageSegMode) {
           try {
             await worker.setParameters({ tessedit_pageseg_mode: attempt.pageSegMode });
           } catch {}
           activePageSegMode = attempt.pageSegMode;
         }
-        let result = null;
-        try {
-          result = await withTimeout(
-            worker.recognize(attempt.dataUrl),
-            quickScanMode ? 8500 : 22000,
-            "OCR pass timed out"
-          );
-        } catch (error) {
-          resetOcrWorker().catch(() => {});
-          if (quickScanMode) {
-            setOcrStatus("PHOTO OCR TOOK TOO LONG AND WAS STOPPED. TYPE THE NUMBER MANUALLY OR TRY A CLOSER PHOTO.", "warning");
-            setStatus("Photo OCR was stopped before it could freeze. Nothing was saved.", "warning");
-            break;
-          }
-          throw error;
-        }
+        const result = await worker.recognize(attempt.dataUrl);
         lastText = result && result.data ? result.data.text || "" : "";
         previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
@@ -999,10 +458,4 @@
       ocrScanCropBtn.disabled = editLocked;
     }
   };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ensureLiveScanUi, { once: true });
-  } else {
-    ensureLiveScanUi();
-  }
 })();
