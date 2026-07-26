@@ -3028,7 +3028,7 @@
       source.height = Math.max(1, paddedBottom - source.y);
 
       const output = document.createElement("canvas");
-      const scale = Math.min(5, Math.max(2.5, 2400 / Math.max(source.width, source.height)));
+      const scale = Math.min(3.4, Math.max(1.8, 1900 / Math.max(source.width, source.height)));
       output.width = Math.max(1, Math.round(source.width * scale));
       output.height = Math.max(1, Math.round(source.height * scale));
       const context = output.getContext("2d", { alpha: false });

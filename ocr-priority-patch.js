@@ -2,7 +2,7 @@
   "use strict";
 
   const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
-  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
+  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "38", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
   const PREFIX_SHAPE_MAP = {
     A: ["8", "D"],
     E: ["B"],
@@ -69,6 +69,72 @@
       .filter(item => item.distance <= 1.5)
       .sort((a, b) => a.distance - b.distance || formatWeight(b.code) - formatWeight(a.code))
       .slice(0, 4);
+  };
+
+  const editCost = (seen, expected) => {
+    if (!seen || seen === "?") return 0.65;
+    if (seen === expected) return 0;
+    if (digitPossibilities(seen).includes(expected)) return 0.20;
+    if (shapeAlternatives(seen).includes(expected)) return 0.35;
+    if (confusionCost(seen, expected) <= 0.25) return 0.35;
+    if (/\d/.test(seen) && /\d/.test(expected)) return 1.05;
+    if (/[A-Z]/.test(seen) && /[A-Z]/.test(expected)) return 1.15;
+    return 1.35;
+  };
+
+  const missingExpectedCost = (expected, index) => {
+    if (index === 0 && (expected === "D" || expected === "8" || expected === "7" || expected === "3")) return 0.55;
+    if (/\d/.test(expected)) return 0.72;
+    return 0.88;
+  };
+
+  const extraSeenCost = seen => /[A-Z0-9]/.test(seen || "") ? 1.05 : 0.75;
+
+  const flexibleInventoryDistance = (rawValue, expectedCode) => {
+    const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
+    const expected = normalizeCode(expectedCode || "");
+    if (!raw || !expected) return 99;
+
+    const rows = raw.length + 1;
+    const cols = expected.length + 1;
+    const dp = Array.from({ length: rows }, () => new Array(cols).fill(99));
+    dp[0][0] = 0;
+
+    for (let i = 1; i <= raw.length; i += 1) {
+      dp[i][0] = dp[i - 1][0] + extraSeenCost(raw[i - 1]);
+    }
+    for (let j = 1; j <= expected.length; j += 1) {
+      dp[0][j] = dp[0][j - 1] + missingExpectedCost(expected[j - 1], j - 1);
+    }
+
+    for (let i = 1; i <= raw.length; i += 1) {
+      for (let j = 1; j <= expected.length; j += 1) {
+        dp[i][j] = Math.min(
+          dp[i - 1][j - 1] + editCost(raw[i - 1], expected[j - 1]),
+          dp[i - 1][j] + extraSeenCost(raw[i - 1]),
+          dp[i][j - 1] + missingExpectedCost(expected[j - 1], j - 1)
+        );
+      }
+    }
+
+    return dp[raw.length][expected.length];
+  };
+
+  const closeInventoryMatches = rawValue => {
+    const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
+    if (raw.length < 4 || raw.length > 8) return [];
+    const limit = raw.length === 6 ? 1.65 : 2.45;
+
+    return uploadedCodes()
+      .map(code => ({ code, distance: flexibleInventoryDistance(raw, code) }))
+      .filter(item => item.distance <= limit)
+      .sort((a, b) => a.distance - b.distance || formatWeight(b.code) - formatWeight(a.code))
+      .slice(0, 5)
+      .map(item => ({
+        code: item.code,
+        bonus: 1320 - item.distance * 210,
+        reason: "close uploaded inventory match from OCR read: " + raw
+      }));
   };
 
   const addCandidate = (map, code, bonus = 0, reason = "OCR") => {
@@ -179,6 +245,9 @@
     const compact = normalizeUpperText(text).replace(/[^A-Z0-9]+/g, "");
     const candidates = new Map();
     rawTextGroups(text).forEach(group => {
+      closeInventoryMatches(group).forEach(match => {
+        addCandidate(candidates, match.code, match.bonus, match.reason);
+      });
       partialInventoryMatches(group).forEach(match => {
         addCandidate(candidates, match.code, match.bonus, match.reason);
       });
@@ -204,6 +273,10 @@
         }
         if (raw.startsWith("TR")) addCandidate(candidates, "TR" + tail, 18, "unusual TR prefix");
         if (raw[0] === "P" && matchesAny(raw[1], ["S", "5"])) addCandidate(candidates, "PS" + tail, raw.startsWith("PS") ? 18 : 8, "unusual PS prefix");
+      });
+
+      closeInventoryMatches(raw).forEach(match => {
+        addCandidate(candidates, match.code, match.bonus, match.reason);
       });
 
       fuzzyInventoryMatches(raw).forEach(match => {
