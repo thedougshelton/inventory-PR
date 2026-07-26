@@ -228,8 +228,11 @@
   const canvasDataUrl = async (dataUrl, transform) => {
     const image = await loadImage(dataUrl);
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth || image.width;
-    canvas.height = image.naturalHeight || image.height;
+    const imageWidth = image.naturalWidth || image.width;
+    const imageHeight = image.naturalHeight || image.height;
+    const scale = Math.min(1, 1600 / Math.max(imageWidth, imageHeight));
+    canvas.width = Math.max(1, Math.round(imageWidth * scale));
+    canvas.height = Math.max(1, Math.round(imageHeight * scale));
     const context = canvas.getContext("2d", { willReadFrequently: true });
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
@@ -250,18 +253,30 @@
     });
     variants.push(contrast);
 
-    for (const threshold of [105, 135, 165]) {
-      variants.push(await canvasDataUrl(dataUrl, imageData => {
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-          const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-          const value = gray >= threshold ? 255 : 0;
-          data[i] = data[i + 1] = data[i + 2] = value;
-        }
-      }));
-    }
+    variants.push(await canvasDataUrl(dataUrl, imageData => {
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+        const value = gray >= 135 ? 255 : 0;
+        data[i] = data[i + 1] = data[i + 2] = value;
+      }
+    }));
     return variants;
   };
+
+  const withOcrTimeout = (promise, milliseconds, message) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), milliseconds);
+    Promise.resolve(promise).then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
 
   const autoTightCrop = async dataUrl => {
     const image = await loadImage(dataUrl);
@@ -359,24 +374,34 @@
       if (ocrCropOrientation === "vertical") {
         orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, 90), pageSegMode: "7" });
         orientations.push({ dataUrl: await rotateImageDataUrl(originalImageData, -90), pageSegMode: "7" });
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "6" });
-        orientations.push({ dataUrl: originalImageData, pageSegMode: "11" });
       } else {
         orientations.push({ dataUrl: originalImageData, pageSegMode: "7" });
       }
 
-      let imageAttempts = [];
+      const attemptGroups = [];
       for (const oriented of orientations) {
+        const orientationAttempts = [];
         const tight = await autoTightCrop(oriented.dataUrl);
         const bases = tight === oriented.dataUrl ? [oriented.dataUrl] : [tight, oriented.dataUrl];
         for (const base of bases) {
           const variants = await enhancedVariants(base);
-          imageAttempts.push(...variants.map(dataUrl => ({ dataUrl, pageSegMode: oriented.pageSegMode })));
+          orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map(dataUrl => ({
+            dataUrl,
+            pageSegMode: oriented.pageSegMode
+          })));
         }
+        attemptGroups.push(orientationAttempts);
       }
-      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 14);
+      let imageAttempts = [];
+      const longestGroup = Math.max(0, ...attemptGroups.map(group => group.length));
+      for (let index = 0; index < longestGroup; index += 1) {
+        attemptGroups.forEach(group => {
+          if (group[index]) imageAttempts.push(group[index]);
+        });
+      }
+      imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 6);
 
-      const worker = await getOcrWorker();
+      const worker = await withOcrTimeout(getOcrWorker(), 20000, "OCR STARTUP TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY.");
       try {
         await worker.setParameters({
           tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -400,7 +425,11 @@
           } catch {}
           activePageSegMode = attempt.pageSegMode;
         }
-        const result = await worker.recognize(attempt.dataUrl);
+        const result = await withOcrTimeout(
+          worker.recognize(attempt.dataUrl),
+          10000,
+          "OCR IMAGE PASS TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY."
+        );
         lastText = result && result.data ? result.data.text || "" : "";
         previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
