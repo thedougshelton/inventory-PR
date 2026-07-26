@@ -862,8 +862,8 @@
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
     showSuggestions([]);
-    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTIONS FROM THE FOCUSED PHOTO AND FULL PHOTO..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
-    setStatus(photoQuickScanMode ? "OCR is trying focused and full-photo views. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
+    setOcrStatus(photoQuickScanMode ? "TRYING OCR SUGGESTIONS FROM THE FOCUSED PHOTO AREA..." : "AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
+    setStatus(photoQuickScanMode ? "OCR is trying limited focused-photo views. Nothing will save without confirmation." : "OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
       let imageAttempts = [];

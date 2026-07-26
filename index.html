@@ -3053,7 +3053,7 @@
     function ocrAutoPhotoScanDataUrl() {
       if (!ocrCropState || !ocrCropState.image) return "";
       const region = ocrCropState.detectedRegion;
-      if (!region) return ocrAssistPhotoDataUrl();
+      if (!region) return ocrCropDataUrl();
 
       const image = ocrCropState.image;
       const imageWidth = image.naturalWidth || image.width;
@@ -3078,7 +3078,7 @@
       output.width = Math.max(1, Math.round(source.width * scale));
       output.height = Math.max(1, Math.round(source.height * scale));
       const context = output.getContext("2d", { alpha: false });
-      if (!context) return ocrAssistPhotoDataUrl();
+      if (!context) return ocrCropDataUrl();
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";
       context.fillStyle = "#FFFFFF";
@@ -3089,8 +3089,8 @@
 
     function ocrPhotoScanDataUrls() {
       const focused = ocrAutoPhotoScanDataUrl();
-      const fullPhoto = ocrAssistPhotoDataUrl();
-      return [focused, fullPhoto].filter((value, index, list) => value && list.indexOf(value) === index);
+      const visibleFocusedArea = ocrCropDataUrl();
+      return [focused, visibleFocusedArea].filter((value, index, list) => value && list.indexOf(value) === index);
     }
 
     async function openOcrCropFromPhoto(file) {
