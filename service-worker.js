@@ -1,8 +1,9 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-3";
+const CACHE_NAME = "packrat-inventory-v5-runtime-4";
 const APP_PATHS = [
   "./",
   "./index.html",
   "./ocr-priority-patch.js",
+  "./ocr-hard-rules.js",
   "./vendor/xlsx.bundle.js",
   "./vendor/tesseract.min.js",
   "./vendor/tesseract-worker.min.js",
@@ -15,29 +16,28 @@ const APP_PATHS = [
 const APP_FILES = APP_PATHS.map(path => new URL(path, self.location.href).href);
 const INDEX_URL = new URL("./index.html", self.location.href).href;
 const ROOT_URL = new URL("./", self.location.href).href;
-const OCR_PATCH_TAG = '<script src="./ocr-priority-patch.js"></script>';
+const OCR_PATCH_TAGS = [
+  '<script src="./ocr-priority-patch.js"></script>',
+  '<script src="./ocr-hard-rules.js"></script>'
+];
 
 async function injectOcrPriorityPatch(response) {
   if (!response) return response;
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("text/html")) return response;
 
-  const html = await response.text();
-  if (html.includes("ocr-priority-patch.js")) {
-    return new Response(html, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: response.headers
-    });
+  let html = await response.text();
+  const missingTags = OCR_PATCH_TAGS.filter(tag => !html.includes(tag));
+  if (missingTags.length) {
+    const injection = missingTags.join("\n");
+    html = html.includes("</body>")
+      ? html.replace("</body>", injection + "\n</body>")
+      : html + injection;
   }
-
-  const patchedHtml = html.includes("</body>")
-    ? html.replace("</body>", OCR_PATCH_TAG + "\n</body>")
-    : html + OCR_PATCH_TAG;
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
-  return new Response(patchedHtml, {
+  return new Response(html, {
     status: response.status,
     statusText: response.statusText,
     headers
