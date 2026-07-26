@@ -2,7 +2,26 @@
   "use strict";
 
   const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
-  const CONFUSION_GROUPS = ["0ODQ", "1IL", "2Z", "5S", "6G", "8B", "MN"];
+  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
+  const PREFIX_SHAPE_MAP = {
+    A: ["8", "D"],
+    E: ["B"],
+    F: ["P"],
+    G: ["C", "6"],
+    H: ["M", "D"],
+    I: ["1", "D"],
+    J: ["1"],
+    K: ["R"],
+    L: ["1"],
+    N: ["M", "Z"],
+    O: ["0", "D"],
+    Q: ["0", "D"],
+    U: ["D"],
+    V: ["D"],
+    W: ["M"],
+    X: ["8", "D"],
+    Y: ["D"]
+  };
 
   const formatWeight = code => {
     if (/^D\d{5}$/.test(code)) return 130;
@@ -63,10 +82,19 @@
 
   const digitPossibilities = character => {
     const map = {
-      O: "0", D: "0", Q: "0", I: "1", L: "1", Z: "2", S: "5", G: "6", B: "8"
+      O: "0", D: "0", Q: "0", U: "0",
+      I: "1", J: "1", L: "1",
+      Z: "2",
+      S: "5",
+      G: "6",
+      B: "8", A: "8", X: "8"
     };
     return /\d/.test(character) ? [character] : (map[character] ? [map[character]] : []);
   };
+
+  const shapeAlternatives = character => PREFIX_SHAPE_MAP[character] || [];
+
+  const matchesAny = (character, choices) => choices.includes(character) || shapeAlternatives(character).some(value => choices.includes(value));
 
   const expandNumericTail = tail => {
     let results = [""];
@@ -87,21 +115,21 @@
       addCandidate(candidates, raw, 50, "literal OCR read");
 
       expandNumericTail(raw.slice(1)).forEach(tail => {
-        if (/[D0OQ]/.test(raw[0])) addCandidate(candidates, "D" + tail, raw[0] === "D" ? 65 : 35, "likely D prefix");
-        if (/[8B]/.test(raw[0])) {
+        if (matchesAny(raw[0], ["D", "0"])) addCandidate(candidates, "D" + tail, raw[0] === "D" ? 65 : 35, "likely D prefix");
+        if (matchesAny(raw[0], ["8", "B"])) {
           addCandidate(candidates, "8" + tail, raw[0] === "8" ? 65 : 38, "8/B correction");
           addCandidate(candidates, "B" + tail, raw[0] === "B" ? 25 : 5, "rare B possibility");
         }
-        if (/[CG6]/.test(raw[0])) addCandidate(candidates, "C" + tail, raw[0] === "C" ? 35 : 15, "C/G correction");
+        if (matchesAny(raw[0], ["C", "6"])) addCandidate(candidates, "C" + tail, raw[0] === "C" ? 35 : 15, "C/G correction");
         if (/[378]/.test(raw[0])) addCandidate(candidates, raw[0] + tail, 55, "numeric container format");
       });
 
       expandNumericTail(raw.slice(2)).forEach(tail => {
-        if (/[Z237]/.test(raw[0]) && /[MN]/.test(raw[1])) {
+        if (matchesAny(raw[0], ["Z", "2", "3", "7"]) && matchesAny(raw[1], ["M", "N"])) {
           addCandidate(candidates, "ZM" + tail, raw.startsWith("ZM") ? 75 : 42, "likely ZM prefix");
         }
         if (raw.startsWith("TR")) addCandidate(candidates, "TR" + tail, 18, "unusual TR prefix");
-        if (raw[0] === "P" && /[S5]/.test(raw[1])) addCandidate(candidates, "PS" + tail, raw.startsWith("PS") ? 18 : 8, "unusual PS prefix");
+        if (raw[0] === "P" && matchesAny(raw[1], ["S", "5"])) addCandidate(candidates, "PS" + tail, raw.startsWith("PS") ? 18 : 8, "unusual PS prefix");
       });
 
       fuzzyInventoryMatches(raw).forEach(match => {
@@ -282,7 +310,7 @@
       const worker = await getOcrWorker();
       try {
         await worker.setParameters({
-          tessedit_char_whitelist: "BCDMNQGILOPRSTZ0123456789",
+          tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
           preserve_interword_spaces: "0"
         });
       } catch {}
