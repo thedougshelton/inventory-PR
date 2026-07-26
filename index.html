@@ -2790,6 +2790,23 @@
       return canvas.toDataURL("image/jpeg", 0.94);
     }
 
+    async function buildOcrImageAttempts(originalImageData) {
+      if (ocrCropOrientation === "vertical") {
+        const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
+        const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
+        const rightAttempts = await prepareOcrImageDataUrls(rotatedRight);
+        const leftAttempts = await prepareOcrImageDataUrls(rotatedLeft);
+        return rightAttempts.concat(leftAttempts);
+      }
+
+      const straightAttempts = await prepareOcrImageDataUrls(originalImageData);
+      const tiltedRight = await rotateImageDataUrl(originalImageData, 2);
+      const tiltedLeft = await rotateImageDataUrl(originalImageData, -2);
+      const rightAttempts = await prepareOcrImageDataUrls(tiltedRight);
+      const leftAttempts = await prepareOcrImageDataUrls(tiltedLeft);
+      return straightAttempts.concat(rightAttempts, leftAttempts);
+    }
+
     function resetOcrCrop() {
       ocrCropState = null;
       ocrCropPanel.hidden = true;
@@ -2956,15 +2973,7 @@
       setStatus("OCR is checking the cropped photo. This may take a few seconds.", "info");
 
       try {
-        let imageAttempts;
-        if (ocrCropOrientation === "vertical") {
-          const rotatedRight = await rotateImageDataUrl(originalImageData, 90);
-          const rotatedLeft = await rotateImageDataUrl(originalImageData, -90);
-          imageAttempts = await prepareOcrImageDataUrls(rotatedRight);
-          imageAttempts = imageAttempts.concat(await prepareOcrImageDataUrls(rotatedLeft));
-        } else {
-          imageAttempts = await prepareOcrImageDataUrls(originalImageData);
-        }
+        const imageAttempts = await buildOcrImageAttempts(originalImageData);
         const worker = await getOcrWorker();
         const votes = new Map();
         const confidenceByCode = new Map();
