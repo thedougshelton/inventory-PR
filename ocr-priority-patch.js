@@ -302,6 +302,79 @@
     return output.toDataURL("image/jpeg", 0.95);
   };
 
+  const foregroundTightCrop = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    const source = document.createElement("canvas");
+    source.width = image.naturalWidth || image.width;
+    source.height = image.naturalHeight || image.height;
+    const context = source.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, source.width, source.height);
+    const pixels = context.getImageData(0, 0, source.width, source.height).data;
+    const cornerPoints = [
+      [2, 2],
+      [source.width - 3, 2],
+      [2, source.height - 3],
+      [source.width - 3, source.height - 3]
+    ];
+    const background = cornerPoints.reduce((sum, [x, y]) => {
+      const index = (Math.max(0, y) * source.width + Math.max(0, x)) * 4;
+      return sum + pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+    }, 0) / cornerPoints.length;
+    const step = Math.max(1, Math.floor(Math.min(source.width, source.height) / 500));
+    let minX = source.width;
+    let minY = source.height;
+    let maxX = -1;
+    let maxY = -1;
+    let hits = 0;
+
+    for (let y = 0; y < source.height; y += step) {
+      for (let x = 0; x < source.width; x += step) {
+        const index = (y * source.width + x) * 4;
+        const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+        if (Math.abs(gray - background) < 48) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        hits += 1;
+      }
+    }
+
+    if (hits < 30 || maxX <= minX || maxY <= minY) return dataUrl;
+    const contentWidth = maxX - minX + 1;
+    const contentHeight = maxY - minY + 1;
+    if (contentWidth < source.width * 0.08 || contentHeight < source.height * 0.08) return dataUrl;
+    const sourcePadX = Math.round(contentWidth * 0.05);
+    const sourcePadY = Math.round(contentHeight * 0.12);
+    minX = Math.max(0, minX - sourcePadX);
+    minY = Math.max(0, minY - sourcePadY);
+    maxX = Math.min(source.width - 1, maxX + sourcePadX);
+    maxY = Math.min(source.height - 1, maxY + sourcePadY);
+    const cropWidth = maxX - minX + 1;
+    const cropHeight = maxY - minY + 1;
+    const marginX = Math.max(16, Math.round(cropWidth * 0.08));
+    const marginY = Math.max(16, Math.round(cropHeight * 0.16));
+    const output = document.createElement("canvas");
+    output.width = cropWidth + marginX * 2;
+    output.height = cropHeight + marginY * 2;
+    const outputContext = output.getContext("2d", { alpha: false });
+    const backgroundValue = Math.max(0, Math.min(255, Math.round(background)));
+    outputContext.fillStyle = `rgb(${backgroundValue}, ${backgroundValue}, ${backgroundValue})`;
+    outputContext.fillRect(0, 0, output.width, output.height);
+    outputContext.drawImage(
+      source,
+      minX,
+      minY,
+      cropWidth,
+      cropHeight,
+      marginX,
+      marginY,
+      cropWidth,
+      cropHeight
+    );
+    return output.toDataURL("image/jpeg", 0.96);
+  };
+
   const ensureSuggestionUi = () => {
     let panel = document.getElementById("ocrSuggestionButtons");
     if (panel) return panel;
@@ -402,24 +475,27 @@
         confirmActiveScan(scanId);
         const counterclockwise = await rotateImageDataUrl(originalImageData, -90);
         confirmActiveScan(scanId);
-        const [clockwiseVariants, counterclockwiseVariants, stackedVariants] = await Promise.all([
-          enhancedVariants(clockwise),
-          enhancedVariants(counterclockwise),
-          enhancedVariants(originalImageData)
+        const [clockwiseFocused, counterclockwiseFocused] = await Promise.all([
+          foregroundTightCrop(clockwise),
+          foregroundTightCrop(counterclockwise)
         ]);
         confirmActiveScan(scanId);
-        // Vertical labels can read in either direction. PSM 8 treats the
-        // rotated code as one word, while PSM 7 handles a normal line.
-        // PSM 6 also covers labels whose characters are individually stacked.
+        const [clockwiseVariants, counterclockwiseVariants] = await Promise.all([
+          enhancedVariants(clockwiseFocused),
+          enhancedVariants(counterclockwiseFocused)
+        ]);
+        confirmActiveScan(scanId);
+        // Vertical labels can read in either direction. The focused crop keeps
+        // edge characters, then word, line, and raw-line modes vote together.
         attemptGroups.push([
           { dataUrl: clockwiseVariants[0], pageSegMode: "8" },
           { dataUrl: clockwiseVariants[1], pageSegMode: "7" },
-          { dataUrl: stackedVariants[0], pageSegMode: "6" }
+          { dataUrl: clockwiseVariants[2], pageSegMode: "13" }
         ]);
         attemptGroups.push([
           { dataUrl: counterclockwiseVariants[0], pageSegMode: "8" },
           { dataUrl: counterclockwiseVariants[1], pageSegMode: "7" },
-          { dataUrl: stackedVariants[2], pageSegMode: "6" }
+          { dataUrl: counterclockwiseVariants[2], pageSegMode: "13" }
         ]);
       } else {
         const tight = await autoTightCrop(originalImageData);
