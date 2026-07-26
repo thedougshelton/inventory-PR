@@ -1,7 +1,8 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-1";
+const CACHE_NAME = "packrat-inventory-v5-runtime-2";
 const APP_PATHS = [
   "./",
   "./index.html",
+  "./ocr-priority-patch.js",
   "./vendor/xlsx.bundle.js",
   "./vendor/tesseract.min.js",
   "./vendor/tesseract-worker.min.js",
@@ -14,6 +15,34 @@ const APP_PATHS = [
 const APP_FILES = APP_PATHS.map(path => new URL(path, self.location.href).href);
 const INDEX_URL = new URL("./index.html", self.location.href).href;
 const ROOT_URL = new URL("./", self.location.href).href;
+const OCR_PATCH_TAG = '<script src="./ocr-priority-patch.js"></script>';
+
+async function injectOcrPriorityPatch(response) {
+  if (!response) return response;
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("text/html")) return response;
+
+  const html = await response.text();
+  if (html.includes("ocr-priority-patch.js")) {
+    return new Response(html, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  }
+
+  const patchedHtml = html.includes("</body>")
+    ? html.replace("</body>", OCR_PATCH_TAG + "\n</body>")
+    : html + OCR_PATCH_TAG;
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  return new Response(patchedHtml, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -44,9 +73,10 @@ self.addEventListener("fetch", event => {
         const response = await fetch(event.request);
         const cache = await caches.open(CACHE_NAME);
         cache.put(INDEX_URL, response.clone());
-        return response;
+        return injectOcrPriorityPatch(response);
       } catch {
-        return (await caches.match(INDEX_URL)) || (await caches.match(ROOT_URL));
+        const cachedResponse = (await caches.match(INDEX_URL)) || (await caches.match(ROOT_URL));
+        return injectOcrPriorityPatch(cachedResponse);
       }
     })());
     return;
