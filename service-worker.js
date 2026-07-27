@@ -1,9 +1,9 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-47";
+const CACHE_NAME = "packrat-inventory-v5-runtime-48";
 const APP_PATHS = [
   "./",
   "./index.html",
-  "./ocr-priority-patch.js?v=47",
-  "./ocr-hard-rules.js?v=47",
+  "./ocr-priority-patch.js?v=48",
+  "./ocr-hard-rules.js?v=48",
   "./vendor/xlsx.bundle.js",
   "./vendor/tesseract.min.js",
   "./vendor/tesseract-worker.min.js",
@@ -60,7 +60,7 @@ self.addEventListener("fetch", event => {
     const response = await fetch(event.request);
     if (response.ok) {
       const cache = await caches.open(CACHE_NAME);
-      cache.put(event.request, response.clone());
+      await cache.put(event.request, response.clone());
     }
     return response;
   })());

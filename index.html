@@ -3064,8 +3064,41 @@
     function currentSignature() {
       return JSON.stringify({
         session: sessionNameInput.value.trim(),
-        active: entries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.timestamp, item.editedAt || ""]),
-        deleted: deletedEntries.map(item => [item.sequence, item.code, item.size, item.condition, item.status, item.initials || "", item.notes || "", item.deletedAt || "", item.deleteType || ""])
+        initials: employeeInitialsInput.value.trim(),
+        occupied: [
+          occupiedMaster.fileName || "",
+          occupiedMaster.importedAt || "",
+          occupiedExpectedItems().map(item => [item.code, item.type || ""]),
+          Array.isArray(occupiedMaster.rawRows) ? occupiedMaster.rawRows.length : 0
+        ],
+        active: entries.map(item => [
+          item.sequence,
+          item.code,
+          item.size,
+          item.condition,
+          item.status,
+          item.initials || "",
+          item.notes || "",
+          item.timestamp,
+          item.editedAt || "",
+          item.photoTakenAt || "",
+          (item.photoDataUrl || "").length,
+          (item.photoThumbDataUrl || "").length
+        ]),
+        deleted: deletedEntries.map(item => [
+          item.sequence,
+          item.code,
+          item.size,
+          item.condition,
+          item.status,
+          item.initials || "",
+          item.notes || "",
+          item.deletedAt || "",
+          item.deleteType || "",
+          item.photoTakenAt || "",
+          (item.photoDataUrl || "").length,
+          (item.photoThumbDataUrl || "").length
+        ])
       });
     }
 
@@ -4772,6 +4805,10 @@
 
     async function importOccupiedList(file) {
       if (!file) return;
+      if (requireUnlocked("replace the uploaded document")) {
+        occupiedFileInput.value = "";
+        return;
+      }
       try {
         if (typeof XLSX === "undefined" && file.name.toLowerCase().endsWith(".xlsx")) {
           throw new Error("XLSX library is not loaded. Check internet connection, then reopen the app.");
@@ -4823,6 +4860,7 @@
     }
 
     function clearOccupiedList() {
+      if (requireUnlocked("remove the uploaded document")) return;
       if (!occupiedMaster.codes.length) {
         setStatus("No uploaded document is loaded.", "info");
         input.focus();
@@ -4993,15 +5031,29 @@
     }
 
     async function supabaseRequest(settings, path, options) {
-      const response = await fetch(settings.url + "/rest/v1/" + path, {
-        ...options,
-        headers: {
-          apikey: settings.anonKey,
-          Authorization: "Bearer " + settings.anonKey,
-          "Content-Type": "application/json",
-          ...(options && options.headers ? options.headers : {})
+      const requestOptions = options || {};
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      let response;
+      try {
+        response = await fetch(settings.url + "/rest/v1/" + path, {
+          ...requestOptions,
+          signal: controller.signal,
+          headers: {
+            apikey: settings.anonKey,
+            Authorization: "Bearer " + settings.anonKey,
+            "Content-Type": "application/json",
+            ...(requestOptions.headers || {})
+          }
+        });
+      } catch (error) {
+        if (error && error.name === "AbortError") {
+          throw new Error("Cloud request timed out after 30 seconds");
         }
-      });
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const text = await response.text();
       let data = null;
@@ -6230,7 +6282,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=47"></script>
-<script src="./ocr-hard-rules.js?v=47"></script>
+<script src="./ocr-priority-patch.js?v=48"></script>
+<script src="./ocr-hard-rules.js?v=48"></script>
 </body>
 </html>
