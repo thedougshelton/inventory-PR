@@ -1805,11 +1805,10 @@
     const CLOUD_URL_KEY = "warehouse_inventory_cloud_url_v1";
     const CLOUD_ANON_KEY = "warehouse_inventory_cloud_anon_key_v1";
     const CLOUD_SYNC_NAME_KEY = "warehouse_inventory_cloud_sync_name_v1";
-    const CLOUD_TABLE = "inventory_pr_cloud";
+    const CLOUD_FUNCTION = "inventory-cloud";
     const DEFAULT_CLOUD_URL = "https://yxrqclpcggymogksaksx.supabase.co";
     const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
     const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
-    const CLOUD_SAVE_PIN = "6159";
     const PHOTO_STORAGE_SOFT_LIMIT_CHARS = 3000000;
     const CLOUD_PRESET_KEY = "warehouse_inventory_cloud_preset_v1";
     const CLOUD_PRESETS = {
@@ -4920,21 +4919,20 @@
       loadCloudCombinedBtn.textContent = loadText;
     }
 
-    function requireCloudSavePin(actionText) {
+    function requestCloudPin(actionText) {
       const entered = prompt("ENTER CLOUD SAVE PIN TO " + normalizeUpperText(actionText) + ":");
       if (entered === null) {
-        setCloudStatus("Cloud save canceled. Nothing was changed in the cloud.", "info");
+        setCloudStatus("Cloud action canceled. Nothing was changed.", "info");
         input.focus();
-        return false;
+        return "";
       }
-
-      if (String(entered).trim() !== CLOUD_SAVE_PIN) {
-        setCloudStatus("Incorrect cloud save PIN. Nothing was changed in the cloud.", "error");
+      const pin = String(entered).trim();
+      if (!/^\d{8,20}$/.test(pin)) {
+        setCloudStatus("Cloud PIN must be 8 to 20 numbers.", "error");
         input.focus();
-        return false;
+        return "";
       }
-
-      return true;
+      return pin;
     }
 
     function cloudSettings() {
@@ -5030,21 +5028,19 @@
       input.focus();
     }
 
-    async function supabaseRequest(settings, path, options) {
-      const requestOptions = options || {};
+    async function cloudFunctionRequest(settings, pin, body) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       let response;
       try {
-        response = await fetch(settings.url + "/rest/v1/" + path, {
-          ...requestOptions,
+        response = await fetch(settings.url + "/functions/v1/" + CLOUD_FUNCTION, {
+          method: "POST",
           signal: controller.signal,
           headers: {
             apikey: settings.anonKey,
-            Authorization: "Bearer " + settings.anonKey,
-            "Content-Type": "application/json",
-            ...(requestOptions.headers || {})
-          }
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ...body, pin })
         });
       } catch (error) {
         if (error && error.name === "AbortError") {
@@ -5066,7 +5062,7 @@
       }
 
       if (!response.ok) {
-        const detail = data && data.message ? data.message : text || response.statusText;
+        const detail = data && (data.error || data.message) ? data.error || data.message : text || response.statusText;
         throw new Error(detail);
       }
 
@@ -5079,7 +5075,8 @@
         return false;
       }
 
-      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return false;
+      const pin = options.pin || requestCloudPin("save to cloud");
+      if (!pin) return false;
 
       const settings = requireCloudSettings();
       if (!settings) return false;
@@ -5103,11 +5100,7 @@
       uploadCloudBtn.disabled = true;
       setCloudStatus("Saving uploaded document to cloud...", "info");
       try {
-        await supabaseRequest(settings, CLOUD_TABLE + "?on_conflict=sync_key", {
-          method: "POST",
-          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-          body: JSON.stringify(record)
-        });
+        await cloudFunctionRequest(settings, pin, { action: "save", record });
         setCloudStatus("Uploaded document saved to cloud: " + settings.syncName + ".", "success");
         setStatus("Uploaded document saved to cloud.", "success");
         return true;
@@ -5121,6 +5114,8 @@
     }
 
     async function loadOccupiedListFromCloud() {
+      const pin = requestCloudPin("load from cloud");
+      if (!pin) return false;
       const settings = requireCloudSettings();
       if (!settings) return false;
       saveCloudSettings();
@@ -5128,11 +5123,8 @@
       loadCloudBtn.disabled = true;
       setCloudStatus("Loading uploaded document from cloud...", "info");
       try {
-        const rows = await supabaseRequest(
-          settings,
-          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
-          { method: "GET" }
-        );
+        const result = await cloudFunctionRequest(settings, pin, { action: "load", syncKeys: [settings.syncName] });
+        const rows = result && Array.isArray(result.rows) ? result.rows : [];
         const row = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!row || !row.payload || !row.payload.occupiedMaster) {
           setCloudStatus("No uploaded document found in cloud for " + settings.syncName + ".", "warning");
@@ -5169,7 +5161,8 @@
         return false;
       }
 
-      if (!options.skipPin && !requireCloudSavePin("save to cloud")) return false;
+      const pin = options.pin || requestCloudPin("save to cloud");
+      if (!pin) return false;
 
       const settings = requireCloudSettings();
       if (!settings) return false;
@@ -5197,11 +5190,7 @@
       saveFullAuditCloudBtn.disabled = true;
       setCloudStatus("Saving full audit to cloud...", "info");
       try {
-        await supabaseRequest(settings, CLOUD_TABLE + "?on_conflict=sync_key", {
-          method: "POST",
-          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-          body: JSON.stringify(record)
-        });
+        await cloudFunctionRequest(settings, pin, { action: "save", record });
         setCloudStatus("Full audit saved to cloud: " + syncName + ". Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ". Save size: " + payloadKb + " KB.", "success");
         setStatus("Full audit saved to cloud. Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ".", "success");
         return true;
@@ -5215,6 +5204,8 @@
     }
 
     async function loadFullAuditFromCloud() {
+      const pin = requestCloudPin("load from cloud");
+      if (!pin) return false;
       const settings = requireCloudSettings();
       if (!settings) return false;
       saveCloudSettings();
@@ -5236,11 +5227,8 @@
       loadFullAuditCloudBtn.disabled = true;
       setCloudStatus("Loading full audit from cloud...", "info");
       try {
-        const rows = await supabaseRequest(
-          settings,
-          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(syncName) + "&select=payload,updated_at,updated_by&limit=1",
-          { method: "GET" }
-        );
+        const result = await cloudFunctionRequest(settings, pin, { action: "load", syncKeys: [syncName] });
+        const rows = result && Array.isArray(result.rows) ? result.rows : [];
         const row = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (!row || !row.payload) {
           setCloudStatus("No full audit cloud backup found for " + syncName + ".", "warning");
@@ -5277,12 +5265,13 @@
         return;
       }
 
-      if (!requireCloudSavePin("save to cloud")) return;
+      const pin = requestCloudPin("save to cloud");
+      if (!pin) return;
 
       saveCloudBtn.disabled = true;
       saveCloudEntryModeBtn.disabled = true;
       try {
-        const auditSaved = await saveFullAuditToCloud({ skipPin: true });
+        const auditSaved = await saveFullAuditToCloud({ pin });
         if (!auditSaved) return;
         if (!markCloudSaved()) return;
         render();
@@ -5300,6 +5289,8 @@
     }
 
     async function loadAllFromCloud() {
+      const pin = requestCloudPin("load from cloud");
+      if (!pin) return;
       const settings = requireCloudSettings();
       if (!settings) return;
       saveCloudSettings();
@@ -5309,11 +5300,12 @@
 
       try {
         const fullSyncName = fullAuditCloudSyncName(settings);
-        const fullRows = await supabaseRequest(
-          settings,
-          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(fullSyncName) + "&select=payload,updated_at,updated_by&limit=1",
-          { method: "GET" }
-        );
+        const result = await cloudFunctionRequest(settings, pin, {
+          action: "load",
+          syncKeys: [fullSyncName, settings.syncName]
+        });
+        const allRows = result && Array.isArray(result.rows) ? result.rows : [];
+        const fullRows = allRows.filter(row => row.sync_key === fullSyncName);
         const fullRow = Array.isArray(fullRows) && fullRows.length ? fullRows[0] : null;
         if (fullRow && fullRow.payload) {
           const ok = confirm(cloudLoadPreviewText(settings, null, fullRow));
@@ -5336,11 +5328,7 @@
           return;
         }
 
-        const monthlyRows = await supabaseRequest(
-          settings,
-          CLOUD_TABLE + "?sync_key=eq." + encodeURIComponent(settings.syncName) + "&select=payload,updated_at,updated_by&limit=1",
-          { method: "GET" }
-        );
+        const monthlyRows = allRows.filter(row => row.sync_key === settings.syncName);
         const monthlyRow = Array.isArray(monthlyRows) && monthlyRows.length ? monthlyRows[0] : null;
         if (!monthlyRow || !monthlyRow.payload || !monthlyRow.payload.occupiedMaster) {
           setCloudStatus("No cloud data found for this audit.", "warning");
@@ -6282,7 +6270,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=48"></script>
-<script src="./ocr-hard-rules.js?v=48"></script>
+<script src="./ocr-priority-patch.js?v=49"></script>
+<script src="./ocr-hard-rules.js?v=49"></script>
 </body>
 </html>
