@@ -4927,8 +4927,8 @@
         return "";
       }
       const pin = String(entered).trim();
-      if (!/^\d{8,20}$/.test(pin)) {
-        setCloudStatus("Cloud PIN must be 8 to 20 numbers.", "error");
+      if (!/^\d{4}$/.test(pin)) {
+        setCloudStatus("Cloud PIN must be exactly 4 numbers.", "error");
         input.focus();
         return "";
       }
@@ -6270,7 +6270,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=49"></script>
-<script src="./ocr-hard-rules.js?v=49"></script>
+<script src="./ocr-priority-patch.js?v=50"></script>
+<script src="./ocr-hard-rules.js?v=50"></script>
 </body>
 </html>

@@ -70,7 +70,7 @@ Deno.serve(async request => {
     const body = await request.json();
     const pin = String(body.pin || "").trim();
     const action = String(body.action || "").toLowerCase();
-    if (!/^\d{8,20}$/.test(pin)) return jsonResponse(origin, 401, { error: "Incorrect cloud PIN." });
+    if (!/^\d{4}$/.test(pin)) return jsonResponse(origin, 401, { error: "Incorrect cloud PIN." });
 
     const forwarded = request.headers.get("x-forwarded-for") || request.headers.get("cf-connecting-ip") || "unknown";
     const clientKey = await sha256("inventory-pr:" + forwarded.split(",")[0].trim());
