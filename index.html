@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=52"></script>
+  <script src="./xlsx-photo-embed.js?v=53"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -2429,6 +2429,12 @@
     }
 
     const IGNORED_UPLOADED_UNIT_CODES = new Set([
+      "000008",
+      "000012",
+      "000016",
+      "DDRESS",
+      "LINEBA",
+      "SSITEA",
       "SSITEN",
       "SITEID",
       "UNITID",
@@ -2612,7 +2618,7 @@
 
     function cloudUploadedCount(row) {
       const master = row && row.payload ? row.payload.occupiedMaster : null;
-      return master && Array.isArray(master.codes) ? master.codes.length : 0;
+      return master ? cleanOccupiedMaster(master).codes.length : 0;
     }
 
     function cloudLoadPreviewText(settings, monthlyRow, fullRow) {
@@ -5532,7 +5538,7 @@
       employeeInitialsInput.value = normalizeInitials(data.employeeInitials || "");
 
       if (data.occupiedMaster) {
-        occupiedMaster = data.occupiedMaster;
+        occupiedMaster = cleanOccupiedMaster(data.occupiedMaster);
       }
 
       const saveOk = saveEntries(selectedCloudPresetKey(), { includeOccupiedMaster: Boolean(data.occupiedMaster) });
@@ -5572,7 +5578,7 @@
 
     function buildImportPreview(data, file) {
       if (data.transferType === "monthlyOccupiedSetup") {
-        const occupiedCount = data.occupiedMaster && Array.isArray(data.occupiedMaster.codes) ? data.occupiedMaster.codes.length : 0;
+        const occupiedCount = data.occupiedMaster ? cleanOccupiedMaster(data.occupiedMaster).codes.length : 0;
         return {
           fileName: file ? file.name : "Selected file",
           fileSize: file ? file.size : 0,
@@ -6331,7 +6337,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=52"></script>
-<script src="./ocr-hard-rules.js?v=52"></script>
+<script src="./ocr-priority-patch.js?v=53"></script>
+<script src="./ocr-hard-rules.js?v=53"></script>
 </body>
 </html>
