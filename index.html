@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=53"></script>
+  <script src="./xlsx-photo-embed.js?v=54"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -4059,7 +4059,7 @@
       ].filter(item => item.photoDataUrl);
 
       ws["!cols"] = [
-        { wch: 18 },
+        { wch: 42 },
         { wch: 12 },
         { wch: 18 },
         { wch: 10 },
@@ -4073,7 +4073,7 @@
       ];
 
       if (!photoItems.length) return;
-      ws["!rows"] = [{ hpt: 22 }, ...photoItems.map(() => ({ hpt: 58 }))];
+      ws["!rows"] = [{ hpt: 22 }, ...photoItems.map(() => ({ hpt: 170 }))];
 
       photoItems.forEach((item, index) => {
         const rowNumber = index + 2;
@@ -4088,10 +4088,10 @@
         ...entries.map(item => ({ ...item, source: "ACTIVE" })),
         ...deletedEntries.map(item => ({ ...item, source: "DELETED" }))
       ].filter(item => item.photoDataUrl).map((item, index) => ({
-        dataUrl: item.photoThumbDataUrl || item.photoDataUrl || "",
+        dataUrl: item.photoDataUrl || item.photoThumbDataUrl || "",
         rowIndex: index + 1,
-        widthPx: 96,
-        heightPx: 72,
+        widthPx: 288,
+        heightPx: 216,
         name: "INVENTORY PHOTO " + (item.code || index + 1),
         description: (item.source || "") + " ENTRY #" + (item.sequence || "") + " " + (item.code || "")
       }));
@@ -6337,7 +6337,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=53"></script>
-<script src="./ocr-hard-rules.js?v=53"></script>
+<script src="./ocr-priority-patch.js?v=54"></script>
+<script src="./ocr-hard-rules.js?v=54"></script>
 </body>
 </html>
