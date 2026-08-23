@@ -1,10 +1,10 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-51";
+const CACHE_NAME = "packrat-inventory-v5-runtime-52";
 const APP_PATHS = [
   "./",
   "./index.html",
-  "./ocr-priority-patch.js?v=51",
-  "./ocr-hard-rules.js?v=51",
-  "./xlsx-photo-embed.js?v=51",
+  "./ocr-priority-patch.js?v=52",
+  "./ocr-hard-rules.js?v=52",
+  "./xlsx-photo-embed.js?v=52",
   "./vendor/xlsx.bundle.js",
   "./vendor/jszip.min.js",
   "./vendor/tesseract.min.js",

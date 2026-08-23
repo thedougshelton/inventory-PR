@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=51"></script>
+  <script src="./xlsx-photo-embed.js?v=52"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -4229,6 +4229,36 @@
       ];
     }
 
+    function styleFinalReportSheet(ws, rows) {
+      // SheetJS character widths need this adjustment to match Excel's displayed Column Width value.
+      const excelWidth = width => ({ wch: width - 0.18 });
+      ws["!cols"] = [
+        excelWidth(40),
+        excelWidth(25),
+        excelWidth(10),
+        excelWidth(10),
+        excelWidth(10),
+        excelWidth(10)
+      ];
+
+      const centeredWrappedStyle = {
+        alignment: {
+          horizontal: "center",
+          vertical: "center",
+          wrapText: true
+        }
+      };
+      rows.forEach((row, index) => {
+        styleWorksheetRow(ws, index + 1, 6, centeredWrappedStyle);
+      });
+
+      if (ws["!ref"]) {
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+        range.e.c = Math.max(range.e.c, 5);
+        ws["!ref"] = XLSX.utils.encode_range(range);
+      }
+    }
+
     function expectedUnitsNotScannedRows() {
       const comparison = occupiedComparison();
       const rows = [
@@ -4323,7 +4353,9 @@
       styleAuditComparisonCombinedSheet(auditSheet, auditRows);
       XLSX.utils.book_append_sheet(wb, auditSheet, "Audit Comparison");
 
-      const reportSheet = XLSX.utils.aoa_to_sheet(finalReportSummaryRows());
+      const reportRows = finalReportSummaryRows();
+      const reportSheet = XLSX.utils.aoa_to_sheet(reportRows);
+      styleFinalReportSheet(reportSheet, reportRows);
       XLSX.utils.book_append_sheet(wb, reportSheet, "Final Report");
 
       const activeRows = activeArray();
@@ -6299,7 +6331,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=51"></script>
-<script src="./ocr-hard-rules.js?v=51"></script>
+<script src="./ocr-priority-patch.js?v=52"></script>
+<script src="./ocr-hard-rules.js?v=52"></script>
 </body>
 </html>
