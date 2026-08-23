@@ -9,6 +9,8 @@
   <meta name="theme-color" content="#0f172a" />
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
+  <script src="./vendor/jszip.min.js"></script>
+  <script src="./xlsx-photo-embed.js?v=51"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -4044,10 +4046,6 @@
       return rows;
     }
 
-    function excelString(value) {
-      return String(value || "").replace(/"/g, '""');
-    }
-
     function stylePicturesSheet(ws) {
       const photoItems = [
         ...entries.map(item => ({ ...item, source: "ACTIVE" })),
@@ -4074,18 +4072,23 @@
       photoItems.forEach((item, index) => {
         const rowNumber = index + 2;
         const previewRef = XLSX.utils.encode_cell({ r: rowNumber - 1, c: 0 });
-        const thumb = item.photoThumbDataUrl || item.photoDataUrl || "";
-        if (photoSizeKb(thumb) <= 8) {
-          ws[previewRef] = {
-            t: "s",
-            f: 'IMAGE("' + excelString(thumb) + '","' + excelString(item.code || "UNIT PHOTO") + '",0,54,72)',
-            v: "PHOTO PREVIEW"
-          };
-        } else {
-          ws[previewRef] = { t: "s", v: "PREVIEW TOO LARGE" };
-        }
+        ws[previewRef] = { t: "s", v: "" };
         styleWorksheetRow(ws, rowNumber, 11, conditionCellStyle(item.condition));
       });
+    }
+
+    function pictureExportItems() {
+      return [
+        ...entries.map(item => ({ ...item, source: "ACTIVE" })),
+        ...deletedEntries.map(item => ({ ...item, source: "DELETED" }))
+      ].filter(item => item.photoDataUrl).map((item, index) => ({
+        dataUrl: item.photoThumbDataUrl || item.photoDataUrl || "",
+        rowIndex: index + 1,
+        widthPx: 96,
+        heightPx: 72,
+        name: "INVENTORY PHOTO " + (item.code || index + 1),
+        description: (item.source || "") + " ENTRY #" + (item.sequence || "") + " " + (item.code || "")
+      }));
     }
 
     function activeCsvRows() {
@@ -4301,7 +4304,7 @@
       });
     }
 
-    function exportXlsx(finalLock) {
+    async function exportXlsx(finalLock) {
       if (!entries.length && !deletedEntries.length) {
         setStatus("No entries to export yet.", "warning");
         input.focus();
@@ -4359,12 +4362,35 @@
 
       const filename = safeFilePart(sessionNameInput.value) + (finalLock ? "_FINAL_" : "_inventory_") + dateStamp() + ".xlsx";
 
+      let embeddedPhotoCount = 0;
+      const originalButtonText = finalExportBtn.textContent;
+      finalExportBtn.disabled = true;
+      finalExportBtn.textContent = "PREPARING EXCEL...";
+
       try {
-        XLSX.writeFile(wb, filename);
+        const photos = pictureExportItems();
+        if (photos.length) {
+          if (typeof JSZip === "undefined" || !window.InventoryXlsxPhotos) {
+            throw new Error("Photo export library did not load.");
+          }
+          const workbookBytes = XLSX.write(wb, { bookType: "xlsx", type: "array", compression: true });
+          const photoResult = await window.InventoryXlsxPhotos.embedPictures(workbookBytes, "Pictures", photos);
+          if (photoResult.skippedCount) {
+            throw new Error(photoResult.skippedCount + " photo records could not be embedded.");
+          }
+          embeddedPhotoCount = photoResult.embeddedCount;
+          downloadBlob(photoResult.bytes, filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        } else {
+          XLSX.writeFile(wb, filename);
+        }
       } catch (error) {
+        console.error("XLSX export failed", error);
         setStatus("XLSX export failed. Editing was not locked. Save to cloud, then reopen the app and export again.", "error");
         input.focus();
         return;
+      } finally {
+        finalExportBtn.disabled = false;
+        finalExportBtn.textContent = originalButtonText;
       }
 
       let lockSaved = true;
@@ -4374,15 +4400,18 @@
 
       const saveOk = saveEntries();
       render();
+      const photoSummary = embeddedPhotoCount
+        ? " with " + embeddedPhotoCount + " embedded " + (embeddedPhotoCount === 1 ? "picture" : "pictures")
+        : "";
 
       setStatus(
         !saveOk
           ? "XLSX exported, but the latest save could not be stored on this device. Save to cloud now before continuing."
           : finalLock && lockSaved
-          ? "Final XLSX exported and editing is now locked: " + filename + "."
+          ? "Final XLSX exported" + photoSummary + " and editing is now locked: " + filename + "."
           : finalLock
           ? "Final XLSX exported, but the lock could not be saved on this device. Save to cloud now before continuing."
-          : "XLSX exported: " + filename + ".",
+          : "XLSX exported" + photoSummary + ": " + filename + ".",
         !saveOk || (finalLock && !lockSaved) ? "warning" : "success"
       );
       input.focus();
@@ -6270,7 +6299,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=50"></script>
-<script src="./ocr-hard-rules.js?v=50"></script>
+<script src="./ocr-priority-patch.js?v=51"></script>
+<script src="./ocr-hard-rules.js?v=51"></script>
 </body>
 </html>
