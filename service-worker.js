@@ -1,10 +1,10 @@
-const CACHE_NAME = "packrat-inventory-v5-runtime-56";
+const CACHE_NAME = "packrat-inventory-v5-runtime-57";
 const APP_PATHS = [
   "./",
   "./index.html",
-  "./ocr-priority-patch.js?v=56",
-  "./ocr-hard-rules.js?v=56",
-  "./xlsx-photo-embed.js?v=56",
+  "./ocr-priority-patch.js?v=57",
+  "./ocr-hard-rules.js?v=57",
+  "./xlsx-photo-embed.js?v=57",
   "./vendor/xlsx.bundle.js",
   "./vendor/jszip.min.js",
   "./vendor/tesseract.min.js",
@@ -23,8 +23,11 @@ self.addEventListener("install", event => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
     await cache.addAll(APP_FILES.map(url => new Request(url, { cache: "reload" })));
-    await self.skipWaiting();
   })());
+});
+
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "APPLY_UPDATE") self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {

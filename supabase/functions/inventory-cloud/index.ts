@@ -7,7 +7,12 @@ const ALLOWED_SYNC_KEYS = new Set([
   "TAMPA_VACANT_UNIT_AUDIT",
   "TAMPA_VACANT_UNIT_AUDIT_FULL_AUDIT",
 ]);
+const FULL_AUDIT_KEYS = new Set([
+  "TAMPA_MONTHLY_AUDIT_FULL_AUDIT",
+  "TAMPA_VACANT_UNIT_AUDIT_FULL_AUDIT",
+]);
 const MAX_PAYLOAD_BYTES = 4_750_000;
+const MAX_HISTORY_VERSIONS = 5;
 const MAX_FAILURES = 5;
 const FAILURE_WINDOW_MS = 30 * 60 * 1000;
 const BLOCK_MS = 15 * 60 * 1000;
@@ -54,6 +59,19 @@ function timingSafeEqual(left: string, right: string): boolean {
     difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
   return difference === 0;
+}
+
+function revisionPrefix(syncKey: string): string {
+  return syncKey + "_REV_";
+}
+
+function revisionKey(syncKey: string, updatedAt: string): string {
+  const stamp = updatedAt.replace(/\D/g, "").slice(0, 17) || String(Date.now());
+  return revisionPrefix(syncKey) + stamp;
+}
+
+function isAllowedRevision(syncKey: string, candidate: string): boolean {
+  return FULL_AUDIT_KEYS.has(syncKey) && candidate.startsWith(revisionPrefix(syncKey)) && /^[A-Z0-9_]+$/.test(candidate);
 }
 
 Deno.serve(async request => {
@@ -122,14 +140,99 @@ Deno.serve(async request => {
       const payloadBytes = new TextEncoder().encode(JSON.stringify(record.payload)).length;
       if (payloadBytes > MAX_PAYLOAD_BYTES) return jsonResponse(origin, 413, { error: "Audit is too large for cloud save." });
 
-      const { data, error } = await supabase.from("inventory_pr_secure_cloud").upsert({
-        sync_key: syncKey,
-        payload: record.payload,
-        updated_at: now.toISOString(),
-        updated_by: String(record.updated_by || "").toUpperCase().slice(0, 64),
-      }, { onConflict: "sync_key" }).select("sync_key,updated_at,updated_by").single();
-      if (error) throw error;
-      return jsonResponse(origin, 200, { row: data });
+      const updatedAt = now.toISOString();
+      const updatedBy = String(record.updated_by || "").toUpperCase().slice(0, 64);
+      const isFullAudit = FULL_AUDIT_KEYS.has(syncKey);
+      const expectedUpdatedAt = String(body.expectedUpdatedAt || "");
+      const force = body.force === true;
+      const { data: current, error: currentError } = await supabase
+        .from("inventory_pr_secure_cloud")
+        .select("sync_key,payload,updated_at,updated_by")
+        .eq("sync_key", syncKey)
+        .maybeSingle();
+      if (currentError) throw currentError;
+
+      if (isFullAudit && current && !force && (!expectedUpdatedAt || expectedUpdatedAt !== current.updated_at)) {
+        return jsonResponse(origin, 409, {
+          error: "A newer cloud version exists. Load it first or explicitly overwrite it.",
+          code: "CLOUD_CONFLICT",
+          current: { sync_key: current.sync_key, updated_at: current.updated_at, updated_by: current.updated_by },
+        });
+      }
+
+      if (isFullAudit && current) {
+        const { error: historyError } = await supabase.from("inventory_pr_secure_cloud").upsert({
+          sync_key: revisionKey(syncKey, current.updated_at),
+          payload: current.payload,
+          updated_at: current.updated_at,
+          updated_by: current.updated_by || "",
+        }, { onConflict: "sync_key" });
+        if (historyError) throw historyError;
+      }
+
+      let savedRow = null;
+      if (current) {
+        let updateQuery = supabase.from("inventory_pr_secure_cloud").update({
+          payload: record.payload,
+          updated_at: updatedAt,
+          updated_by: updatedBy,
+        }).eq("sync_key", syncKey);
+        if (isFullAudit && !force) updateQuery = updateQuery.eq("updated_at", expectedUpdatedAt);
+        const { data, error } = await updateQuery.select("sync_key,updated_at,updated_by").maybeSingle();
+        if (error) throw error;
+        if (!data) {
+          const { data: newest } = await supabase
+            .from("inventory_pr_secure_cloud")
+            .select("sync_key,updated_at,updated_by")
+            .eq("sync_key", syncKey)
+            .maybeSingle();
+          return jsonResponse(origin, 409, {
+            error: "The cloud audit changed during this save. Load it first or explicitly overwrite it.",
+            code: "CLOUD_CONFLICT",
+            current: newest || null,
+          });
+        }
+        savedRow = data;
+      } else {
+        const { data, error } = await supabase.from("inventory_pr_secure_cloud").insert({
+          sync_key: syncKey,
+          payload: record.payload,
+          updated_at: updatedAt,
+          updated_by: updatedBy,
+        }).select("sync_key,updated_at,updated_by").single();
+        if (error) {
+          if (error.code === "23505") {
+            const { data: newest } = await supabase
+              .from("inventory_pr_secure_cloud")
+              .select("sync_key,updated_at,updated_by")
+              .eq("sync_key", syncKey)
+              .maybeSingle();
+            return jsonResponse(origin, 409, {
+              error: "The cloud audit was created by another device. Load it first or explicitly overwrite it.",
+              code: "CLOUD_CONFLICT",
+              current: newest || null,
+            });
+          }
+          throw error;
+        }
+        savedRow = data;
+      }
+
+      if (isFullAudit) {
+        const { data: revisions, error: revisionsError } = await supabase
+          .from("inventory_pr_secure_cloud")
+          .select("sync_key,updated_at")
+          .like("sync_key", revisionPrefix(syncKey) + "%")
+          .order("updated_at", { ascending: false });
+        if (revisionsError) throw revisionsError;
+        const removeKeys = (revisions || []).slice(MAX_HISTORY_VERSIONS).map(row => row.sync_key);
+        if (removeKeys.length) {
+          const { error: pruneError } = await supabase.from("inventory_pr_secure_cloud").delete().in("sync_key", removeKeys);
+          if (pruneError) throw pruneError;
+        }
+      }
+
+      return jsonResponse(origin, 200, { row: savedRow });
     }
 
     if (action === "load") {
@@ -142,6 +245,47 @@ Deno.serve(async request => {
         .in("sync_key", syncKeys);
       if (error) throw error;
       return jsonResponse(origin, 200, { rows: data || [] });
+    }
+
+    if (action === "history") {
+      const syncKey = String(body.syncKey || "");
+      if (!FULL_AUDIT_KEYS.has(syncKey)) return jsonResponse(origin, 400, { error: "Invalid audit cloud slot." });
+      const { data: current, error: currentError } = await supabase
+        .from("inventory_pr_secure_cloud")
+        .select("sync_key,updated_at,updated_by")
+        .eq("sync_key", syncKey)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      const { data: revisions, error: revisionsError } = await supabase
+        .from("inventory_pr_secure_cloud")
+        .select("sync_key,updated_at,updated_by")
+        .like("sync_key", revisionPrefix(syncKey) + "%")
+        .order("updated_at", { ascending: false })
+        .limit(MAX_HISTORY_VERSIONS);
+      if (revisionsError) throw revisionsError;
+      return jsonResponse(origin, 200, { current: current || null, revisions: revisions || [] });
+    }
+
+    if (action === "load_revision") {
+      const syncKey = String(body.syncKey || "");
+      const requestedRevision = String(body.revisionKey || "");
+      if (!isAllowedRevision(syncKey, requestedRevision)) {
+        return jsonResponse(origin, 400, { error: "Invalid cloud history version." });
+      }
+      const { data: row, error: revisionError } = await supabase
+        .from("inventory_pr_secure_cloud")
+        .select("sync_key,payload,updated_at,updated_by")
+        .eq("sync_key", requestedRevision)
+        .maybeSingle();
+      if (revisionError) throw revisionError;
+      if (!row) return jsonResponse(origin, 404, { error: "Cloud history version was not found." });
+      const { data: current, error: currentError } = await supabase
+        .from("inventory_pr_secure_cloud")
+        .select("updated_at")
+        .eq("sync_key", syncKey)
+        .maybeSingle();
+      if (currentError) throw currentError;
+      return jsonResponse(origin, 200, { row, currentUpdatedAt: current?.updated_at || "" });
     }
 
     return jsonResponse(origin, 400, { error: "Unknown cloud action." });

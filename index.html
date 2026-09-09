@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=56"></script>
+  <script src="./xlsx-photo-embed.js?v=57"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -579,6 +579,30 @@
       width: 100%;
     }
 
+    .ocr-feature[hidden],
+    .update-banner[hidden] {
+      display: none !important;
+    }
+
+    .update-banner {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid #60a5fa;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-weight: 800;
+    }
+
+    .update-banner button {
+      min-height: 40px;
+      padding: 8px 12px;
+    }
+
     .unit-photo-status {
       min-height: 18px;
       font-size: 13px;
@@ -956,6 +980,45 @@
       border: 1px solid var(--border);
       background: var(--soft);
       border-radius: 8px;
+    }
+
+    .cloud-safety-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .cloud-history {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .cloud-history summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      font-weight: 800;
+    }
+
+    .cloud-history-body {
+      display: grid;
+      gap: 8px;
+      padding: 0 10px 10px;
+    }
+
+    .cloud-history-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .cloud-history-actions button,
+    .cloud-safety-grid button {
+      min-height: 42px;
+      padding: 8px 10px;
+      white-space: normal;
     }
 
     .cloud-preset-label {
@@ -1377,6 +1440,12 @@
       }
 
       .row-actions button { flex: 1; }
+
+      .update-banner,
+      .cloud-safety-grid,
+      .cloud-history-actions {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }
   </style>
 </head>
@@ -1390,6 +1459,11 @@
         <span class="badge">App Updated July 19</span>
       </div>
     </header>
+
+    <div id="updateBanner" class="update-banner" role="status" hidden>
+      <span>NEW APP VERSION READY. SAVED AUDIT DATA WILL STAY ON THIS DEVICE.</span>
+      <button id="applyUpdateBtn" type="button">Apply Update</button>
+    </div>
 
     <section class="card setup-card">
       <div class="session-row">
@@ -1461,6 +1535,24 @@
           <button id="loadCloudCombinedBtn" type="button">Load From Cloud</button>
         </div>
         <div id="cloudSyncStatus" class="status info">CLOUD SYNC IS READY FOR TAMPA.</div>
+        <div id="storageHealth" class="status info">DEVICE STORAGE: CHECKING...</div>
+        <div class="cloud-safety-grid">
+          <button id="restoreLastChangeBtn" type="button">Restore Last Change</button>
+          <div id="localRecoveryStatus" class="status info">NO RECOVERABLE CHANGE SAVED.</div>
+        </div>
+        <details id="cloudHistoryDetails" class="cloud-history">
+          <summary>Cloud Save History</summary>
+          <div class="cloud-history-body">
+            <select id="cloudHistorySelect" aria-label="Cloud save version">
+              <option value="">Refresh history to see saved versions</option>
+            </select>
+            <div class="cloud-history-actions">
+              <button id="refreshCloudHistoryBtn" type="button">Refresh History</button>
+              <button id="loadCloudHistoryBtn" type="button" disabled>Restore Selected Cloud Version</button>
+            </div>
+            <div id="cloudHistoryStatus" class="status info">FIVE PRIOR CLOUD SAVES WILL BE RETAINED.</div>
+          </div>
+        </details>
       </div>
       <div id="occupiedStatus" class="status info"></div>
       <div class="preview-metrics audit-metrics">
@@ -1533,7 +1625,7 @@
         />
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
-      <div class="unit-photo-panel">
+      <div class="unit-photo-panel ocr-feature" hidden>
         <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
@@ -1672,7 +1764,10 @@
             <textarea id="editNotes" autocomplete="off"></textarea>
           </div>
           <div class="actions two full">
+            <button id="editPhotoBtn" type="button">Take/Replace Photo</button>
             <button id="saveEditBtn" class="primary" type="button">Save Edit</button>
+          </div>
+          <div class="actions full">
             <button id="cancelEditBtn" type="button">Cancel Edit</button>
           </div>
         </div>
@@ -1801,6 +1896,8 @@
     const LAST_SAVED_KEY_PREFIX = "warehouse_inventory_last_saved_v2_";
     const LAST_CLOUD_SAVED_KEY_PREFIX = "warehouse_inventory_last_cloud_saved_v1_";
     const CLOUD_SAVE_SIGNATURE_KEY_PREFIX = "warehouse_inventory_cloud_save_signature_v1_";
+    const LAST_CLOUD_REMOTE_UPDATED_KEY_PREFIX = "warehouse_inventory_last_cloud_remote_updated_v1_";
+    const LOCAL_RECOVERY_KEY_PREFIX = "warehouse_inventory_last_change_recovery_v1_";
     const FINAL_EXPORT_SIGNATURE_KEY = "warehouse_inventory_final_export_signature_v1";
     const FINAL_EXPORT_SIGNATURE_KEY_PREFIX = "warehouse_inventory_final_export_signature_v1_";
     const EDIT_LOCKED_KEY = "warehouse_inventory_edit_locked_v1";
@@ -1817,6 +1914,7 @@
     const DEFAULT_CLOUD_PUBLISHABLE_KEY = "sb_publishable_0DGNrasYAczpaQS95MFJcg_GUVLej-Z";
     const DEFAULT_CLOUD_SYNC_NAME = "TAMPA_MONTHLY_AUDIT";
     const PHOTO_STORAGE_SOFT_LIMIT_CHARS = 3000000;
+    const LOCAL_STORAGE_RECOVERY_LIMIT_CHARS = 4500000;
     const CLOUD_PRESET_KEY = "warehouse_inventory_cloud_preset_v1";
     const CLOUD_PRESETS = {
       tampa: {
@@ -1899,6 +1997,16 @@
     const cloudSyncStatus = document.getElementById("cloudSyncStatus");
     const cloudSaveBadge = document.getElementById("cloudSaveBadge");
     const entryModeCloudSaveBadge = document.getElementById("entryModeCloudSaveBadge");
+    const storageHealth = document.getElementById("storageHealth");
+    const restoreLastChangeBtn = document.getElementById("restoreLastChangeBtn");
+    const localRecoveryStatus = document.getElementById("localRecoveryStatus");
+    const cloudHistoryDetails = document.getElementById("cloudHistoryDetails");
+    const cloudHistorySelect = document.getElementById("cloudHistorySelect");
+    const refreshCloudHistoryBtn = document.getElementById("refreshCloudHistoryBtn");
+    const loadCloudHistoryBtn = document.getElementById("loadCloudHistoryBtn");
+    const cloudHistoryStatus = document.getElementById("cloudHistoryStatus");
+    const updateBanner = document.getElementById("updateBanner");
+    const applyUpdateBtn = document.getElementById("applyUpdateBtn");
 
     const editPanel = document.getElementById("editPanel");
     const editTitle = document.getElementById("editTitle");
@@ -1908,6 +2016,7 @@
     const editStatus = document.getElementById("editStatus");
     const editInitials = document.getElementById("editInitials");
     const editNotes = document.getElementById("editNotes");
+    const editPhotoBtn = document.getElementById("editPhotoBtn");
     const saveEditBtn = document.getElementById("saveEditBtn");
     const cancelEditBtn = document.getElementById("cancelEditBtn");
     const deleteConfirmPanel = document.getElementById("deleteConfirmPanel");
@@ -1968,11 +2077,17 @@
     let lastSavedAt = loadLastSavedAt();
     let lastCloudSavedAt = loadLastCloudSavedAt();
     let lastCloudSaveSignature = loadCloudSaveSignature();
+    let lastCloudRemoteUpdatedAt = loadLastCloudRemoteUpdatedAt();
     let finalExportSignature = loadFinalExportSignature();
     let editLocked = loadEditLocked();
     let editingSequence = null;
     let pendingDeleteSequence = null;
     let pendingImport = null;
+    let pendingPhotoTarget = null;
+    let cloudHistoryCurrentUpdatedAt = "";
+    let pendingServiceWorker = null;
+    let updateRequested = false;
+    let storageHealthTimer = null;
     let reportDirty = true;
     let activeEntriesDirty = true;
     let deletedEntriesDirty = true;
@@ -2249,6 +2364,17 @@
 
     function loadCloudSaveSignature(presetKey = selectedCloudPresetKey()) {
       return localStorage.getItem(auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey)) || "";
+    }
+
+    function loadLastCloudRemoteUpdatedAt(presetKey = selectedCloudPresetKey()) {
+      return localStorage.getItem(auditStorageKey(LAST_CLOUD_REMOTE_UPDATED_KEY_PREFIX, presetKey)) || "";
+    }
+
+    function saveCloudRemoteUpdatedAt(value, presetKey = selectedCloudPresetKey()) {
+      const remoteUpdatedAt = String(value || "");
+      const ok = safeSetItem(auditStorageKey(LAST_CLOUD_REMOTE_UPDATED_KEY_PREFIX, presetKey), remoteUpdatedAt);
+      if (ok && presetKey === selectedCloudPresetKey()) lastCloudRemoteUpdatedAt = remoteUpdatedAt;
+      return ok;
     }
 
     function loadFinalExportSignature(presetKey = selectedCloudPresetKey()) {
@@ -2604,7 +2730,7 @@
     }
 
     function auditPhotoCount() {
-      return [...entries, ...deletedEntries].filter(item => item.photoDataUrl).length;
+      return [...entries, ...deletedEntries].filter(item => item.photoDataUrl || item.photoThumbDataUrl).length;
     }
 
     function jsonSizeKb(value) {
@@ -2665,6 +2791,7 @@
     function updateUnitPhotoControls() {
       const latest = latestEntry();
       takeUnitPhotoBtn.disabled = editLocked || !latest;
+      editPhotoBtn.disabled = editLocked || editingSequence === null;
       if (!latest) {
         unitPhotoStatus.textContent = "Save an entry first, then add a compressed unit photo.";
         return;
@@ -3005,47 +3132,69 @@
       return { photoDataUrl, photoThumbDataUrl };
     }
 
-    async function attachPhotoToLatestEntry(file) {
+    function photoTargetEntry(target) {
+      if (!target) return null;
+      const collection = target.listType === "deleted" ? deletedEntries : entries;
+      return collection.find(item => Number(item.sequence) === Number(target.sequence)) || null;
+    }
+
+    function requestPhotoForEntry(sequence, listType = "active") {
+      if (requireUnlocked("add or replace a photo")) return;
+      const target = { sequence: Number(sequence), listType };
+      const item = photoTargetEntry(target);
+      if (!item) {
+        setStatus("Could not find that entry to attach a photo.", "error");
+        return;
+      }
+      pendingPhotoTarget = target;
+      unitPhotoStatus.textContent = "PHOTO WILL ATTACH TO #" + item.sequence + " " + item.code + ".";
+      unitPhotoInput.value = "";
+      unitPhotoInput.click();
+    }
+
+    async function attachPhotoToEntry(file) {
       if (!file) return;
       if (requireUnlocked("add a photo")) return;
 
-      const latest = latestEntry();
-      if (!latest) {
-        setStatus("Save a container entry first, then take a photo.", "warning");
+      const target = pendingPhotoTarget;
+      const item = photoTargetEntry(target);
+      if (!item) {
+        setStatus("The selected photo entry is no longer available. Choose Photo again.", "warning");
         updateUnitPhotoControls();
         return;
       }
 
-      unitPhotoStatus.textContent = "Compressing photo for #" + latest.sequence + " " + latest.code + "...";
+      unitPhotoStatus.textContent = "Compressing photo for #" + item.sequence + " " + item.code + "...";
       takeUnitPhotoBtn.disabled = true;
 
       try {
         const previousPhoto = {
-          photoDataUrl: latest.photoDataUrl || "",
-          photoThumbDataUrl: latest.photoThumbDataUrl || "",
-          photoTakenAt: latest.photoTakenAt || ""
+          photoDataUrl: item.photoDataUrl || "",
+          photoThumbDataUrl: item.photoThumbDataUrl || "",
+          photoTakenAt: item.photoTakenAt || ""
         };
         const { photoDataUrl, photoThumbDataUrl } = await compressUnitPhotoVersions(file);
-        latest.photoDataUrl = photoDataUrl;
-        latest.photoThumbDataUrl = photoThumbDataUrl;
-        latest.photoTakenAt = new Date().toISOString();
+        item.photoDataUrl = photoDataUrl;
+        item.photoThumbDataUrl = photoThumbDataUrl;
+        item.photoTakenAt = new Date().toISOString();
         const projectedPairs = auditStoragePairs(selectedCloudPresetKey(), new Date().toISOString());
         if (projectedLocalStorageChars(projectedPairs) > PHOTO_STORAGE_SOFT_LIMIT_CHARS) {
-          Object.assign(latest, previousPhoto);
+          Object.assign(item, previousPhoto);
           setStatus("Photo was not attached because this device is near its safe storage limit. Save the audit to cloud before adding more photos.", "warning");
           return;
         }
         const saveOk = saveEntries();
-        if (!saveOk) Object.assign(latest, previousPhoto);
+        if (!saveOk) Object.assign(item, previousPhoto);
         setStatus(
           saveOk
-            ? "Compressed photo saved for #" + latest.sequence + " " + latest.code + " (" + photoSizeKb(photoDataUrl) + " KB)."
+            ? "Compressed photo saved for #" + item.sequence + " " + item.code + " (" + photoSizeKb(photoDataUrl) + " KB)."
             : "Photo compressed, but this device could not save it. Save to cloud now.",
           saveOk ? "success" : "warning"
         );
       } catch (error) {
         setStatus("Photo was not saved: " + error.message, "error");
       } finally {
+        pendingPhotoTarget = null;
         unitPhotoInput.value = "";
         render();
         input.focus();
@@ -3166,16 +3315,18 @@
       return cloudSaveSignature() !== lastCloudSaveSignature;
     }
 
-    function markCloudSaved(presetKey = selectedCloudPresetKey()) {
+    function markCloudSaved(presetKey = selectedCloudPresetKey(), remoteUpdatedAt = lastCloudRemoteUpdatedAt) {
       const savedAt = new Date().toISOString();
       const signature = cloudSaveSignature();
       const ok = writeLocalStorageBatch([
         [auditStorageKey(LAST_CLOUD_SAVED_KEY_PREFIX, presetKey), savedAt],
-        [auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey), signature]
+        [auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, presetKey), signature],
+        [auditStorageKey(LAST_CLOUD_REMOTE_UPDATED_KEY_PREFIX, presetKey), String(remoteUpdatedAt || "")]
       ]);
       if (ok) {
         lastCloudSavedAt = savedAt;
         lastCloudSaveSignature = signature;
+        lastCloudRemoteUpdatedAt = String(remoteUpdatedAt || "");
       }
       return ok;
     }
@@ -3484,6 +3635,8 @@
       editStatus.value = item.status || "Built";
       editInitials.value = item.initials || "";
       editNotes.value = item.notes || "";
+      editPhotoBtn.textContent = item.photoDataUrl || item.photoThumbDataUrl ? "Replace Photo" : "Take Photo";
+      editPhotoBtn.disabled = false;
       editPanel.classList.add("open");
       editCode.focus();
       editCode.select();
@@ -3493,6 +3646,7 @@
       editingSequence = null;
       editPanel.classList.remove("open");
       editCode.value = "";
+      editPhotoBtn.textContent = "Take/Replace Photo";
       input.focus();
     }
 
@@ -3600,6 +3754,7 @@
 
       const ok = confirm("This will permanently clear all active and deleted entries from this device. Make sure you saved the final XLSX first.");
       if (!ok) return;
+      if (!saveRecoverySnapshot("BEFORE FINISHED LIST CLEAR")) return;
 
       const snapshot = captureAuditState();
       entries = [];
@@ -4469,7 +4624,7 @@
     function buildFullAuditBackup() {
       return {
         appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
-        appVersion: 4,
+        appVersion: 5,
         exportedAt: new Date().toISOString(),
         sessionName: sessionNameInput.value.trim(),
         employeeInitials: employeeInitialsInput.value.trim(),
@@ -4481,6 +4636,151 @@
         deletedEntries,
         occupiedMaster
       };
+    }
+
+    function recoveryStorageKey(presetKey = selectedCloudPresetKey()) {
+      return auditStorageKey(LOCAL_RECOVERY_KEY_PREFIX, presetKey);
+    }
+
+    function recoveryCopyWithPhotoMode(backup, photoMode) {
+      const copyEntries = items => items.map(item => {
+        const copy = { ...item };
+        if (photoMode === "thumbnail") {
+          const thumbnail = copy.photoThumbDataUrl || "";
+          copy.photoDataUrl = thumbnail;
+          copy.photoThumbDataUrl = thumbnail;
+        } else if (photoMode === "none") {
+          copy.photoDataUrl = "";
+          copy.photoThumbDataUrl = "";
+          copy.photoTakenAt = "";
+        }
+        return copy;
+      });
+      return {
+        ...backup,
+        entries: copyEntries(backup.entries || []),
+        deletedEntries: copyEntries(backup.deletedEntries || []),
+        photoRecoveryMode: photoMode
+      };
+    }
+
+    function writeRecoveryBackup(backup, presetKey = selectedCloudPresetKey()) {
+      const key = recoveryStorageKey(presetKey);
+      const candidates = [
+        recoveryCopyWithPhotoMode(backup, "full"),
+        recoveryCopyWithPhotoMode(backup, "thumbnail"),
+        recoveryCopyWithPhotoMode(backup, "none")
+      ];
+      for (const candidate of candidates) {
+        const serialized = JSON.stringify(candidate);
+        if (projectedLocalStorageChars([[key, serialized]]) > LOCAL_STORAGE_RECOVERY_LIMIT_CHARS) continue;
+        if (safeSetItem(key, serialized)) return candidate.photoRecoveryMode;
+      }
+      setStatus("The last change was canceled because a recovery copy could not be saved on this device. Save to cloud, then try again.", "error");
+      return "";
+    }
+
+    function saveRecoverySnapshot(reason, presetKey = selectedCloudPresetKey()) {
+      const backup = {
+        ...buildFullAuditBackup(),
+        recoveryCreatedAt: new Date().toISOString(),
+        recoveryReason: normalizeUpperText(reason || "BEFORE CHANGE"),
+        recoveryPresetKey: presetKey
+      };
+      return writeRecoveryBackup(backup, presetKey);
+    }
+
+    function loadRecoverySnapshot(presetKey = selectedCloudPresetKey()) {
+      try {
+        const raw = localStorage.getItem(recoveryStorageKey(presetKey));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function renderRecoveryStatus() {
+      const recovery = loadRecoverySnapshot();
+      restoreLastChangeBtn.disabled = !recovery || editLocked;
+      if (!recovery) {
+        localRecoveryStatus.textContent = "NO RECOVERABLE CHANGE SAVED.";
+        localRecoveryStatus.className = "status info";
+        return;
+      }
+      const photoNote = recovery.photoRecoveryMode === "full"
+        ? "FULL PHOTOS"
+        : recovery.photoRecoveryMode === "thumbnail"
+        ? "THUMBNAIL PHOTOS"
+        : "NO PHOTOS";
+      localRecoveryStatus.textContent = "RECOVERY: " + formatLocalTime(recovery.recoveryCreatedAt) + " - " + photoNote;
+      localRecoveryStatus.className = "status success";
+    }
+
+    function restoreLastChange() {
+      if (requireUnlocked("restore the last change")) return;
+      const recovery = loadRecoverySnapshot();
+      if (!recovery) {
+        setStatus("No recoverable change is saved for this selected audit.", "info");
+        return;
+      }
+      const settings = cloudSettings();
+      const ok = confirm(
+        "RESTORE LAST CHANGE FOR " + settings.label.toUpperCase() + "?\n\n" +
+        "SAVED: " + formatLocalTime(recovery.recoveryCreatedAt) + "\n" +
+        "ACTIVE ENTRIES: " + (recovery.entries || []).length + "\n" +
+        "DELETED ENTRIES: " + (recovery.deletedEntries || []).length + "\n\n" +
+        "YOUR CURRENT AUDIT WILL BECOME THE NEXT RESTORE COPY."
+      );
+      if (!ok) return;
+
+      const currentBackup = {
+        ...buildFullAuditBackup(),
+        recoveryCreatedAt: new Date().toISOString(),
+        recoveryReason: "BEFORE RESTORE LAST CHANGE",
+        recoveryPresetKey: selectedCloudPresetKey()
+      };
+      const data = dataFromJsonBackup(recovery);
+      if (!applyImportedData(data, { skipRecovery: true })) return;
+      writeRecoveryBackup(currentBackup);
+      setStatus("Last change restored. Your previous current audit is available through Restore Last Change.", "success");
+      render();
+    }
+
+    function estimatedAppStorageChars() {
+      let total = 0;
+      try {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index);
+          if (!key || !key.startsWith("warehouse_inventory_")) continue;
+          total += key.length + String(localStorage.getItem(key) || "").length;
+        }
+      } catch {
+        return -1;
+      }
+      return total;
+    }
+
+    function renderStorageHealth() {
+      storageHealthTimer = null;
+      const chars = estimatedAppStorageChars();
+      if (chars < 0) {
+        storageHealth.textContent = "DEVICE STORAGE COULD NOT BE CHECKED.";
+        storageHealth.className = "status warning";
+        return;
+      }
+      const estimatedMb = (chars * 2 / 1024 / 1024).toFixed(1);
+      const ratio = chars / LOCAL_STORAGE_RECOVERY_LIMIT_CHARS;
+      const label = ratio >= 0.85 ? "NEAR LIMIT" : ratio >= 0.60 ? "WATCH" : "HEALTHY";
+      const type = ratio >= 0.85 ? "error" : ratio >= 0.60 ? "warning" : "success";
+      storageHealth.textContent = "DEVICE STORAGE: " + estimatedMb + " MB ESTIMATED - " + auditPhotoCount() + " PHOTOS - " + label;
+      storageHealth.className = "status " + type;
+    }
+
+    function scheduleStorageHealthUpdate() {
+      if (storageHealthTimer !== null) clearTimeout(storageHealthTimer);
+      storageHealthTimer = setTimeout(renderStorageHealth, 80);
     }
 
     function readFileAsText(file) {
@@ -4913,6 +5213,9 @@
         }
         const items = extractOccupiedItemsFromRows(rows);
         if (!items.length) throw new Error("No 6-character unit numbers were found in that file.");
+        if (!saveRecoverySnapshot("BEFORE UPLOADED DOCUMENT REPLACEMENT")) {
+          throw new Error("A recovery copy could not be saved, so the current uploaded document was kept.");
+        }
         const previousMaster = occupiedMaster;
         occupiedMaster = {
           fileName: normalizeUpperText(file.name),
@@ -4946,6 +5249,7 @@
       const settings = cloudSettings();
       const ok = confirm("This will remove the uploaded document for " + settings.label + " from this device. Your scanned entries will stay saved. Continue?");
       if (!ok) return;
+      if (!saveRecoverySnapshot("BEFORE UPLOADED DOCUMENT REMOVAL")) return;
       const previousMaster = occupiedMaster;
       occupiedMaster = emptyOccupiedMaster();
       if (!saveOccupiedMaster()) {
@@ -5074,6 +5378,11 @@
       lastSavedAt = loadLastSavedAt(activeCloudPresetKey);
       lastCloudSavedAt = loadLastCloudSavedAt(activeCloudPresetKey);
       lastCloudSaveSignature = loadCloudSaveSignature(activeCloudPresetKey);
+      lastCloudRemoteUpdatedAt = loadLastCloudRemoteUpdatedAt(activeCloudPresetKey);
+      cloudHistoryCurrentUpdatedAt = "";
+      cloudHistorySelect.innerHTML = '<option value="">Refresh history to see saved versions</option>';
+      loadCloudHistoryBtn.disabled = true;
+      setCloudHistoryStatus("Refresh to view history for " + settings.label + ".", "info");
       finalExportSignature = loadFinalExportSignature(activeCloudPresetKey);
       editLocked = loadEditLocked(activeCloudPresetKey);
       editingSequence = null;
@@ -5139,7 +5448,10 @@
 
       if (!response.ok) {
         const detail = data && (data.error || data.message) ? data.error || data.message : text || response.statusText;
-        throw new Error(detail);
+        const requestError = new Error(detail);
+        requestError.status = response.status;
+        requestError.data = data;
+        throw requestError;
       }
 
       return data;
@@ -5162,7 +5474,7 @@
         sync_key: settings.syncName,
         payload: {
           appName: "Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1",
-          appVersion: 4,
+          appVersion: 5,
           syncType: "monthlyOccupiedList",
           syncedAt: new Date().toISOString(),
           sessionName: sessionNameInput.value.trim(),
@@ -5207,6 +5519,7 @@
           return false;
         }
 
+        if (!saveRecoverySnapshot("BEFORE CLOUD DOCUMENT LOAD")) return false;
         occupiedMaster = loadTransferOccupiedMaster(row.payload.occupiedMaster);
         const saveOk = saveOccupiedMaster();
         occupiedFileInput.value = "";
@@ -5266,11 +5579,19 @@
       saveFullAuditCloudBtn.disabled = true;
       setCloudStatus("Saving full audit to cloud...", "info");
       try {
-        await cloudFunctionRequest(settings, pin, { action: "save", record });
+        const result = await cloudFunctionRequest(settings, pin, {
+          action: "save",
+          record,
+          expectedUpdatedAt: options.expectedUpdatedAt !== undefined ? options.expectedUpdatedAt : lastCloudRemoteUpdatedAt,
+          force: Boolean(options.force)
+        });
+        const remoteUpdatedAt = result && result.row ? result.row.updated_at || "" : "";
+        if (remoteUpdatedAt) saveCloudRemoteUpdatedAt(remoteUpdatedAt);
         setCloudStatus("Full audit saved to cloud: " + syncName + ". Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ". Save size: " + payloadKb + " KB.", "success");
         setStatus("Full audit saved to cloud. Expected containers: " + occupiedMaster.codes.length + ". Active entries: " + entries.length + ".", "success");
-        return true;
+        return result && result.row ? result.row : true;
       } catch (error) {
+        if (error && error.status === 409) throw error;
         setCloudStatus("Full audit cloud save failed: " + error.message + ". Check Supabase setup/table rules.", "error");
         return false;
       } finally {
@@ -5347,9 +5668,31 @@
       saveCloudBtn.disabled = true;
       saveCloudEntryModeBtn.disabled = true;
       try {
-        const auditSaved = await saveFullAuditToCloud({ pin });
+        let auditSaved;
+        try {
+          auditSaved = await saveFullAuditToCloud({ pin });
+        } catch (error) {
+          if (!error || error.status !== 409) throw error;
+          const current = error.data && error.data.current ? error.data.current : {};
+          setCloudStatus("Cloud save stopped because another device has a newer version. Load from cloud first, or type OVERWRITE to replace it deliberately.", "warning");
+          const phrase = prompt(
+            "A NEWER CLOUD VERSION EXISTS" +
+            (current.updated_at ? " FROM " + formatLocalTime(current.updated_at) : "") +
+            ".\n\nTYPE OVERWRITE TO REPLACE THAT CLOUD VERSION WITH THIS DEVICE.\n\nCANCEL TO KEEP THE CLOUD VERSION SAFE."
+          );
+          if (!phrase || phrase.trim().toUpperCase() !== "OVERWRITE") {
+            setStatus("Cloud save canceled. The newer cloud version was not changed.", "warning");
+            return;
+          }
+          auditSaved = await saveFullAuditToCloud({
+            pin,
+            force: true,
+            expectedUpdatedAt: current.updated_at || ""
+          });
+        }
         if (!auditSaved) return;
-        if (!markCloudSaved()) return;
+        const remoteUpdatedAt = auditSaved && auditSaved.updated_at ? auditSaved.updated_at : lastCloudRemoteUpdatedAt;
+        if (!markCloudSaved(selectedCloudPresetKey(), remoteUpdatedAt)) return;
         render();
         setCloudStatus(
           "Cloud save complete. Uploaded document: " + (hasMonthlyList ? occupiedMaster.codes.length : 0) +
@@ -5357,6 +5700,9 @@
           "success"
         );
         setStatus("Cloud save complete.", "success");
+      } catch (error) {
+        setCloudStatus("Cloud save failed: " + error.message + ". No cloud data was intentionally cleared.", "error");
+        setStatus("Cloud save failed. Your device copy remains saved.", "error");
       } finally {
         saveCloudBtn.disabled = false;
         saveCloudEntryModeBtn.disabled = false;
@@ -5397,7 +5743,7 @@
             return;
           }
           occupiedFileInput.value = "";
-          markCloudSaved();
+          markCloudSaved(selectedCloudPresetKey(), fullRow.updated_at || "");
           render();
           setCloudStatus("Cloud load complete. Uploaded document: " + occupiedMaster.codes.length + " expected. Active entries: " + entries.length + ".", "success");
           setStatus("Cloud load complete.", "success");
@@ -5417,6 +5763,7 @@
           setCloudStatus("Cloud load canceled. This device was not changed.", "info");
           return;
         }
+        if (!saveRecoverySnapshot("BEFORE LEGACY CLOUD DOCUMENT LOAD")) return;
         const previousMaster = occupiedMaster;
         occupiedMaster = loadTransferOccupiedMaster(monthlyRow.payload.occupiedMaster);
         if (!saveOccupiedMaster()) {
@@ -5433,6 +5780,99 @@
       } finally {
         loadCloudCombinedBtn.disabled = false;
         input.focus();
+      }
+    }
+
+    function setCloudHistoryStatus(message, type = "info") {
+      cloudHistoryStatus.textContent = normalizeUpperText(message);
+      cloudHistoryStatus.className = "status " + type;
+    }
+
+    function populateCloudHistory(result) {
+      const current = result && result.current ? result.current : null;
+      const revisions = result && Array.isArray(result.revisions) ? result.revisions : [];
+      cloudHistoryCurrentUpdatedAt = current && current.updated_at ? current.updated_at : "";
+      cloudHistorySelect.innerHTML = "";
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = revisions.length ? "Select a prior cloud save" : "No prior cloud saves yet";
+      cloudHistorySelect.appendChild(placeholder);
+      revisions.forEach((row, index) => {
+        const option = document.createElement("option");
+        option.value = row.sync_key;
+        option.textContent = (index + 1) + ". " + formatLocalTime(row.updated_at) + (row.updated_by ? " - " + row.updated_by : "");
+        cloudHistorySelect.appendChild(option);
+      });
+      loadCloudHistoryBtn.disabled = true;
+      setCloudHistoryStatus(
+        (current ? "CURRENT CLOUD SAVE: " + formatLocalTime(current.updated_at) + ". " : "NO CURRENT CLOUD SAVE. ") +
+        revisions.length + " PRIOR VERSION" + (revisions.length === 1 ? "" : "S") + " AVAILABLE.",
+        current || revisions.length ? "success" : "info"
+      );
+    }
+
+    async function refreshCloudHistory() {
+      const pin = requestCloudPin("view cloud save history");
+      if (!pin) return;
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      refreshCloudHistoryBtn.disabled = true;
+      loadCloudHistoryBtn.disabled = true;
+      setCloudHistoryStatus("Loading cloud save history...", "info");
+      try {
+        const result = await cloudFunctionRequest(settings, pin, {
+          action: "history",
+          syncKey: fullAuditCloudSyncName(settings)
+        });
+        populateCloudHistory(result);
+      } catch (error) {
+        setCloudHistoryStatus("Cloud history failed: " + error.message, "error");
+      } finally {
+        refreshCloudHistoryBtn.disabled = false;
+      }
+    }
+
+    async function restoreCloudHistoryVersion() {
+      const revisionKey = cloudHistorySelect.value;
+      if (!revisionKey) return;
+      const pin = requestCloudPin("restore a prior cloud version");
+      if (!pin) return;
+      const settings = requireCloudSettings();
+      if (!settings) return;
+      loadCloudHistoryBtn.disabled = true;
+      setCloudHistoryStatus("Loading selected cloud version...", "info");
+      try {
+        const result = await cloudFunctionRequest(settings, pin, {
+          action: "load_revision",
+          syncKey: fullAuditCloudSyncName(settings),
+          revisionKey
+        });
+        const row = result && result.row ? result.row : null;
+        if (!row || !row.payload) throw new Error("The selected cloud version was not found");
+        const ok = confirm(
+          "RESTORE THIS PRIOR CLOUD VERSION TO THIS DEVICE?\n\n" +
+          "SAVED: " + formatLocalTime(row.updated_at) + "\n" +
+          "ACTIVE ENTRIES: " + cloudAuditEntryCount(row, "entries") + "\n" +
+          "DELETED ENTRIES: " + cloudAuditEntryCount(row, "deletedEntries") + "\n\n" +
+          "THE CURRENT CLOUD SAVE WILL NOT BE CHANGED UNTIL YOU PRESS SAVE TO CLOUD."
+        );
+        if (!ok) {
+          setCloudHistoryStatus("Cloud version restore canceled.", "info");
+          return;
+        }
+        const data = dataFromJsonBackup(row.payload);
+        if (!applyImportedData(data)) throw new Error("This device could not safely store the restored version");
+        const currentUpdatedAt = result.currentUpdatedAt || cloudHistoryCurrentUpdatedAt || "";
+        saveCloudRemoteUpdatedAt(currentUpdatedAt);
+        safeSetItem(auditStorageKey(CLOUD_SAVE_SIGNATURE_KEY_PREFIX, selectedCloudPresetKey()), "");
+        lastCloudSaveSignature = "";
+        render();
+        setCloudHistoryStatus("Prior cloud version restored to this device. Press Save To Cloud when verified.", "success");
+        setStatus("Prior cloud version restored. The current cloud copy is unchanged until you save.", "success");
+      } catch (error) {
+        setCloudHistoryStatus("Cloud version restore failed: " + error.message, "error");
+      } finally {
+        loadCloudHistoryBtn.disabled = !cloudHistorySelect.value;
       }
     }
 
@@ -5516,7 +5956,8 @@
       };
     }
 
-    function applyPhoneTransfer(data) {
+    function applyPhoneTransfer(data, options = {}) {
+      if (!options.skipRecovery && !saveRecoverySnapshot("BEFORE PHONE TRANSFER")) return false;
       const snapshot = captureAuditState();
       occupiedMaster = loadTransferOccupiedMaster(data.occupiedMaster || {});
       sessionNameInput.value = normalizeUpperText(data.sessionName || sessionNameInput.value || defaultSessionName());
@@ -5527,7 +5968,8 @@
       return saveOk;
     }
 
-    function applyImportedData(data) {
+    function applyImportedData(data, options = {}) {
+      if (!options.skipRecovery && !saveRecoverySnapshot("BEFORE AUDIT REPLACEMENT")) return false;
       const snapshot = captureAuditState();
       entries = data.entries || [];
       deletedEntries = data.deletedEntries || [];
@@ -5821,10 +6263,11 @@
     }
 
     function appendUnitPhotoThumb(container, item) {
-      if (!item.photoDataUrl) return;
+      const source = item.photoDataUrl || item.photoThumbDataUrl || "";
+      if (!source) return;
       const photo = document.createElement("img");
       photo.className = "unit-photo-thumb";
-      photo.src = item.photoDataUrl;
+      photo.src = source;
       photo.alt = "Photo for " + (item.code || "unit");
       container.appendChild(photo);
     }
@@ -5862,7 +6305,7 @@
           item.condition || "Good",
           item.status || "Built",
           inventoryTag,
-          item.photoDataUrl ? "Photo" : ""
+          item.photoDataUrl || item.photoThumbDataUrl ? "Photo" : ""
         ].filter(Boolean).forEach(value => {
           const tag = document.createElement("span");
           tag.className = "tag" + inventoryMatchTagClass(value);
@@ -5932,7 +6375,7 @@
           item.condition || "Good",
           item.status || "Built",
           inventoryTag,
-          item.photoDataUrl ? "Photo" : "",
+          item.photoDataUrl || item.photoThumbDataUrl ? "Photo" : "",
           item.initials ? "By " + item.initials : "",
           item.editedAt ? "Edited " + formatShortTime(item.editedAt) : "",
           item.restoredAt ? "Restored " + formatShortTime(item.restoredAt) : ""
@@ -5971,7 +6414,14 @@
         del.disabled = editLocked;
         del.addEventListener("click", () => requestDeleteEntry(item.sequence));
 
+        const photo = document.createElement("button");
+        photo.type = "button";
+        photo.textContent = item.photoDataUrl || item.photoThumbDataUrl ? "Replace Photo" : "Take Photo";
+        photo.disabled = editLocked;
+        photo.addEventListener("click", () => requestPhotoForEntry(item.sequence, "active"));
+
         rowActions.appendChild(edit);
+        rowActions.appendChild(photo);
         rowActions.appendChild(del);
 
         row.appendChild(num);
@@ -6019,7 +6469,7 @@
           item.size || "",
           item.condition || "",
           item.status || "",
-          item.photoDataUrl ? "Photo" : "",
+          item.photoDataUrl || item.photoThumbDataUrl ? "Photo" : "",
           item.initials ? "By " + item.initials : "",
           item.deleteType || "",
           item.deletedAt ? "Deleted " + formatShortTime(item.deletedAt) : ""
@@ -6052,7 +6502,14 @@
         restore.disabled = editLocked;
         restore.addEventListener("click", () => restoreDeletedEntry(item.sequence));
 
+        const photo = document.createElement("button");
+        photo.type = "button";
+        photo.textContent = item.photoDataUrl || item.photoThumbDataUrl ? "Replace Photo" : "Take Photo";
+        photo.disabled = editLocked;
+        photo.addEventListener("click", () => requestPhotoForEntry(item.sequence, "deleted"));
+
         rowActions.appendChild(restore);
+        rowActions.appendChild(photo);
 
         row.appendChild(num);
         row.appendChild(info);
@@ -6132,6 +6589,8 @@
       renderCloudSaveState();
       renderLockState();
       updateUnitPhotoControls();
+      renderRecoveryStatus();
+      scheduleStorageHealthUpdate();
 
       entryModeBtn.textContent = document.body.classList.contains("entry-mode")
         ? "Exit Big Entry Mode"
@@ -6211,6 +6670,9 @@
     });
 
     cloudPresetSelect.addEventListener("change", switchCloudPreset);
+    cloudHistorySelect.addEventListener("change", () => {
+      loadCloudHistoryBtn.disabled = !cloudHistorySelect.value;
+    });
 
 
     reportDetails.addEventListener("toggle", () => {
@@ -6282,16 +6744,23 @@
     window.addEventListener("resize", renderOcrCropPreview);
     setOcrCropOrientation("horizontal");
     takeUnitPhotoBtn.addEventListener("click", () => {
-      if (requireUnlocked("add a photo")) return;
-      if (!latestEntry()) {
+      const latest = latestEntry();
+      if (!latest) {
         setStatus("Save a container entry first, then take a photo.", "warning");
         updateUnitPhotoControls();
         input.focus();
         return;
       }
-      unitPhotoInput.click();
+      requestPhotoForEntry(latest.sequence, "active");
     });
-    unitPhotoInput.addEventListener("change", () => attachPhotoToLatestEntry(unitPhotoInput.files && unitPhotoInput.files[0]));
+    editPhotoBtn.addEventListener("click", () => {
+      if (editingSequence === null) {
+        setStatus("Open an entry for editing before taking its photo.", "warning");
+        return;
+      }
+      requestPhotoForEntry(editingSequence, "active");
+    });
+    unitPhotoInput.addEventListener("change", () => attachPhotoToEntry(unitPhotoInput.files && unitPhotoInput.files[0]));
     finalExportBtn.addEventListener("click", () => exportXlsx(true));
     saveCloudBtn.addEventListener("click", saveAllToCloud);
     saveCloudEntryModeBtn.addEventListener("click", saveAllToCloud);
@@ -6303,6 +6772,9 @@
     occupiedFileInput.addEventListener("change", () => importOccupiedList(occupiedFileInput.files && occupiedFileInput.files[0]));
     clearOccupiedListBtn.addEventListener("click", clearOccupiedList);
     loadCloudCombinedBtn.addEventListener("click", loadAllFromCloud);
+    refreshCloudHistoryBtn.addEventListener("click", refreshCloudHistory);
+    loadCloudHistoryBtn.addEventListener("click", restoreCloudHistoryVersion);
+    restoreLastChangeBtn.addEventListener("click", restoreLastChange);
     clearFileBtn.addEventListener("click", cancelImportPreview);
     applyImportBtn.addEventListener("click", applyImportPreview);
     cancelImportBtn.addEventListener("click", cancelImportPreview);
@@ -6380,6 +6852,49 @@
       saveEmployeeInitials(activeCloudPresetKey);
     }
 
+    function showUpdateReady(worker) {
+      if (!worker || !navigator.serviceWorker.controller) return;
+      pendingServiceWorker = worker;
+      updateBanner.hidden = false;
+    }
+
+    async function registerAppServiceWorker() {
+      try {
+        const registration = await navigator.serviceWorker.register("./service-worker.js");
+        if (registration.waiting) showUpdateReady(registration.waiting);
+        registration.addEventListener("updatefound", () => {
+          const installing = registration.installing;
+          if (!installing) return;
+          installing.addEventListener("statechange", () => {
+            if (installing.state === "installed" && navigator.serviceWorker.controller) showUpdateReady(installing);
+          });
+        });
+        setInterval(() => registration.update().catch(() => {}), 60 * 60 * 1000);
+      } catch {
+        // Offline use remains available through any previously installed worker.
+      }
+    }
+
+    applyUpdateBtn.addEventListener("click", () => {
+      if (!pendingServiceWorker) {
+        updateBanner.hidden = true;
+        return;
+      }
+      const ok = confirm("APPLY THE READY APP UPDATE NOW?\n\nSAVED ENTRIES, THE UPLOADED DOCUMENT, AND THE CURRENT DRAFT WILL REMAIN ON THIS DEVICE.");
+      if (!ok) return;
+      saveDraftBeforePageExit();
+      updateRequested = true;
+      applyUpdateBtn.disabled = true;
+      applyUpdateBtn.textContent = "Applying Update...";
+      pendingServiceWorker.postMessage({ type: "APPLY_UPDATE" });
+    });
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (updateRequested) location.reload();
+      });
+    }
+
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") saveDraftBeforePageExit();
     });
@@ -6388,7 +6903,7 @@
     renderContainerKeyboard();
     updateContainerKeyboardToggle();
     if ("serviceWorker" in navigator && location.protocol === "https:") {
-      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+      registerAppServiceWorker();
     }
     setTimeout(render, 500);
     render();
@@ -6401,7 +6916,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=56"></script>
-<script src="./ocr-hard-rules.js?v=56"></script>
+<script src="./ocr-priority-patch.js?v=57"></script>
+<script src="./ocr-hard-rules.js?v=57"></script>
 </body>
 </html>
