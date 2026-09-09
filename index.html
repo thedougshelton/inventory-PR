@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=54"></script>
+  <script src="./xlsx-photo-embed.js?v=55"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -34,6 +34,11 @@
     }
 
     * { box-sizing: border-box; }
+
+    html,
+    body {
+      overscroll-behavior-y: none;
+    }
 
     body {
       margin: 0;
@@ -6321,6 +6326,49 @@
     confirmDeleteBtn.addEventListener("click", confirmPendingDelete);
     cancelDeleteBtn.addEventListener("click", cancelDelete);
 
+    let pullToRefreshStartY = null;
+    let pullToRefreshTarget = null;
+
+    function canScrollableAncestorMoveUp(target) {
+      let element = target instanceof Element ? target : null;
+      while (element && element !== document.body) {
+        const style = getComputedStyle(element);
+        const scrollable = /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+        if (scrollable && element.scrollTop > 0) return true;
+        element = element.parentElement;
+      }
+      return false;
+    }
+
+    document.addEventListener("touchstart", event => {
+      if (event.touches.length !== 1) {
+        pullToRefreshStartY = null;
+        pullToRefreshTarget = null;
+        return;
+      }
+      pullToRefreshStartY = event.touches[0].clientY;
+      pullToRefreshTarget = event.target;
+    }, { passive: true });
+
+    document.addEventListener("touchmove", event => {
+      if (pullToRefreshStartY === null || event.touches.length !== 1) return;
+      const pullingDown = event.touches[0].clientY > pullToRefreshStartY;
+      const pageAtTop = (document.scrollingElement ? document.scrollingElement.scrollTop : window.scrollY) <= 0;
+      if (pullingDown && pageAtTop && event.cancelable && !canScrollableAncestorMoveUp(pullToRefreshTarget)) {
+        event.preventDefault();
+      }
+    }, { passive: false });
+
+    document.addEventListener("touchend", () => {
+      pullToRefreshStartY = null;
+      pullToRefreshTarget = null;
+    }, { passive: true });
+
+    document.addEventListener("touchcancel", () => {
+      pullToRefreshStartY = null;
+      pullToRefreshTarget = null;
+    }, { passive: true });
+
     renderContainerKeyboard();
     updateContainerKeyboardToggle();
     if ("serviceWorker" in navigator && location.protocol === "https:") {
@@ -6337,7 +6385,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=54"></script>
-<script src="./ocr-hard-rules.js?v=54"></script>
+<script src="./ocr-priority-patch.js?v=55"></script>
+<script src="./ocr-hard-rules.js?v=55"></script>
 </body>
 </html>
