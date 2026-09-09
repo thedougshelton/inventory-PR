@@ -7,10 +7,11 @@
   <meta name="apple-mobile-web-app-title" content="Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#0f172a" />
+  <link rel="icon" href="data:," />
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=59"></script>
+  <script src="./xlsx-photo-embed.js?v=61"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -3618,7 +3619,12 @@
       });
 
       entries.sort((a, b) => Number(a.sequence) - Number(b.sequence));
-      nextSequence = Math.max(nextSequence, ...entries.map(e => Number(e.sequence) || 0), ...deletedEntries.map(e => Number(e.sequence) || 0)) + 1;
+      const highestExistingSequence = Math.max(
+        0,
+        ...entries.map(entry => Number(entry.sequence) || 0),
+        ...deletedEntries.map(entry => Number(entry.sequence) || 0)
+      );
+      nextSequence = Math.max(nextSequence, highestExistingSequence + 1);
       if (!saveEntries()) {
         restoreAuditState(snapshot);
         render();
@@ -4414,8 +4420,8 @@
     }
 
     function styleFinalReportSheet(ws, rows) {
-      // SheetJS character widths need this adjustment to match Excel's displayed Column Width value.
-      const excelWidth = width => ({ wch: width - 0.18 });
+      // SheetJS adds Excel's default character padding when converting wch to the stored width.
+      const excelWidth = width => ({ wch: width - 0.83203125 });
       ws["!cols"] = [
         excelWidth(40),
         excelWidth(25),
@@ -6929,7 +6935,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=59"></script>
-<script src="./ocr-hard-rules.js?v=59"></script>
+<script src="./ocr-priority-patch.js?v=61"></script>
+<script src="./ocr-hard-rules.js?v=61"></script>
 </body>
 </html>
