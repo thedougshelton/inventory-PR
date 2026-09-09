@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=57"></script>
+  <script src="./xlsx-photo-embed.js?v=58"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -1511,10 +1511,13 @@
     </div>
 
     <section class="card secondary-section">
-      <div class="list-head">
-        <h2>INVENTORY AUDIT</h2>
-        <span class="small" id="occupiedAuditText">NO LIST UPLOADED</span>
-      </div>
+      <details id="inventoryAuditDetails" class="collapsible-section">
+        <summary class="section-toggle">Inventory Audit</summary>
+        <div class="section-body">
+          <div class="list-head">
+            <h2>INVENTORY AUDIT</h2>
+            <span class="small" id="occupiedAuditText">NO LIST UPLOADED</span>
+          </div>
       <input id="occupiedFileInput" type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" />
       <div class="actions two">
         <button id="chooseOccupiedFileBtn" type="button">UPLOAD EXCEL DOCUMENT TO APPLICATION</button>
@@ -1561,7 +1564,9 @@
         <div class="preview-metric"><div class="label">ON INVENTORY NOT SCANNED</div><strong id="occupiedMissingCount">0</strong></div>
         <div class="preview-metric"><div class="label">SCANNED BUT NOT ON INVENTORY</div><strong id="occupiedExtraCount">0</strong></div>
       </div>
-      <div id="occupiedComparisonList" class="audit-comparison-list"></div>
+          <div id="occupiedComparisonList" class="audit-comparison-list"></div>
+        </div>
+      </details>
     </section>
 
     <section class="card entry-card">
@@ -6916,7 +6921,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=57"></script>
-<script src="./ocr-hard-rules.js?v=57"></script>
+<script src="./ocr-priority-patch.js?v=58"></script>
+<script src="./ocr-hard-rules.js?v=58"></script>
 </body>
 </html>
