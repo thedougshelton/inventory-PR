@@ -10,7 +10,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=58"></script>
+  <script src="./xlsx-photo-embed.js?v=59"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -1570,6 +1570,9 @@
     </section>
 
     <section class="card entry-card">
+      <details id="containerEntryDetails" class="collapsible-section">
+        <summary class="section-toggle">Container Entry</summary>
+        <div class="section-body">
       <div class="field-group">
         <label for="containerSize">Container size</label>
         <select id="containerSize">
@@ -1726,6 +1729,8 @@
         </div>
         <p class="help">Import preview validates the file before anything is replaced.</p>
       </div>
+        </div>
+      </details>
     </section>
 
       <div id="editPanel" class="edit-panel">
@@ -2068,6 +2073,7 @@
     const finalReport = document.getElementById("finalReport");
     const reportUpdatedText = document.getElementById("reportUpdatedText");
     const reportDetails = document.getElementById("reportDetails");
+    const containerEntryDetails = document.getElementById("containerEntryDetails");
     const activeEntriesDetails = document.getElementById("activeEntriesDetails");
     const deletedEntriesDetails = document.getElementById("deletedEntriesDetails");
 
@@ -2108,6 +2114,7 @@
 
     if (localStorage.getItem(ENTRY_MODE_KEY) === "true") {
       document.body.classList.add("entry-mode");
+      containerEntryDetails.open = true;
     }
 
     function defaultSessionName() {
@@ -6607,6 +6614,7 @@
     function toggleEntryMode() {
       document.body.classList.toggle("entry-mode");
       if (document.body.classList.contains("entry-mode")) {
+        containerEntryDetails.open = true;
         importPanel.hidden = true;
       }
       safeSetItem(ENTRY_MODE_KEY, document.body.classList.contains("entry-mode") ? "true" : "false");
@@ -6921,7 +6929,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=58"></script>
-<script src="./ocr-hard-rules.js?v=58"></script>
+<script src="./ocr-priority-patch.js?v=59"></script>
+<script src="./ocr-hard-rules.js?v=59"></script>
 </body>
 </html>
