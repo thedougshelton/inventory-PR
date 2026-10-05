@@ -4,7 +4,7 @@
   const VALID_CODE = /^(?:D\d{5}|B\d{5}|C\d{5}|ZM\d{4}|TR\d{4}|PS\d{4}|[378]\d{5})$/;
   const ALLOWED_OCR_CHARACTERS = "BCDMPRSTZ0123456789";
   const DIGIT_OCR_CHARACTERS = "0123456789";
-  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "MNHW", "EFPRK"];
+  const CONFUSION_GROUPS = ["0ODQUVY", "1ILJ", "2Z", "5S", "6GC", "8BAX", "38", "08", "17", "56", "MNHW", "EFPRK"];
   const PREFIX_SHAPE_MAP = {
     A: ["8", "D"],
     E: ["B"],
@@ -303,6 +303,42 @@
     return threshold;
   };
 
+  const localAdaptiveVariant = dataUrl => canvasDataUrl(dataUrl, (imageData, width, height) => {
+    const data = imageData.data;
+    const grayValues = new Uint8Array(width * height);
+    const integralWidth = width + 1;
+    const integral = new Uint32Array(integralWidth * (height + 1));
+    for (let y = 0; y < height; y += 1) {
+      let rowTotal = 0;
+      for (let x = 0; x < width; x += 1) {
+        const pixel = y * width + x;
+        const index = pixel * 4;
+        const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+        grayValues[pixel] = gray;
+        rowTotal += gray;
+        integral[(y + 1) * integralWidth + x + 1] = integral[y * integralWidth + x + 1] + rowTotal;
+      }
+    }
+    const radius = Math.max(8, Math.round(Math.min(width, height) / 34));
+    for (let y = 0; y < height; y += 1) {
+      const top = Math.max(0, y - radius);
+      const bottom = Math.min(height - 1, y + radius);
+      for (let x = 0; x < width; x += 1) {
+        const left = Math.max(0, x - radius);
+        const right = Math.min(width - 1, x + radius);
+        const area = (right - left + 1) * (bottom - top + 1);
+        const sum = integral[(bottom + 1) * integralWidth + right + 1]
+          - integral[top * integralWidth + right + 1]
+          - integral[(bottom + 1) * integralWidth + left]
+          + integral[top * integralWidth + left];
+        const localMean = sum / area;
+        const value = grayValues[y * width + x] < localMean - 9 ? 0 : 255;
+        const index = (y * width + x) * 4;
+        data[index] = data[index + 1] = data[index + 2] = value;
+      }
+    }
+  });
+
   const enhancedVariants = async dataUrl => {
     const variants = [dataUrl];
     variants.push(await canvasDataUrl(dataUrl, (imageData, width, height) => {
@@ -340,6 +376,8 @@
         data[index] = data[index + 1] = data[index + 2] = value;
       }
     }));
+
+    variants.push(await localAdaptiveVariant(dataUrl));
     return variants;
   };
 
@@ -812,15 +850,27 @@
         confirmActiveScan(scanId);
         const counterclockwise = await rotateImageDataUrl(originalImageData, -90);
         confirmActiveScan(scanId);
+        const clockwiseAdaptive = await localAdaptiveVariant(clockwise);
+        confirmActiveScan(scanId);
+        const counterclockwiseAdaptive = await localAdaptiveVariant(counterclockwise);
+        confirmActiveScan(scanId);
         const [clockwiseFocused, counterclockwiseFocused] = await Promise.all([
           foregroundTightCrop(clockwise),
           foregroundTightCrop(counterclockwise)
         ]);
         confirmActiveScan(scanId);
+        const clockwiseAdaptiveFocused = await foregroundTightCrop(clockwiseAdaptive);
+        confirmActiveScan(scanId);
+        const counterclockwiseAdaptiveFocused = await foregroundTightCrop(counterclockwiseAdaptive);
+        confirmActiveScan(scanId);
         const [clockwiseCompacted, counterclockwiseCompacted] = await Promise.all([
           compactVerticalGlyphSpacing(clockwiseFocused),
           compactVerticalGlyphSpacing(counterclockwiseFocused)
         ]);
+        confirmActiveScan(scanId);
+        const clockwiseAdaptiveCompacted = await compactVerticalGlyphSpacing(clockwiseAdaptiveFocused);
+        confirmActiveScan(scanId);
+        const counterclockwiseAdaptiveCompacted = await compactVerticalGlyphSpacing(counterclockwiseAdaptiveFocused);
         confirmActiveScan(scanId);
         const stackedFocused = await foregroundTightCrop(originalImageData);
         confirmActiveScan(scanId);
@@ -837,32 +887,36 @@
           const stackedVariants = await enhancedVariants(stackedCompacted);
           confirmActiveScan(scanId);
           attemptGroups.push([
-            { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS },
-            { dataUrl: stackedVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS }
+            { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 15 },
+            { dataUrl: stackedVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS, reliabilityBonus: 25 }
           ]);
         }
         attemptGroups.push([
-          { dataUrl: clockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS },
-          { dataUrl: clockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS },
-          { dataUrl: clockwiseVariants[2], pageSegMode: "13", whitelist: ALLOWED_OCR_CHARACTERS }
+          { dataUrl: clockwiseAdaptiveCompacted, pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 120 },
+          { dataUrl: clockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 0 },
+          { dataUrl: clockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS, reliabilityBonus: 30 }
         ]);
         attemptGroups.push([
-          { dataUrl: counterclockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS },
-          { dataUrl: counterclockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS },
-          { dataUrl: counterclockwiseVariants[2], pageSegMode: "13", whitelist: ALLOWED_OCR_CHARACTERS }
+          { dataUrl: counterclockwiseAdaptiveCompacted, pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 120 },
+          { dataUrl: counterclockwiseVariants[0], pageSegMode: "8", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 0 },
+          { dataUrl: counterclockwiseVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS, reliabilityBonus: 30 }
         ]);
       } else {
         const tight = await autoTightCrop(originalImageData);
         confirmActiveScan(scanId);
         const bases = tight === originalImageData ? [originalImageData] : [tight, originalImageData];
         const orientationAttempts = [];
-        for (const base of bases) {
+        for (const [baseIndex, base] of bases.entries()) {
           const variants = await enhancedVariants(base);
           confirmActiveScan(scanId);
-          orientationAttempts.push(...variants.slice(0, bases.length > 1 ? 2 : 3).map((dataUrl, variantIndex) => ({
-            dataUrl,
+          const selectedIndexes = bases.length > 1
+            ? (baseIndex === 0 ? [0, 1, 2, 3] : [0])
+            : [0, 1, 2, 3];
+          orientationAttempts.push(...selectedIndexes.map(variantIndex => ({
+            dataUrl: variants[variantIndex],
             pageSegMode: "7",
-            whitelist: variantIndex === 1 ? DIGIT_OCR_CHARACTERS : ALLOWED_OCR_CHARACTERS
+            whitelist: variantIndex === 1 ? DIGIT_OCR_CHARACTERS : ALLOWED_OCR_CHARACTERS,
+            reliabilityBonus: variantIndex === 3 ? 120 : variantIndex === 1 ? 30 : variantIndex === 2 ? 20 : 0
           })));
         }
         attemptGroups.push(orientationAttempts);
@@ -881,7 +935,8 @@
       try {
         await worker.setParameters({
           tessedit_char_whitelist: ALLOWED_OCR_CHARACTERS,
-          preserve_interword_spaces: "0"
+          preserve_interword_spaces: "0",
+          classify_enable_learning: "0"
         });
       } catch {}
       confirmActiveScan(scanId);
@@ -924,7 +979,7 @@
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
         const passCandidates = priorityCandidateObjects(lastText).slice(0, 6);
         passCandidates.forEach((candidate, rank) => {
-          const contribution = candidate.score + Math.max(0, 45 - rank * 8) + confidence * 0.4;
+          const contribution = candidate.score + Math.max(0, 45 - rank * 8) + confidence * 0.4 + (attempt.reliabilityBonus || 0);
           totals.set(candidate.code, (totals.get(candidate.code) || 0) + contribution);
           appearances.set(candidate.code, (appearances.get(candidate.code) || 0) + 1);
           confidenceByCode.set(candidate.code, Math.max(confidenceByCode.get(candidate.code) || 0, confidence));
@@ -935,7 +990,7 @@
           }
         });
         passCandidates.slice(0, 3).forEach((candidate, rank) => {
-          const vote = Math.max(12, confidence) * (3 - rank) + (knownInventoryMatch(candidate.code) ? 180 : 0);
+          const vote = 60 * (3 - rank) + (attempt.reliabilityBonus || 0) + (knownInventoryMatch(candidate.code) ? 180 : 0);
           [...candidate.code].forEach((character, position) => {
             const votes = positionVotes[position];
             votes.set(character, (votes.get(character) || 0) + vote);
