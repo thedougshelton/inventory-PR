@@ -632,9 +632,14 @@
             confidence: 0
           };
     });
-    const disputedPositions = Array.from({ length: 6 }, (_, position) => position)
-      .filter(position => new Set(candidates.map(item => item.code[position])).size > 1)
-      .slice(0, 2);
+    const allDisputedPositions = Array.from({ length: 6 }, (_, position) => position)
+      .filter(position => new Set(candidates.map(item => item.code[position])).size > 1);
+    const leadingChoiceDisputes = allDisputedPositions
+      .filter(position => candidates[0].code[position] !== candidates[1].code[position]);
+    const disputedPositions = [
+      ...leadingChoiceDisputes,
+      ...allDisputedPositions.filter(position => !leadingChoiceDisputes.includes(position))
+    ].slice(0, 2);
     if (!disputedPositions.length) return ranked;
 
     const glyphs = await splitIntoSixGlyphs(sourceDataUrl);
@@ -681,8 +686,9 @@
             if (candidate.code[position] !== observed) return;
             candidate.score += evidence;
             candidate.confidence = Math.max(candidate.confidence || 0, Math.round(confidence));
-            candidate.reason = [candidate.reason, "character " + (position + 1) + " independently rechecked as " + observed]
-              .filter(Boolean)
+            const reasons = new Set(String(candidate.reason || "").split("; ").filter(Boolean));
+            reasons.add("character " + (position + 1) + " independently rechecked as " + observed);
+            candidate.reason = [...reasons]
               .slice(-2)
               .join("; ");
           });
