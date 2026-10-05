@@ -11,7 +11,7 @@
   <title>Pack Rat Tampa Inventory Entry - Doug Shelton Vol 1</title>
   <script src="./vendor/xlsx.bundle.js"></script>
   <script src="./vendor/jszip.min.js"></script>
-  <script src="./xlsx-photo-embed.js?v=62"></script>
+  <script src="./xlsx-photo-embed.js?v=63"></script>
   <script src="./vendor/tesseract.min.js"></script>
   <style>
     :root {
@@ -1634,7 +1634,7 @@
         />
         <button id="addBtn" class="primary" type="button">Enter</button>
       </div>
-      <div class="unit-photo-panel ocr-feature" hidden>
+      <div class="unit-photo-panel ocr-feature">
         <button id="scanContainerOcrBtn" type="button">Scan Container Number With Camera</button>
         <input id="ocrPhotoInput" type="file" accept="image/*" capture="environment" hidden />
         <div id="ocrStatus" class="unit-photo-status">THE APP DOES NOT AUTO-SUBSTITUTE CHARACTERS. PHOTO VERIFICATION IS REQUIRED BEFORE USE.</div>
@@ -2837,7 +2837,9 @@
       const objectUrl = URL.createObjectURL(file);
       try {
         const image = await loadImageFromDataUrl(objectUrl);
-        const maxLongSide = 2048;
+        // Keep distant container lettering crisp enough for the OCR crop while
+        // still placing a firm ceiling on mobile canvas memory.
+        const maxLongSide = 2560;
         const scale = Math.min(1, maxLongSide / Math.max(image.width, image.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(image.width * scale));
@@ -2847,7 +2849,7 @@
         context.fillStyle = "#FFFFFF";
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL("image/jpeg", 0.9);
+        return canvas.toDataURL("image/jpeg", 0.96);
       } finally {
         URL.revokeObjectURL(objectUrl);
       }
@@ -2858,7 +2860,7 @@
       const orientationChanged = nextOrientation !== ocrCropOrientation;
       ocrCropOrientation = nextOrientation;
       if (ocrCropState && orientationChanged) {
-        ocrCropState.zoom = ocrCropOrientation === "vertical" ? 1 : 1.7;
+        ocrCropState.zoom = 1;
         ocrCropState.offsetX = 0;
         ocrCropState.offsetY = 0;
       }
@@ -2918,11 +2920,9 @@
     function ocrCropDrawBounds(state, canvas) {
       const widthScale = canvas.width / state.image.width;
       const heightScale = canvas.height / state.image.height;
-      // Portrait photos must start fully visible so a vertical code is not
-      // clipped above or below the crop box before OCR rotates it.
-      const baseScale = ocrCropOrientation === "vertical"
-        ? Math.min(widthScale, heightScale)
-        : Math.max(widthScale, heightScale);
+      // Start with the complete photo visible so neither end of a six-character
+      // code is clipped. The user can then zoom toward a distant label.
+      const baseScale = Math.min(widthScale, heightScale);
       const scale = baseScale * state.zoom;
       const drawWidth = state.image.width * scale;
       const drawHeight = state.image.height * scale;
@@ -3018,7 +3018,7 @@
         ocrCropState = {
           dataUrl: originalImageData,
           image,
-          zoom: ocrCropOrientation === "vertical" ? 1 : 1.7,
+          zoom: 1,
           offsetX: 0,
           offsetY: 0
         };
@@ -6958,7 +6958,7 @@ before injecting scanner scripts; keeping them here prevents duplicate scanners.
 <script src="./ocr-hard-rules.js"></script>
 <script src="./ocr-compact-variations.js"></script>
 -->
-<script src="./ocr-priority-patch.js?v=62"></script>
-<script src="./ocr-hard-rules.js?v=62"></script>
+<script src="./ocr-priority-patch.js?v=63"></script>
+<script src="./ocr-hard-rules.js?v=63"></script>
 </body>
 </html>

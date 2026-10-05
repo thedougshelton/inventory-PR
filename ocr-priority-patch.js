@@ -257,27 +257,108 @@
     return canvas.toDataURL("image/jpeg", 0.94);
   };
 
+  const grayscaleHistogram = imageData => {
+    const histogram = new Uint32Array(256);
+    const data = imageData.data;
+    for (let index = 0; index < data.length; index += 4) {
+      const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+      histogram[gray] += 1;
+    }
+    return histogram;
+  };
+
+  const histogramPercentile = (histogram, fraction) => {
+    const total = histogram.reduce((sum, value) => sum + value, 0);
+    const target = total * fraction;
+    let running = 0;
+    for (let value = 0; value < histogram.length; value += 1) {
+      running += histogram[value];
+      if (running >= target) return value;
+    }
+    return 255;
+  };
+
+  const otsuThreshold = histogram => {
+    const total = histogram.reduce((sum, value) => sum + value, 0);
+    let totalIntensity = 0;
+    for (let value = 0; value < 256; value += 1) totalIntensity += value * histogram[value];
+    let backgroundWeight = 0;
+    let backgroundIntensity = 0;
+    let bestVariance = -1;
+    let threshold = 128;
+    for (let value = 0; value < 256; value += 1) {
+      backgroundWeight += histogram[value];
+      if (!backgroundWeight) continue;
+      const foregroundWeight = total - backgroundWeight;
+      if (!foregroundWeight) break;
+      backgroundIntensity += value * histogram[value];
+      const backgroundMean = backgroundIntensity / backgroundWeight;
+      const foregroundMean = (totalIntensity - backgroundIntensity) / foregroundWeight;
+      const variance = backgroundWeight * foregroundWeight * (backgroundMean - foregroundMean) ** 2;
+      if (variance > bestVariance) {
+        bestVariance = variance;
+        threshold = value;
+      }
+    }
+    return threshold;
+  };
+
   const enhancedVariants = async dataUrl => {
     const variants = [dataUrl];
-    const contrast = await canvasDataUrl(dataUrl, imageData => {
+    variants.push(await canvasDataUrl(dataUrl, (imageData, width, height) => {
       const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-        const value = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
-        data[i] = data[i + 1] = data[i + 2] = value;
+      const histogram = grayscaleHistogram(imageData);
+      const low = histogramPercentile(histogram, 0.03);
+      const high = Math.max(low + 24, histogramPercentile(histogram, 0.97));
+      const grayValues = new Uint8ClampedArray(width * height);
+      for (let pixel = 0, index = 0; index < data.length; index += 4, pixel += 1) {
+        const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+        grayValues[pixel] = Math.max(0, Math.min(255, (gray - low) * 255 / (high - low)));
       }
-    });
-    variants.push(contrast);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const pixel = y * width + x;
+          const center = grayValues[pixel];
+          let value = center;
+          if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+            const neighbors = grayValues[pixel - 1] + grayValues[pixel + 1]
+              + grayValues[pixel - width] + grayValues[pixel + width];
+            value = Math.max(0, Math.min(255, center * 2.2 - neighbors * 0.3));
+          }
+          const index = pixel * 4;
+          data[index] = data[index + 1] = data[index + 2] = value;
+        }
+      }
+    }));
 
     variants.push(await canvasDataUrl(dataUrl, imageData => {
       const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-        const value = gray >= 135 ? 255 : 0;
-        data[i] = data[i + 1] = data[i + 2] = value;
+      const threshold = otsuThreshold(grayscaleHistogram(imageData));
+      for (let index = 0; index < data.length; index += 4) {
+        const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+        const value = gray >= threshold ? 255 : 0;
+        data[index] = data[index + 1] = data[index + 2] = value;
       }
     }));
     return variants;
+  };
+
+  const assessImageQuality = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 640 / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+    canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+    canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+    const histogram = grayscaleHistogram(imageData);
+    const low = histogramPercentile(histogram, 0.05);
+    const high = histogramPercentile(histogram, 0.95);
+    if (high - low < 38) return "LOW CONTRAST - VERIFY EACH CHARACTER CAREFULLY. ";
+    if (low > 220) return "VERY BRIGHT PHOTO - VERIFY EACH CHARACTER CAREFULLY. ";
+    if (high < 45) return "VERY DARK PHOTO - VERIFY EACH CHARACTER CAREFULLY. ";
+    return "";
   };
 
   const autoTightCrop = async dataUrl => {
@@ -723,6 +804,8 @@
     setStatus("OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
+      const qualityNote = await assessImageQuality(originalImageData);
+      confirmActiveScan(scanId);
       const attemptGroups = [];
       if (ocrCropOrientation === "vertical") {
         const clockwise = await rotateImageDataUrl(originalImageData, 90);
@@ -793,7 +876,7 @@
       }
       imageAttempts = [...new Map(imageAttempts.map(attempt => [attempt.pageSegMode + ":" + attempt.dataUrl, attempt])).values()].slice(0, 6);
 
-      const worker = await withOcrTimeout(getOcrWorker(), 20000, "OCR STARTUP TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY.");
+      const worker = await withOcrTimeout(getOcrWorker(), 15000, "OCR STARTUP TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY.");
       confirmActiveScan(scanId);
       try {
         await worker.setParameters({
@@ -807,13 +890,17 @@
       const appearances = new Map();
       const confidenceByCode = new Map();
       const reasonByCode = new Map();
+      const positionVotes = Array.from({ length: 6 }, () => new Map());
       const partialReads = new Set();
       let activePageSegMode = "";
       let activeWhitelist = "";
       let lastText = "";
+      const scanDeadline = Date.now() + 35000;
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         confirmActiveScan(scanId);
+        const remainingMilliseconds = scanDeadline - Date.now();
+        if (remainingMilliseconds < 2500) break;
         setOcrStatus("OCR IMAGE PASS " + (attemptIndex + 1) + " OF " + imageAttempts.length + "...", "info");
         if (attempt.pageSegMode !== activePageSegMode || attempt.whitelist !== activeWhitelist) {
           try {
@@ -828,14 +915,15 @@
         }
         const result = await withOcrTimeout(
           worker.recognize(attempt.dataUrl),
-          10000,
+          Math.min(8500, remainingMilliseconds),
           "OCR IMAGE PASS TIMED OUT. TRY AGAIN OR TYPE THE NUMBER MANUALLY."
         );
         confirmActiveScan(scanId);
         lastText = result && result.data ? result.data.text || "" : "";
         previewCandidateTexts(lastText).forEach(read => partialReads.add(read));
         const confidence = Number(result && result.data ? result.data.confidence : 0) || 0;
-        priorityCandidateObjects(lastText).slice(0, 6).forEach((candidate, rank) => {
+        const passCandidates = priorityCandidateObjects(lastText).slice(0, 6);
+        passCandidates.forEach((candidate, rank) => {
           const contribution = candidate.score + Math.max(0, 45 - rank * 8) + confidence * 0.4;
           totals.set(candidate.code, (totals.get(candidate.code) || 0) + contribution);
           appearances.set(candidate.code, (appearances.get(candidate.code) || 0) + 1);
@@ -846,6 +934,26 @@
             reasonByCode.set(candidate.code, reasons);
           }
         });
+        passCandidates.slice(0, 3).forEach((candidate, rank) => {
+          const vote = Math.max(12, confidence) * (3 - rank) + (knownInventoryMatch(candidate.code) ? 180 : 0);
+          [...candidate.code].forEach((character, position) => {
+            const votes = positionVotes[position];
+            votes.set(character, (votes.get(character) || 0) + vote);
+          });
+        });
+      }
+
+      const consensusCode = positionVotes.map(votes => {
+        return [...votes.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "";
+      }).join("");
+      if (VALID_CODE.test(consensusCode) && !totals.has(consensusCode)) {
+        const consensusScore = formatWeight(consensusCode)
+          + (knownInventoryMatch(consensusCode) ? 1600 : 0)
+          + 85;
+        totals.set(consensusCode, consensusScore);
+        appearances.set(consensusCode, 1);
+        confidenceByCode.set(consensusCode, 0);
+        reasonByCode.set(consensusCode, new Set(["character-by-character agreement across OCR passes"]));
       }
 
       const ranked = [...totals.entries()]
@@ -879,7 +987,7 @@
 
       const best = ranked[0];
       const choices = completeSuggestionChoices(ranked);
-      showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + (best.reason ? best.reason.toUpperCase() + ". " : "") + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT - CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
+      showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + qualityNote + (best.reason ? best.reason.toUpperCase() + ". " : "") + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT - CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
       showSuggestions(choices);
       setStatus("OCR suggestions are waiting for your verification. Nothing has been saved.", "warning");
     } catch (error) {
