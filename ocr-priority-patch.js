@@ -437,6 +437,279 @@
     return variants;
   };
 
+  const splitIntoSixGlyphs = async dataUrl => {
+    const image = await loadImage(dataUrl);
+    const source = document.createElement("canvas");
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const scale = Math.min(1, 1400 / Math.max(sourceWidth, sourceHeight));
+    source.width = Math.max(1, Math.round(sourceWidth * scale));
+    source.height = Math.max(1, Math.round(sourceHeight * scale));
+    const context = source.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, source.width, source.height);
+    const imageData = context.getImageData(0, 0, source.width, source.height);
+    const pixels = imageData.data;
+    const histogram = grayscaleHistogram(imageData);
+    const low = histogramPercentile(histogram, 0.05);
+    const high = histogramPercentile(histogram, 0.95);
+    const darkText = histogramPercentile(histogram, 0.50) >= (low + high) / 2;
+    const threshold = Math.max(24, (high - low) * 0.20);
+    const corners = [
+      [2, 2],
+      [source.width - 3, 2],
+      [2, source.height - 3],
+      [source.width - 3, source.height - 3]
+    ];
+    const background = corners.reduce((sum, [x, y]) => {
+      const index = (Math.max(0, y) * source.width + Math.max(0, x)) * 4;
+      return sum + pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+    }, 0) / corners.length;
+    const isInk = (x, y) => {
+      const index = (y * source.width + x) * 4;
+      const gray = pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114;
+      if (Math.abs(gray - background) >= threshold) return true;
+      return darkText ? gray <= low + (high - low) * 0.42 : gray >= low + (high - low) * 0.58;
+    };
+
+    const columnInk = new Uint32Array(source.width);
+    const rowInk = new Uint32Array(source.height);
+    for (let y = 0; y < source.height; y += 1) {
+      for (let x = 0; x < source.width; x += 1) {
+        if (!isInk(x, y)) continue;
+        columnInk[x] += 1;
+        rowInk[y] += 1;
+      }
+    }
+
+    const minimumColumnInk = Math.max(2, Math.round(source.height * 0.025));
+    const minimumRowInk = Math.max(2, Math.round(source.width * 0.018));
+    let minX = 0;
+    let maxX = source.width - 1;
+    let minY = 0;
+    let maxY = source.height - 1;
+    while (minX < maxX && columnInk[minX] < minimumColumnInk) minX += 1;
+    while (maxX > minX && columnInk[maxX] < minimumColumnInk) maxX -= 1;
+    while (minY < maxY && rowInk[minY] < minimumRowInk) minY += 1;
+    while (maxY > minY && rowInk[maxY] < minimumRowInk) maxY -= 1;
+    if (maxX - minX < source.width * 0.18 || maxY - minY < source.height * 0.15) return [];
+
+    const activeColumns = [];
+    const bridgeLimit = Math.max(1, Math.round((maxY - minY + 1) * 0.025));
+    for (let x = minX; x <= maxX; x += 1) activeColumns[x] = columnInk[x] >= minimumColumnInk;
+    for (let x = minX; x <= maxX; x += 1) {
+      if (activeColumns[x]) continue;
+      let end = x;
+      while (end <= maxX && !activeColumns[end]) end += 1;
+      if (x > minX && end <= maxX && end - x <= bridgeLimit) {
+        for (let fill = x; fill < end; fill += 1) activeColumns[fill] = true;
+      }
+      x = end;
+    }
+
+    let runs = [];
+    let runStart = -1;
+    for (let x = minX; x <= maxX + 1; x += 1) {
+      if (x <= maxX && activeColumns[x]) {
+        if (runStart < 0) runStart = x;
+      } else if (runStart >= 0) {
+        runs.push({ start: runStart, end: x - 1 });
+        runStart = -1;
+      }
+    }
+    while (runs.length > 6) {
+      let mergeIndex = 0;
+      let smallestGap = Infinity;
+      for (let index = 0; index < runs.length - 1; index += 1) {
+        const gap = runs[index + 1].start - runs[index].end - 1;
+        if (gap < smallestGap) {
+          smallestGap = gap;
+          mergeIndex = index;
+        }
+      }
+      runs.splice(mergeIndex, 2, {
+        start: runs[mergeIndex].start,
+        end: runs[mergeIndex + 1].end
+      });
+    }
+
+    let boundaries;
+    if (runs.length === 6) {
+      boundaries = runs.map((run, index) => {
+        const left = index === 0
+          ? minX
+          : Math.floor((runs[index - 1].end + run.start) / 2) + 1;
+        const right = index === runs.length - 1
+          ? maxX
+          : Math.floor((run.end + runs[index + 1].start) / 2);
+        return { left, right };
+      });
+    } else {
+      const contentWidth = maxX - minX + 1;
+      boundaries = Array.from({ length: 6 }, (_, index) => ({
+        left: Math.round(minX + contentWidth * index / 6),
+        right: Math.round(minX + contentWidth * (index + 1) / 6) - 1
+      }));
+    }
+
+    return boundaries.map(({ left, right }) => {
+      const padX = Math.max(2, Math.round((right - left + 1) * 0.10));
+      const padY = Math.max(2, Math.round((maxY - minY + 1) * 0.10));
+      const cropLeft = Math.max(0, left - padX);
+      const cropTop = Math.max(0, minY - padY);
+      const cropRight = Math.min(source.width - 1, right + padX);
+      const cropBottom = Math.min(source.height - 1, maxY + padY);
+      const cropWidth = cropRight - cropLeft + 1;
+      const cropHeight = cropBottom - cropTop + 1;
+      const output = document.createElement("canvas");
+      output.width = 260;
+      output.height = 300;
+      const outputContext = output.getContext("2d", { alpha: false });
+      outputContext.fillStyle = "#FFFFFF";
+      outputContext.fillRect(0, 0, output.width, output.height);
+      const fit = Math.min(220 / cropWidth, 260 / cropHeight);
+      const drawWidth = Math.max(1, Math.round(cropWidth * fit));
+      const drawHeight = Math.max(1, Math.round(cropHeight * fit));
+      outputContext.imageSmoothingEnabled = true;
+      outputContext.imageSmoothingQuality = "high";
+      outputContext.drawImage(
+        source,
+        cropLeft,
+        cropTop,
+        cropWidth,
+        cropHeight,
+        Math.round((output.width - drawWidth) / 2),
+        Math.round((output.height - drawHeight) / 2),
+        drawWidth,
+        drawHeight
+      );
+      return output.toDataURL("image/png");
+    });
+  };
+
+  const rerankWithGlyphChecks = async (worker, ranked, sourceDataUrl, scanDeadline, scanId) => {
+    if (!ranked.length || !sourceDataUrl || scanDeadline - Date.now() < 4500) return ranked;
+    const seedMap = new Map();
+    const addSeed = item => {
+      const code = normalizeCode(item && item.code ? item.code : "");
+      if (!VALID_CODE.test(code) || seedMap.has(code)) return;
+      seedMap.set(code, { ...item, code });
+    };
+    ranked.forEach(addSeed);
+    uploadedCodes()
+      .filter(code => code !== ranked[0].code)
+      .map(code => ({ code, distance: codeDistance(ranked[0].code, code) }))
+      .filter(match => match.distance <= 1.5)
+      .sort((left, right) => left.distance - right.distance || formatWeight(right.code) - formatWeight(left.code))
+      .slice(0, 4)
+      .forEach(match => addSeed({
+        code: match.code,
+        reason: "close uploaded inventory alternative",
+        inventoryDistance: match.distance
+      }));
+    visualAlternatives(ranked[0].code).forEach(code => addSeed({
+      code,
+      reason: "possible visual character variation - independently rechecked"
+    }));
+    const choiceSeeds = [...seedMap.values()].slice(0, 12);
+    if (choiceSeeds.length < 2) return ranked;
+
+    const baseByCode = new Map(ranked.map(item => [item.code, item]));
+    const bestScore = ranked[0].score;
+    const fallbackPenalty = Math.max(260, bestScore * 0.045);
+    const candidates = choiceSeeds.map((item, index) => {
+      const existing = baseByCode.get(item.code);
+      return existing
+        ? { ...existing }
+        : {
+            ...item,
+            score: bestScore
+              - fallbackPenalty
+              - Math.max(0, (item.inventoryDistance || codeDistance(ranked[0].code, item.code)) - 0.25) * 110
+              + (knownInventoryMatch(item.code) ? 500 : 0)
+              + (formatWeight(item.code) - formatWeight(ranked[0].code)) * 0.35
+              - index * 4,
+            appearances: 0,
+            confidence: 0
+          };
+    });
+    const disputedPositions = Array.from({ length: 6 }, (_, position) => position)
+      .filter(position => new Set(candidates.map(item => item.code[position])).size > 1)
+      .slice(0, 2);
+    if (!disputedPositions.length) return ranked;
+
+    const glyphs = await splitIntoSixGlyphs(sourceDataUrl);
+    confirmActiveScan(scanId);
+    if (glyphs.length !== 6) return ranked;
+    setOcrStatus("OCR CHECKING UNCERTAIN CHARACTERS...", "info");
+
+    let workerWasReset = false;
+    characterChecks:
+    for (const position of disputedPositions) {
+      confirmActiveScan(scanId);
+      if (scanDeadline - Date.now() < 2200) break;
+      const whitelist = [...new Set(candidates.map(item => item.code[position]))]
+        .filter(character => ALLOWED_OCR_CHARACTERS.includes(character))
+        .join("");
+      if (whitelist.length < 2) continue;
+      const glyphVariants = [glyphs[position]];
+      if (scanDeadline - Date.now() >= 4200) {
+        glyphVariants.push(await localAdaptiveVariant(glyphs[position]));
+        confirmActiveScan(scanId);
+      }
+
+      for (const glyphDataUrl of glyphVariants) {
+        const remainingMilliseconds = scanDeadline - Date.now();
+        if (remainingMilliseconds < 1800) break;
+        try {
+          await worker.setParameters({
+            tessedit_pageseg_mode: "10",
+            tessedit_char_whitelist: whitelist
+          });
+          const result = await withOcrTimeout(
+            worker.recognize(glyphDataUrl),
+            Math.min(3000, remainingMilliseconds),
+            "OCR CHARACTER CHECK TIMED OUT."
+          );
+          confirmActiveScan(scanId);
+          const raw = normalizeUpperText(result && result.data ? result.data.text || "" : "")
+            .replace(/[^A-Z0-9]/g, "");
+          const observed = [...raw].find(character => whitelist.includes(character));
+          if (!observed) continue;
+          const confidence = Math.max(0, Math.min(100, Number(result && result.data ? result.data.confidence : 0) || 0));
+          const evidence = 260 + confidence * 4.2;
+          candidates.forEach(candidate => {
+            if (candidate.code[position] !== observed) return;
+            candidate.score += evidence;
+            candidate.confidence = Math.max(candidate.confidence || 0, Math.round(confidence));
+            candidate.reason = [candidate.reason, "character " + (position + 1) + " independently rechecked as " + observed]
+              .filter(Boolean)
+              .slice(-2)
+              .join("; ");
+          });
+        } catch (error) {
+          if (error && error.name === "AbortError") throw error;
+          if (error && /TIMED OUT/i.test(error.message || "")) {
+            await resetOcrWorker();
+            workerWasReset = true;
+            break characterChecks;
+          }
+          break;
+        }
+      }
+    }
+
+    if (!workerWasReset) {
+      try {
+        await worker.setParameters({
+          tessedit_pageseg_mode: "7",
+          tessedit_char_whitelist: ALLOWED_OCR_CHARACTERS
+        });
+      } catch {}
+    }
+    confirmActiveScan(scanId);
+    return candidates.sort((left, right) => right.score - left.score).slice(0, 3);
+  };
+
   const assessImageQuality = async dataUrl => {
     const image = await loadImage(dataUrl);
     const canvas = document.createElement("canvas");
@@ -943,8 +1216,8 @@
           const stackedVariants = await enhancedVariants(stackedCompacted, false);
           confirmActiveScan(scanId);
           attemptGroups.push([
-            { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 15 },
-            { dataUrl: stackedVariants[1], pageSegMode: "7", whitelist: DIGIT_OCR_CHARACTERS, reliabilityBonus: 25 }
+            { dataUrl: stackedVariants[3], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 180 },
+            { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 120 }
           ]);
         }
         attemptGroups.push([
@@ -1009,12 +1282,13 @@
       const appearances = new Map();
       const confidenceByCode = new Map();
       const reasonByCode = new Map();
+      const bestAttemptByCode = new Map();
       const positionVotes = Array.from({ length: 6 }, () => new Map());
       const partialReads = new Set();
       let activePageSegMode = "";
       let activeWhitelist = "";
       let lastText = "";
-      const scanDeadline = Date.now() + 35000;
+      const scanDeadline = Date.now() + 40000;
 
       for (const [attemptIndex, attempt] of imageAttempts.entries()) {
         confirmActiveScan(scanId);
@@ -1045,6 +1319,10 @@
         passCandidates.forEach((candidate, rank) => {
           const contribution = candidate.score + Math.max(0, 45 - rank * 8) + confidence * 0.4 + (attempt.reliabilityBonus || 0);
           totals.set(candidate.code, (totals.get(candidate.code) || 0) + contribution);
+          const previousAttempt = bestAttemptByCode.get(candidate.code);
+          if (!previousAttempt || contribution > previousAttempt.contribution) {
+            bestAttemptByCode.set(candidate.code, { dataUrl: attempt.dataUrl, contribution });
+          }
           appearances.set(candidate.code, (appearances.get(candidate.code) || 0) + 1);
           confidenceByCode.set(candidate.code, Math.max(confidenceByCode.get(candidate.code) || 0, confidence));
           if (candidate.reason) {
@@ -1075,7 +1353,7 @@
         reasonByCode.set(consensusCode, new Set(["character-by-character agreement across OCR passes"]));
       }
 
-      const ranked = [...totals.entries()]
+      let ranked = [...totals.entries()]
         .map(([code, score]) => ({
           code,
           score,
@@ -1104,6 +1382,9 @@
         return;
       }
 
+      const recheckSource = bestAttemptByCode.get(ranked[0].code)?.dataUrl || imageAttempts[0]?.dataUrl;
+      ranked = await rerankWithGlyphChecks(worker, ranked, recheckSource, scanDeadline, scanId);
+      confirmActiveScan(scanId);
       const best = ranked[0];
       const choices = completeSuggestionChoices(ranked);
       showOcrReview(best.code, "BEST SUGGESTION: " + best.code + ". " + qualityNote + (best.reason ? best.reason.toUpperCase() + ". " : "") + (knownInventoryMatch(best.code) ? "MATCHES THE UPLOADED INVENTORY. " : "") + (best.appearances > 1 ? "SUPPORTED BY MULTIPLE IMAGE PASSES. " : "SINGLE-PASS RESULT - CHECK CAREFULLY. ") + "SELECT AN OPTION OR EDIT THE NUMBER, VERIFY THE PHOTO, THEN CONFIRM & SAVE.", "warning");
