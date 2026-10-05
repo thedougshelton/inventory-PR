@@ -103,9 +103,9 @@
     const groups = normalized
       .split(/[^A-Z0-9?]+/)
       .map(group => group.trim())
-      .filter(group => group.length >= 4 && group.length <= 8);
+      .filter(group => group.length >= 3 && group.length <= 8);
     const compact = normalized.replace(/[^A-Z0-9?]+/g, "");
-    if (compact.length >= 4 && compact.length <= 8) groups.push(compact);
+    if (compact.length >= 3 && compact.length <= 8) groups.push(compact);
     return [...new Set(groups)];
   };
 
@@ -130,7 +130,7 @@
 
   const partialInventoryMatches = rawValue => {
     const raw = normalizeUpperText(rawValue).replace(/[^A-Z0-9?]+/g, "");
-    if (raw.length < 4 || raw.length > 6) return [];
+    if (raw.length < 3 || raw.length > 6) return [];
 
     const patterns = new Set();
     if (raw.length === 6) {
@@ -157,7 +157,8 @@
           if (match.score < 0) bad += 1;
         }
 
-        if (visible < 4 || strong < 4 || bad > 0) return;
+        const minimumStrongCharacters = raw.length >= 4 ? 4 : 3;
+        if (visible < minimumStrongCharacters || strong < minimumStrongCharacters || bad > 0) return;
         const finalScore = 1000 + score * 80 + visible * 35 + strong * 45 + formatWeight(code);
         const previous = matches.get(code);
         if (!previous || finalScore > previous.bonus) {
@@ -339,7 +340,58 @@
     }
   });
 
-  const enhancedVariants = async dataUrl => {
+  const morphologyVariant = (dataUrl, operation) => canvasDataUrl(dataUrl, (imageData, width, height) => {
+    const data = imageData.data;
+    const threshold = otsuThreshold(grayscaleHistogram(imageData));
+    const foreground = new Uint8Array(width * height);
+    for (let pixel = 0, index = 0; index < data.length; index += 4, pixel += 1) {
+      const gray = data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
+      foreground[pixel] = gray < threshold ? 1 : 0;
+    }
+
+    const morph = (source, dilate, radiusX = 1, radiusY = 1) => {
+      const output = new Uint8Array(source.length);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          let result = dilate ? 0 : 1;
+          scanNeighborhood:
+          for (let offsetY = -radiusY; offsetY <= radiusY; offsetY += 1) {
+            const sampleY = Math.max(0, Math.min(height - 1, y + offsetY));
+            for (let offsetX = -radiusX; offsetX <= radiusX; offsetX += 1) {
+              const sampleX = Math.max(0, Math.min(width - 1, x + offsetX));
+              const sample = source[sampleY * width + sampleX];
+              if (dilate && sample) {
+                result = 1;
+                break scanNeighborhood;
+              }
+              if (!dilate && !sample) {
+                result = 0;
+                break scanNeighborhood;
+              }
+            }
+          }
+          output[y * width + x] = result;
+        }
+      }
+      return output;
+    };
+
+    let processed;
+    if (operation === "separate") {
+      processed = morph(foreground, false);
+    } else {
+      processed = morph(foreground, true, 0, 10);
+      processed = morph(processed, false, 0, 10);
+      processed = morph(processed, true, 4, 0);
+      processed = morph(processed, false, 4, 0);
+    }
+    for (let pixel = 0, index = 0; index < data.length; index += 4, pixel += 1) {
+      const value = processed[pixel] ? 0 : 255;
+      data[index] = data[index + 1] = data[index + 2] = value;
+    }
+  });
+
+  const enhancedVariants = async (dataUrl, includeMorphology = true) => {
     const variants = [dataUrl];
     variants.push(await canvasDataUrl(dataUrl, (imageData, width, height) => {
       const data = imageData.data;
@@ -378,6 +430,10 @@
     }));
 
     variants.push(await localAdaptiveVariant(dataUrl));
+    if (includeMorphology) {
+      variants.push(await morphologyVariant(dataUrl, "separate"));
+      variants.push(await morphologyVariant(dataUrl, "repair"));
+    }
     return variants;
   };
 
@@ -877,14 +933,14 @@
         const stackedCompacted = await recomposeStackedVerticalGlyphs(stackedFocused);
         confirmActiveScan(scanId);
         const [clockwiseVariants, counterclockwiseVariants] = await Promise.all([
-          enhancedVariants(clockwiseCompacted),
-          enhancedVariants(counterclockwiseCompacted)
+          enhancedVariants(clockwiseCompacted, false),
+          enhancedVariants(counterclockwiseCompacted, false)
         ]);
         confirmActiveScan(scanId);
         // Vertical labels can read in either direction. The focused crop keeps
         // edge characters, then word, line, and raw-line modes vote together.
         if (stackedCompacted !== stackedFocused) {
-          const stackedVariants = await enhancedVariants(stackedCompacted);
+          const stackedVariants = await enhancedVariants(stackedCompacted, false);
           confirmActiveScan(scanId);
           attemptGroups.push([
             { dataUrl: stackedVariants[0], pageSegMode: "7", whitelist: ALLOWED_OCR_CHARACTERS, reliabilityBonus: 15 },
@@ -910,13 +966,21 @@
           const variants = await enhancedVariants(base);
           confirmActiveScan(scanId);
           const selectedIndexes = bases.length > 1
-            ? (baseIndex === 0 ? [0, 1, 2, 3] : [0])
-            : [0, 1, 2, 3];
+            ? (baseIndex === 0 ? [0, 1, 3, 4, 5] : [0])
+            : [0, 1, 2, 3, 4, 5];
           orientationAttempts.push(...selectedIndexes.map(variantIndex => ({
             dataUrl: variants[variantIndex],
-            pageSegMode: "7",
+            pageSegMode: variantIndex === 4 ? "13" : "7",
             whitelist: variantIndex === 1 ? DIGIT_OCR_CHARACTERS : ALLOWED_OCR_CHARACTERS,
-            reliabilityBonus: variantIndex === 3 ? 120 : variantIndex === 1 ? 30 : variantIndex === 2 ? 20 : 0
+            reliabilityBonus: variantIndex === 3
+              ? 120
+              : variantIndex === 4 || variantIndex === 5
+              ? 80
+              : variantIndex === 1
+              ? 30
+              : variantIndex === 2
+              ? 20
+              : 0
           })));
         }
         attemptGroups.push(orientationAttempts);
