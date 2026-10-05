@@ -494,7 +494,7 @@
     if (maxX - minX < source.width * 0.18 || maxY - minY < source.height * 0.15) return [];
 
     const activeColumns = [];
-    const bridgeLimit = Math.max(1, Math.round((maxY - minY + 1) * 0.025));
+    const bridgeLimit = Math.max(1, Math.min(2, Math.round((maxY - minY + 1) * 0.012)));
     for (let x = minX; x <= maxX; x += 1) activeColumns[x] = columnInk[x] >= minimumColumnInk;
     for (let x = minX; x <= maxX; x += 1) {
       if (activeColumns[x]) continue;
@@ -552,11 +552,10 @@
     }
 
     return boundaries.map(({ left, right }) => {
-      const padX = Math.max(2, Math.round((right - left + 1) * 0.10));
       const padY = Math.max(2, Math.round((maxY - minY + 1) * 0.10));
-      const cropLeft = Math.max(0, left - padX);
+      const cropLeft = Math.max(0, left);
       const cropTop = Math.max(0, minY - padY);
-      const cropRight = Math.min(source.width - 1, right + padX);
+      const cropRight = Math.min(source.width - 1, right);
       const cropBottom = Math.min(source.height - 1, maxY + padY);
       const cropWidth = cropRight - cropLeft + 1;
       const cropHeight = cropBottom - cropTop + 1;
@@ -645,6 +644,10 @@
     const glyphs = await splitIntoSixGlyphs(sourceDataUrl);
     confirmActiveScan(scanId);
     if (glyphs.length !== 6) return ranked;
+    showDisputedCharacterPreviews(disputedPositions.map(position => ({
+      position,
+      dataUrl: glyphs[position]
+    })));
     setOcrStatus("OCR CHECKING UNCERTAIN CHARACTERS...", "info");
 
     let workerWasReset = false;
@@ -728,10 +731,66 @@
     const histogram = grayscaleHistogram(imageData);
     const low = histogramPercentile(histogram, 0.05);
     const high = histogramPercentile(histogram, 0.95);
-    if (high - low < 38) return "LOW CONTRAST - VERIFY EACH CHARACTER CAREFULLY. ";
-    if (low > 220) return "VERY BRIGHT PHOTO - VERIFY EACH CHARACTER CAREFULLY. ";
-    if (high < 45) return "VERY DARK PHOTO - VERIFY EACH CHARACTER CAREFULLY. ";
-    return "";
+    const range = high - low;
+    const pixels = imageData.data;
+    const gray = new Uint8Array(canvas.width * canvas.height);
+    let veryDark = 0;
+    let veryBright = 0;
+    for (let pixel = 0, index = 0; index < pixels.length; index += 4, pixel += 1) {
+      const value = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
+      gray[pixel] = value;
+      if (value <= 16) veryDark += 1;
+      if (value >= 248) veryBright += 1;
+    }
+
+    let strongEdges = 0;
+    let gradientTotal = 0;
+    let sampled = 0;
+    const edgeThreshold = Math.max(18, range * 0.16);
+    for (let y = 1; y < canvas.height - 1; y += 2) {
+      for (let x = 1; x < canvas.width - 1; x += 2) {
+        const pixel = y * canvas.width + x;
+        const horizontal = Math.abs(gray[pixel + 1] - gray[pixel - 1]);
+        const vertical = Math.abs(gray[pixel + canvas.width] - gray[pixel - canvas.width]);
+        const gradient = horizontal + vertical;
+        gradientTotal += gradient;
+        sampled += 1;
+        if (gradient >= edgeThreshold) strongEdges += 1;
+      }
+    }
+    const edgeDensity = sampled ? strongEdges / sampled : 0;
+    const averageGradient = sampled ? gradientTotal / sampled : 0;
+    const darkRatio = veryDark / gray.length;
+    const brightRatio = veryBright / gray.length;
+
+    if (darkRatio > 0.96 || high < 28) {
+      return {
+        note: "",
+        blockingMessage: "PHOTO IS TOO DARK TO READ SAFELY. RETAKE IT WITH MORE LIGHT. NOTHING WAS ENTERED."
+      };
+    }
+    if (brightRatio > 0.985 || low > 246) {
+      return {
+        note: "",
+        blockingMessage: "PHOTO IS WASHED OUT BY BRIGHT LIGHT OR GLARE. CHANGE THE ANGLE AND RETAKE IT. NOTHING WAS ENTERED."
+      };
+    }
+    if (range < 15 || (edgeDensity < 0.0003 && averageGradient < 1.5)) {
+      return {
+        note: "",
+        blockingMessage: "PHOTO QUALITY TOO LOW: NO CLEAR CHARACTER EDGES WERE FOUND. RETAKE THE PHOTO CLOSER AND HOLD THE PHONE STEADY. NOTHING WAS ENTERED."
+      };
+    }
+
+    const warnings = [];
+    if (range < 38) warnings.push("LOW CONTRAST");
+    if (edgeDensity < 0.004 || averageGradient < 4) warnings.push("PHOTO MAY BE BLURRY OR TOO FAR AWAY");
+    if (brightRatio > 0.84) warnings.push("POSSIBLE GLARE");
+    if (darkRatio > 0.72) warnings.push("VERY DARK PHOTO");
+    return {
+      note: warnings.length ? warnings.join("; ") + " - VERIFY EACH CHARACTER CAREFULLY. " : "",
+      blockingMessage: ""
+    };
   };
 
   const autoTightCrop = async dataUrl => {
@@ -1034,6 +1093,34 @@
     return panel;
   };
 
+  const ensureCharacterPreviewUi = () => {
+    let panel = document.getElementById("ocrCharacterPreviews");
+    if (panel) return panel;
+    panel = document.createElement("div");
+    panel.id = "ocrCharacterPreviews";
+    panel.className = "ocr-character-previews";
+    panel.hidden = true;
+    ocrReviewPanel.insertBefore(panel, ensureSuggestionUi());
+    return panel;
+  };
+
+  const showDisputedCharacterPreviews = previews => {
+    const panel = ensureCharacterPreviewUi();
+    panel.innerHTML = "";
+    previews.slice(0, 2).forEach(preview => {
+      const item = document.createElement("div");
+      item.className = "ocr-character-preview";
+      const label = document.createElement("span");
+      label.textContent = "CHECK CHARACTER " + (preview.position + 1);
+      const image = document.createElement("img");
+      image.src = preview.dataUrl;
+      image.alt = "Enlarged OCR character " + (preview.position + 1);
+      item.append(label, image);
+      panel.appendChild(item);
+    });
+    panel.hidden = previews.length === 0;
+  };
+
   const visualAlternatives = code => {
     const normalized = normalizeCode(code || "");
     if (!VALID_CODE.test(normalized)) return [];
@@ -1173,12 +1260,21 @@
     ocrScanCropBtn.disabled = true;
     resetOcrReview();
     showSuggestions([]);
+    showDisputedCharacterPreviews([]);
     setOcrStatus("AUTO-CROPPING AND CHECKING MULTIPLE IMAGE ENHANCEMENTS...", "info");
     setStatus("OCR is analyzing the photo. Nothing will save without confirmation.", "info");
 
     try {
-      const qualityNote = await assessImageQuality(originalImageData);
+      const quality = await assessImageQuality(originalImageData);
       confirmActiveScan(scanId);
+      if (quality.blockingMessage) {
+        showOcrReview("", quality.blockingMessage, "warning");
+        showSuggestions([]);
+        showDisputedCharacterPreviews([]);
+        setStatus("OCR stopped before scanning because the photo could not be read safely. Nothing was saved.", "warning");
+        return;
+      }
+      const qualityNote = quality.note;
       const attemptGroups = [];
       if (ocrCropOrientation === "vertical") {
         const clockwise = await rotateImageDataUrl(originalImageData, 90);
